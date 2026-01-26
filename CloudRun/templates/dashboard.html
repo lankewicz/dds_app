@@ -1,0 +1,102 @@
+<!--
+============================================================
+FILE: templates/dashboard.html
+FUNCTION: Dashboard listing DDS sessions (ONLINE + NORMAL) discovered from lista.json
+          and (ONLINE) reuniao.json metadata.
+============================================================
+-->
+{% extends "base.html" %}
+{% block content %}
+  <div class="row row-space-between">
+    <div>
+      <h2>Agendamentos DDS (ONLINE e NORMAL)</h2>
+      <div class="muted">Coleção de conteúdo: {{ base_prefix }}/lista.json</div>
+    </div>
+    <div class="actions">
+      <a class="btn" href="{{ url_for('admin.session_new') }}">Novo agendamento</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="get" action="{{ url_for('admin.dashboard') }}" class="filters">
+      <div>
+        <label>Mês (YYYY-MM)</label>
+        <input name="month" value="{{ month }}" placeholder="2026-01" />
+      </div>
+      <div>
+        <label>Equipe (opcional)</label>
+        <input name="team" value="{{ team }}" placeholder="TEAM1" />
+      </div>
+      <div>
+        <label>Status (opcional)</label>
+        <select name="status">
+          <option value="" {% if not status %}selected{% endif %}>Todos</option>
+          <option value="scheduled" {% if status=='scheduled' %}selected{% endif %}>scheduled</option>
+          <option value="canceled" {% if status=='canceled' %}selected{% endif %}>canceled</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button class="btn" type="submit">Filtrar</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Quando</th>
+          <th>Equipe</th>
+          <th>Assunto</th>
+          <th>Tipo</th>
+          <th>Status</th>
+          <th>Sessão/Canal</th>
+          <th style="width: 220px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if sessions|length == 0 %}
+          <tr>
+            <td colspan="7" class="muted">Nenhum agendamento encontrado.</td>
+          </tr>
+        {% endif %}
+        {% for s in sessions %}
+          <tr>
+            {% set is_online = (s.type == 'online') %}
+            <td>{{ s.date }}{% if s.time %} {{ s.time }}{% else %} <span class="muted">—</span>{% endif %}</td>
+            <td>{% if s.hostTeam %}{{ s.hostTeam }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{{ s.subject }}</td>
+            <td>
+              {% if is_online %}
+                <span class="badge">ONLINE</span>
+              {% else %}
+                <span class="badge">NORMAL</span>
+              {% endif %}
+            </td>
+            <td><span class="badge badge-{{ s.status }}">{{ s.status }}</span></td>
+            <td>{% if is_online %}{{ s.sessionId }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+              {% if is_online %}
+                <a class="btn btn-secondary" href="{{ url_for('admin.session_edit', session_id=s.sessionId) }}">Editar</a>
+                {% if s.status != 'canceled' %}
+                  <form method="post" action="{{ url_for('admin.session_cancel', session_id=s.sessionId) }}" style="display:inline">
+                    <button class="btn btn-danger" type="submit" onclick="return confirm('Cancelar esta sessão?')">Cancelar</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+
+              <form method="post" action="{{ url_for('admin.session_delete') }}" style="display:inline">
+                <input type="hidden" name="type" value="{{ s.type }}">
+                <input type="hidden" name="folderId" value="{{ s.folderId }}">
+                <button class="btn btn-danger" type="submit"
+                        onclick="return confirm('Excluir este DDS e remover do lista.json? Esta ação não pode ser desfeita.')">
+                  Excluir
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

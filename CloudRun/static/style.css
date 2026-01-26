@@ -1,0 +1,198 @@
+/*
+============================================================
+FILE: static/style.css
+FUNCTION: Minimal styling for DDS Admin Site.
+============================================================
+*/
+
+:root {
+  --bg: #0b1020;
+  --card: #111a33;
+  --text: #e9eefc;
+  --muted: #a7b3d6;
+  --line: #26335c;
+  --btn: #1f2e5a;
+  --btn-primary: #2f6fed;
+  --danger: #f04444;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: linear-gradient(180deg, var(--bg), #060912);
+  color: var(--text);
+}
+
+.slides {
+  margin-top: 8px;
+  list-style: none;
+  padding-left: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(7, 11, 23, 0.35);
+  overflow: hidden;
+}
+.slide-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.slide-row:last-child {
+  border-bottom: none;
+}
+ 
+.slide-row label {
+  min-width: 90px;
+}
+
+/* Preview row parts (created by JS) */
+.slide-row .slide-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.slide-row .slide-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.slide-row .slide-sub {
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.95;
+  word-break: break-all;
+}
+.slide-row .btn {
+  white-space: nowrap;
+}
+.slide-row .btn.btn-danger {
+  padding: 6px 10px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(17, 26, 51, 0.65);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.card {
+  background: rgba(17, 26, 51, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+h2 {
+  margin: 0 0 14px 0;
+}
+
+label {
+  display: block;
+  margin: 10px 0;
+  color: var(--muted);
+}
+
+input, select {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(7, 11, 23, 0.65);
+  color: var(--text);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.row-space-between {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--btn);
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--btn-primary);
+  border-color: #2f6fed;
+}
+
+.btn-danger {
+  background: rgba(240, 68, 68, 0.18);
+  border-color: rgba(240, 68, 68, 0.6);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.table th, .table td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.flash-wrap {
+  margin-bottom: 12px;
+}
+
+.flash {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(7, 11, 23, 0.65);
+  margin: 8px 0;
+}
+
+.flash-success { border-color: rgba(47, 111, 237, 0.6); }
+.flash-error { border-color: rgba(240, 68, 68, 0.6); }
+.flash-warning { border-color: rgba(255, 200, 87, 0.6); }

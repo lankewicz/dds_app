@@ -1,0 +1,86 @@
+{
+  "project_info": {
+    "project_number": "1014678273143",
+    "project_id": "dds-treinamentos",
+    "storage_bucket": "dds-treinamentos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014678273143:android:463dd7211cde40645fda72",
+        "android_client_info": {
+          "package_name": "com.chicoeletro.dds"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014678273143:android:42481efb8bc36bce5fda72",
+        "android_client_info": {
+          "package_name": "com.chicoeletro.dds.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014678273143:android:62e56c75d1b6b2de5fda72",
+        "android_client_info": {
+          "package_name": "com.chicoeletro.dds.app.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014678273143:android:d85d373c5c88724e5fda72",
+        "android_client_info": {
+          "package_name": "com.example.dds"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

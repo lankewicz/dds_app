@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Este caminho corresponde ao local onde o APK será baixado -->
+    <external-files-path
+        name="my_downloads"
+        path="Download/" />
+</paths>

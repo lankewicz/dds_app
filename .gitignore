@@ -1,0 +1,27 @@
+# --- Android (Sua configuração original + Padrões) ---
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.ap_
+
+# Diretórios de build extras
+**/build/
+
+# --- Python (Adicionado agora) ---
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+.pytest_cache/
+
+# --- Arquivos de Sistema e IDE ---
+Thumbs.db
+Desktop.ini

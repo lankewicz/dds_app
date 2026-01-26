@@ -1,0 +1,47 @@
+<!--
+============================================================
+FILE: templates/base.html
+FUNCTION: Base layout for DDS Admin Site pages.
+============================================================
+-->
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "DDS Admin" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-title">DDS Admin</div>
+        <div class="brand-sub">Agendamento DDS (Normal e On-line) — compatível com lista.json</div>
+      </div>
+      <div class="topbar-actions">
+        {% if session.get('is_admin') %}
+          <form method="post" action="{{ url_for('admin.logout') }}">
+            <button class="btn btn-ghost" type="submit">Sair</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

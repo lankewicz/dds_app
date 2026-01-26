@@ -1,0 +1,26 @@
+// Módulo: app/src/main/java/com/example/dds/viewmodel/FormViewModel.kt
+// Função: Controla o estado e operações relacionadas ao formulário de submissão.
+// Histórico de Alterações:
+//   - 04/06/2025: Implementação inicial de FormViewModel para gerenciar FormScreen.
+//   - 10/06/2025: Removida toda declaração de TrainingViewModel para eliminar duplicação.
+
+package com.chicoeletro.dds.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.chicoeletro.dds.data.FormSubmission
+import com.chicoeletro.dds.storage.FormDataStore
+import kotlinx.coroutines.launch
+
+class FormViewModel(application: Application) : AndroidViewModel(application) {
+
+    /**
+     * 04/06/2025: Salva a submissão no DataStore local.
+     */
+    fun saveSubmission(submission: FormSubmission) {
+        viewModelScope.launch {
+            FormDataStore.saveSubmission(getApplication(), submission)
+        }
+    }
+}
