@@ -84,9 +84,6 @@ import com.chicoeletro.dds.features.online.AgoraMeetingEntry
 import com.chicoeletro.dds.features.team.TeamConfigSync
 import com.chicoeletro.dds.features.team.TeamEditDialog
 import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
-import com.chicoeletro.dds.features.turno.TurnoStatus
-import com.chicoeletro.dds.features.turno.TurnoStatusDialog
-import com.chicoeletro.dds.features.turno.TurnoStatusSync
 import com.chicoeletro.dds.features.viewer.ViewerScreen
 import com.chicoeletro.dds.features.viewer.ViewerViewModel
 import com.chicoeletro.dds.storage.ExecCacheEntry
@@ -143,22 +140,6 @@ fun MainLayoutContainer() {
     var equipe by rememberSaveable { mutableStateOf("") }
     var eletricistas by remember { mutableStateOf(listOf<String>()) }
 
-    // ==========================================================
-    // Status do Turno (offline-first + Firestore)
-    // ==========================================================
-    val turnoSync = remember { TurnoStatusSync() }
-    var turnoStatus by rememberSaveable { mutableStateOf(TurnoStatus.FECHADO) }
-    var turnoLastChangedAt by remember { mutableStateOf<String?>(null) }
-    var turnoChangedAtIso by remember { mutableStateOf<String?>(null) }
-    var turnoDeslocamentoMotivo by remember { mutableStateOf<String?>(null) }
-    var turnoSsNoc by remember { mutableStateOf<String?>(null) }
-    var turnoAttention by remember { mutableStateOf(false) }
-    var showTurnoDialog by remember { mutableStateOf(false) }
-
-    // Formatação local (evita depender de métodos que podem não existir no Sync)
-    val turnoFmt = remember {
-        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault())
-    }
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var capturedThumbUri by remember { mutableStateOf<Uri?>(null) }
     var abrirCamera by remember { mutableStateOf(false) }
@@ -284,32 +265,6 @@ fun MainLayoutContainer() {
 
 
     // ==========================================================
-    // Observa status do turno local por equipe
-    // ==========================================================
-    LaunchedEffect(teamLoaded, equipe) {
-        if (!teamLoaded) return@LaunchedEffect
-        if (equipe.isBlank()) return@LaunchedEffect
-
-        turnoSync.observeLocal(context, equipe).collect { st ->
-            if (st != null) {
-                turnoStatus = st.status
-                turnoLastChangedAt = st.changedAtUi
-
-                turnoChangedAtIso = st.changedAtIso
-                turnoDeslocamentoMotivo = st.deslocamentoMotivo
-                turnoSsNoc = st.ssNoc
-            } else {
-                turnoStatus = TurnoStatus.FECHADO
-                turnoLastChangedAt = null
-                turnoChangedAtIso = null
-                turnoAttention = false
-                turnoDeslocamentoMotivo = null
-                turnoSsNoc = null
-            }
-        }
-    }
-
-    // ==========================================================
     // Retry automático de equipe pendente (offline-first)
     // - Se a equipe foi salva localmente com pendingSync=true e a internet voltou,
     //   tenta enviar e limpar a pendência.
@@ -326,21 +281,6 @@ fun MainLayoutContainer() {
     LaunchedEffect(online, teamLoaded, lastTeamData?.equipe, lastTeamData?.pendingSync) {
         if (!teamLoaded) return@LaunchedEffect
         teamSync.pullLatestIfSafe(context, online, lastTeamData)
-    }
-
-
-    // ==========================================================
-    // Retry / Pull do Status do Turno
-    // ==========================================================
-    LaunchedEffect(online, teamLoaded, equipe) {
-        if (!teamLoaded) return@LaunchedEffect
-        if (equipe.isBlank()) return@LaunchedEffect
-
-        turnoSync.tryPushPending(context, online, equipe)
-        // pullLatestIfSafe está com assinatura/escopo inconsistente no TurnoStatusSync.kt atual
-        // (aparece como "Unresolved reference" aqui).
-        // Vamos recolocar assim que corrigirmos o TurnoStatusSync.kt.
-        // turnoSync.pullLatestIfSafe(context, online, equipe)
     }
 
     // ==========================================================
@@ -715,67 +655,5 @@ fun MainLayoutContainer() {
                 }
             }
         }
-    }
-
-    // ==========================================================
-    // Dialog seleção do status desejado
-    // ==========================================================
-    if (showTurnoDialog) {
-        TurnoStatusDialog(
-            statusAtual = turnoStatus,
-            ssNocAtual = turnoSsNoc,
-            onDismiss = { showTurnoDialog = false },
-            onConfirm = { novo, motivo, ssNoc ->
-                showTurnoDialog = false
-
-                // snapshot antes (para comparar)
-                val prevStatus = turnoStatus
-                val prevMotivo = turnoDeslocamentoMotivo
-                val prevSsNoc = turnoSsNoc
-
-                // normaliza
-                val novoMotivo = motivo?.trim()?.takeIf { it.isNotBlank() }
-                val novoSsNoc = ssNoc?.trim()?.takeIf { it.isNotBlank() }
-
-                val changedStatus = (novo != prevStatus)
-                val changedMotivo = (novoMotivo != prevMotivo)
-                val changedSsNoc = (novoSsNoc != prevSsNoc)
-
-                // Atualiza UI (status/motivo/ssnoc)
-                if (changedStatus) turnoStatus = novo
-                turnoDeslocamentoMotivo =
-                    if (turnoStatus == TurnoStatus.DESLOCAMENTO_ESPECIAL) novoMotivo else null
-                turnoSsNoc = novoSsNoc
-
-                // Se houve qualquer alteração relevante, atualiza timestamps de UI
-                if (changedStatus || changedMotivo || changedSsNoc) {
-                    val now = Instant.now()
-                    turnoLastChangedAt = turnoFmt.format(now)
-                    turnoChangedAtIso = now.toString()
-                }
-
-                scope.launch {
-                    val snapEquipe = equipe
-                    val snapEletricistas = eletricistas.toList()
-
-                    // 1️⃣ Salva local (offline-first)
-                    turnoSync.setStatus(
-                        context = context,
-                        equipe = snapEquipe,
-                        eletricistas = snapEletricistas,
-                        novoStatus = novo,
-                        deslocamentoMotivo = novoMotivo,
-                        ssNoc = novoSsNoc
-                    )
-
-                    // 2️⃣ Tenta gravar no Firestore imediatamente (se online)
-                    turnoSync.tryPushPending(
-                        context = context,
-                        online = online,
-                        equipe = snapEquipe
-                    )
-                }
-            }
-        )
     }
 }

@@ -1,3 +1,22 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/ui/sections/sidebar/LeftSidebarSection.kt
+// Caminho completo: [PROJECT_ROOT]/app/src/main/java/com/chicoeletro/dds/ui/sections/sidebar/LeftSidebarSection.kt
+// Descrição: Seção de barra lateral esquerda (UI pura) responsável por:
+//            1) Ações rápidas: Home, Sync manual, Relatório de Presenças e indicador Online/Offline;
+//            2) Exibir progresso do sync offline (global e do treinamento atual) quando ativo;
+//            3) Listar treinamentos visíveis (mês atual / filtrados) com realce do selecionado;
+//            4) Indicar treinamentos concluídos (ícone) via trainingStatus;
+//            5) Exibir resumo da Equipe e eletricistas, permitindo abrir o editor de equipe.
+//
+// Observações de arquitetura:
+//            - NÃO contém regras de negócio, repositórios ou sincronização.
+//            - Recebe apenas estados prontos e callbacks (unidirectional data flow).
+//            - Turno/Status de turno NÃO pertence a este componente (será tratado separadamente).
+//
+// Autor: Valdinei Lankewicz
+// Histórico de alterações:
+//   - 04/02/2026: Extraída do MainLayoutContainer para reduzir complexidade e acoplamento de UI.
+
+
 package com.chicoeletro.dds.ui.sections.sidebar
 
 import androidx.compose.foundation.background
