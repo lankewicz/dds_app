@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import functools
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Any, Dict, Optional
 import re
 
@@ -232,13 +232,14 @@ def logout():
     flash("Logout realizado.", "success")
     return redirect(url_for("admin.login"))
 
-
 @admin_bp.get("")
 @login_required
 def dashboard():
-    """Dashboard: list sessions from Storage (reuniao.json)."""
+    """Dashboard: list sessions from Storage (reuniao.json + normal packages)."""
     month = (request.args.get("month") or "").strip()  # expects YYYY-MM
     team = (request.args.get("team") or "").strip().upper()
+
+    # Filtro de status (derivado): agendado | concluido | cancelado
     status = (request.args.get("status") or "").strip().lower()
 
     bucket = current_app.config.get("BUCKET_NAME")
@@ -255,9 +256,44 @@ def dashboard():
             team=team or None,
         )
 
+    # ============================================================
+    # Status derivado (regra de ouro):
+    #   - Cancelado: status raw == 'canceled'
+    #   - Concluído: date < hoje
+    #   - Agendado:  date >= hoje
+    # ============================================================
+    today = date.today()
+
+    def _derive_status_key(s: Dict[str, Any]) -> str:
+        raw = (s.get("status") or "").strip().lower()
+        if raw == "canceled":
+            return "cancelado"
+        d = (s.get("date") or "").strip()
+        try:
+            if d:
+                dd = datetime.strptime(d, "%Y-%m-%d").date()
+                if dd < today:
+                    return "concluido"
+        except Exception:
+            pass
+        return "agendado"
+
+    def _status_label(key: str) -> str:
+        return {
+            "agendado": "Agendado",
+            "concluido": "Concluído",
+            "cancelado": "Cancelado",
+        }.get(key, key)
+
+    for s in sessions_list:
+        k = _derive_status_key(s)
+        s["status_key"] = k
+        s["status_label"] = _status_label(k)
+
     # Filter status (optional)
     if status:
-        sessions_list = [s for s in sessions_list if (s.get("status") or "").lower() == status]
+        sessions_list = [s for s in sessions_list if (s.get("status_key") or "") == status]
+
 
     # Sort by date/time descending when present
     def _key(x: Dict[str, Any]):
@@ -265,14 +301,104 @@ def dashboard():
         return (x.get("date", ""), x.get("time", ""))
 
     sessions_list.sort(key=_key, reverse=True)
+    # ============================================================
+    # Contagem por mês (para o template não fazer O(n²))
+    # month_counts: {"2026-02": 5, "2026-01": 10, ...}
+    # ============================================================
+    month_counts: Dict[str, int] = {}
+    for s in sessions_list:
+        d = (s.get("date") or "").strip()
+        if len(d) >= 7:
+            ym = d[:7]
+            month_counts[ym] = month_counts.get(ym, 0) + 1
+
+
+    # ============================================================
+    # Calcular estatísticas para o dashboard
+    # ============================================================
+    stats = {
+        "total": len(sessions_list),
+        "agendado": len([s for s in sessions_list if s.get("status_key") == "agendado"]),
+        "concluido": len([s for s in sessions_list if s.get("status_key") == "concluido"]),
+        "cancelado": len([s for s in sessions_list if s.get("status_key") == "cancelado"]),
+        "online": len([s for s in sessions_list if s.get("type") == "online"]),
+        "normal": len([s for s in sessions_list if s.get("type") == "normal"]),
+    }
 
     return render_template(
         "dashboard.html",
         sessions=sessions_list,
+        stats=stats,
+        month_counts=month_counts,
         month=month,
         team=team,
         status=status,
         base_prefix=base_prefix,
+        now=datetime.now(),
+    )
+
+
+
+def _calc_pt_status(sess: Dict[str, Any]) -> str:
+    """
+    Status em PT-BR:
+      - Cancelado: se status == 'canceled'
+      - Concluído: se data < hoje
+      - Agendado: se data >= hoje
+    Obs: continua compatível com o que você já grava em lista.json/reuniao.json.
+    """
+    raw = (sess.get("status") or "").strip().lower()
+    if raw == "canceled":
+        return "Cancelado"
+
+    d = (sess.get("date") or "").strip()
+    today = date.today().strftime("%Y-%m-%d")
+    if d and d < today:
+        return "Concluído"
+    return "Agendado"
+
+
+@admin_bp.get("/report")
+@login_required
+def report():
+    """
+    Relatório simples (print-friendly) por mês/status.
+    A ideia é abrir no browser e imprimir em PDF.
+    """
+    month = (request.args.get("month") or "").strip()  # YYYY-MM
+    status = (request.args.get("status") or "").strip()  # Agendado|Concluído|Cancelado|Todos
+
+    bucket = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+
+    sessions_list: list[Dict[str, Any]] = []
+    if bucket:
+        sessions_list = list_all_sessions_from_storage(
+            bucket_name=bucket,
+            base_prefix=base_prefix,
+            month=month or None,
+            team=None,
+        )
+
+    # status calculado (PT-BR)
+    for s in sessions_list:
+        s["status_pt"] = _calc_pt_status(s)
+
+    # filtro por status (opcional)
+    if status and status.lower() != "todos":
+        sessions_list = [s for s in sessions_list if s.get("status_pt") == status]
+
+    # ordenação crescente (mais “relatório”)
+    def _key(x: Dict[str, Any]):
+        return (x.get("date", ""), x.get("time", ""))
+
+    sessions_list.sort(key=_key)
+
+    return render_template(
+        "report.html",
+        sessions=sessions_list,
+        month=month,
+        status=status or "Todos",
         now=datetime.now(),
     )
 

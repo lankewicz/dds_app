@@ -18,14 +18,6 @@
     <!-- 📷 Câmera -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- 💾 Escrita no armazenamento legado apenas para API ≤ 28 (Android 9) -->
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
-
-    <!-- 👀 Leitura de imagens no Android 13+ (se o app precisar ler da galeria) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:targetApi="33" />
-
     <!-- Gravar Audio-->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 

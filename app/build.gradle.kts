@@ -176,6 +176,7 @@ dependencies {
 
     // ─── WorkManager (Background Tasks) ───────────────────────────────────────
     implementation(libs.androidx.work.runtime.ktx)
+    implementation("androidx.work:work-runtime-ktx:2.11.1")
 
     // ─── CameraX ──────────────────────────────────────────────────────────────
     implementation(libs.androidx.camera.core)

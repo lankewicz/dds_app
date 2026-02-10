@@ -8,15 +8,12 @@
 
 package com.chicoeletro.dds.features.Camera
 
-import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.DisposableEffect
 import androidx.camera.core.*
@@ -194,40 +191,32 @@ fun CameraScreen(
                 }
 
                 Button(onClick = {
-                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                        context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        != android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("Permissão para salvar imagens foi negada.")
-                        }
-                        return@Button
-                    }
+
 
                     val capture = imageCapture ?: return@Button
                     Log.d("DDS-CAM", "Disparando captura de imagem (lens=$lensFacing res=${resolution.width}x${resolution.height})")
                     val name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
 
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                        put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/DDS")
-                        }
-                    }
+                    // ✅ Play-safe: salva em armazenamento PRIVADO do app (cacheDir)
+                    // - não usa MediaStore
+                    // - não aparece na galeria
+                    // - não exige READ_MEDIA_IMAGES / WRITE_EXTERNAL_STORAGE
+                    val photoFile = File(context.filesDir, "dds_$name.jpg")
+                    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-                    val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                        context.contentResolver,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        contentValues
-                    ).build()
 
                     capture.takePicture(
                         outputOptions,
                         ContextCompat.getMainExecutor(context),
                         object : ImageCapture.OnImageSavedCallback {
                             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                val savedUri = output.savedUri ?: return
+                                // OutputFileResults.savedUri costuma vir null quando salva em File.
+                                // Então geramos um Uri seguro via FileProvider.
+                                val savedUri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    photoFile
+                                            )
                                 Log.d("DDS-CAM", "Imagem salva: $savedUri")
 
                                 // Processamento pesado fora do main thread

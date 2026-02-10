@@ -6,16 +6,25 @@
 // - 01/07/2025: Melhorado layout para evitar que o texto "Diálogo Diário de Segurança" quebre em telas pequenas
 //               Substituída a Column por Text único com \n e limitado por largura e número de linhas
 //               Adicionada altura mínima/máxima no logo para melhor responsividade
+// 02/02/2026: tratamento de arquivos em cache offline
 
 package com.chicoeletro.dds.components
-
-// --- Android SDK
+// --- Android/Compose
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-
-// --- Jetpack Compose
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,34 +33,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.*
-
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Today
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.foundation.shape.CircleShape
-
-
-
-
-
-
-
-
 
 // --- Projeto
 import com.chicoeletro.dds.R
+import com.chicoeletro.dds.components.PendingCountBadge
+import com.chicoeletro.dds.components.rememberPendingDdsCount
 
 
 
@@ -68,6 +58,9 @@ fun HeaderBar(
     showTestCameraButton: Boolean = false,
     onTestCameraClick: (() -> Unit)? = null
 ) {
+    // ✅ contador de pendentes (fila offline de DDS)
+    val pendingCount = rememberPendingDdsCount()
+
     // Valor bruto recebido (pode ser "yyyy-MM-dd - Título")
     val raw = selectedTraining.orEmpty()
 
@@ -117,43 +110,40 @@ fun HeaderBar(
             overflow = TextOverflow.Ellipsis
         )
 
-        /// Area da Direita
-        if (showTestCameraButton && onTestCameraClick != null) {
-            androidx.compose.material3.IconButton(
-                onClick = onTestCameraClick,
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(Color.DarkGray, CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Videocam,
-                    contentDescription = "Teste reunião online",
-                    tint = Color.White
-                )
-            }
-        }
+        // 👉 Área direita: badge + botão teste + texto institucional
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
 
-        Column(
-            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // 👉 Lado direito: texto DDS + botão de câmera
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    horizontalAlignment = Alignment.End
+            // ✅ Badge compacto (apenas quando > 0)
+            PendingCountBadge(count = pendingCount)
+
+            if (showTestCameraButton && onTestCameraClick != null) {
+                androidx.compose.material3.IconButton(
+                    onClick = onTestCameraClick,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color.DarkGray, CircleShape)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("   Diálogo Diário", fontWeight = FontWeight.Bold, color = Color.Black)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("   de Segurança", fontWeight = FontWeight.Bold, color = Color.Black)
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.Videocam,
+                        contentDescription = "Teste reunião online",
+                        tint = Color.White
+                    )
                 }
+            }
 
-
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("   Diálogo Diário", fontWeight = FontWeight.Bold, color = Color.Black)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("   de Segurança", fontWeight = FontWeight.Bold, color = Color.Black)
+                }
             }
         }
     }

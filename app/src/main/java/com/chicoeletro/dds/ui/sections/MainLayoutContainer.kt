@@ -6,6 +6,7 @@
 //            3) Integração com FormScreen para envio de formulários;
 //            4) Integração com ViewerScreen para visualização de conteúdo do treinamento;
 //            5) Gerenciamento de estado de rede e cache local (equipe, submissões).
+//            6) Barra lateral esquerda extraída (LeftSidebarSection) e Status do Turno (card + dialog) acima da Equipe.
 //
 // Autor: Valdinei Lankewicz
 // Histórico de alterações:
@@ -20,28 +21,48 @@
 //   - 02/06/2025: Versão inicial com fetch direto de Firestore.
 //   - 12/11/2025: Atualização do layout
 //   - 25/11/2025: Inserção Reunião Online (agora.io)
+//   - 04/02/2026: Extraída a barra lateral esquerda para LeftSidebarSection; adicionado Status do Turno (card + dialog 4 botões) com base offline-first.
 //
 
 package com.chicoeletro.dds.ui.sections
 
 import android.app.Application
 import android.net.Uri
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -49,45 +70,43 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
-
 import com.chicoeletro.dds.R
-import com.chicoeletro.dds.components.*
-import com.chicoeletro.dds.core.*
+import com.chicoeletro.dds.components.FooterStatus
+import com.chicoeletro.dds.components.FooterVersion
+import com.chicoeletro.dds.components.HeaderBar
+import com.chicoeletro.dds.components.HeaderBarState
+import com.chicoeletro.dds.core.LastTeamData
 import com.chicoeletro.dds.core.agora.AgoraConfig
 import com.chicoeletro.dds.data.FormSubmission
-import com.chicoeletro.dds.data.sync.FileLocalDataSource
-import com.chicoeletro.dds.data.sync.FirebaseRemoteDataSource
-import com.chicoeletro.dds.data.sync.UpdateTrainingsUseCase
 import com.chicoeletro.dds.features.Camera.CameraScreen
 import com.chicoeletro.dds.features.form.FormScreen
 import com.chicoeletro.dds.features.online.AgoraMeetingEntry
-import com.chicoeletro.dds.features.online.AgoraMeetingScreen
 import com.chicoeletro.dds.features.team.TeamConfigSync
 import com.chicoeletro.dds.features.team.TeamEditDialog
 import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
+import com.chicoeletro.dds.features.turno.TurnoStatus
+import com.chicoeletro.dds.features.turno.TurnoStatusDialog
+import com.chicoeletro.dds.features.turno.TurnoStatusSync
 import com.chicoeletro.dds.features.viewer.ViewerScreen
 import com.chicoeletro.dds.features.viewer.ViewerViewModel
 import com.chicoeletro.dds.storage.ExecCacheEntry
 import com.chicoeletro.dds.storage.FormDataStore
 import com.chicoeletro.dds.storage.TrainingExecLocalStore
-import com.chicoeletro.dds.ui.training.buildTrainingDisplay
+import com.chicoeletro.dds.ui.sections.sidebar.LeftSidebarSection
 import com.chicoeletro.dds.ui.training.isExpiredTrainingId
 import com.chicoeletro.dds.ui.training.shouldShowTraining
-import com.chicoeletro.dds.ui.training.trainingTitleFromId
-import com.chicoeletro.dds.viewmodel.*
-
+import com.chicoeletro.dds.viewmodel.NetworkViewModel
+import com.chicoeletro.dds.viewmodel.TrainingSyncViewModel
+import com.chicoeletro.dds.viewmodel.TrainingViewModel
+import com.chicoeletro.dds.viewmodel.TrainingViewModelFactory
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
-
+import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class TrainingStatus(
     val dataConclusao: String,
@@ -123,6 +142,23 @@ fun MainLayoutContainer() {
     var submissaoExistente by remember { mutableStateOf<FormSubmission?>(null) }
     var equipe by rememberSaveable { mutableStateOf("") }
     var eletricistas by remember { mutableStateOf(listOf<String>()) }
+
+    // ==========================================================
+    // Status do Turno (offline-first + Firestore)
+    // ==========================================================
+    val turnoSync = remember { TurnoStatusSync() }
+    var turnoStatus by rememberSaveable { mutableStateOf(TurnoStatus.FECHADO) }
+    var turnoLastChangedAt by remember { mutableStateOf<String?>(null) }
+    var turnoChangedAtIso by remember { mutableStateOf<String?>(null) }
+    var turnoDeslocamentoMotivo by remember { mutableStateOf<String?>(null) }
+    var turnoSsNoc by remember { mutableStateOf<String?>(null) }
+    var turnoAttention by remember { mutableStateOf(false) }
+    var showTurnoDialog by remember { mutableStateOf(false) }
+
+    // Formatação local (evita depender de métodos que podem não existir no Sync)
+    val turnoFmt = remember {
+        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault())
+    }
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var capturedThumbUri by remember { mutableStateOf<Uri?>(null) }
     var abrirCamera by remember { mutableStateOf(false) }
@@ -132,7 +168,6 @@ fun MainLayoutContainer() {
     var viewerStatus by remember { mutableStateOf<FooterStatus?>(null) }
 
     var showPresenceReport by rememberSaveable { mutableStateOf(false) }
-
 
     // Novo: controle de modo de operação
     var modoTesteAtivo by rememberSaveable { mutableStateOf(false) }
@@ -247,8 +282,35 @@ fun MainLayoutContainer() {
         }
     }
 
+
     // ==========================================================
-    // NOVO: Retry automático de equipe pendente (offline-first)
+    // Observa status do turno local por equipe
+    // ==========================================================
+    LaunchedEffect(teamLoaded, equipe) {
+        if (!teamLoaded) return@LaunchedEffect
+        if (equipe.isBlank()) return@LaunchedEffect
+
+        turnoSync.observeLocal(context, equipe).collect { st ->
+            if (st != null) {
+                turnoStatus = st.status
+                turnoLastChangedAt = st.changedAtUi
+
+                turnoChangedAtIso = st.changedAtIso
+                turnoDeslocamentoMotivo = st.deslocamentoMotivo
+                turnoSsNoc = st.ssNoc
+            } else {
+                turnoStatus = TurnoStatus.FECHADO
+                turnoLastChangedAt = null
+                turnoChangedAtIso = null
+                turnoAttention = false
+                turnoDeslocamentoMotivo = null
+                turnoSsNoc = null
+            }
+        }
+    }
+
+    // ==========================================================
+    // Retry automático de equipe pendente (offline-first)
     // - Se a equipe foi salva localmente com pendingSync=true e a internet voltou,
     //   tenta enviar e limpar a pendência.
     // ==========================================================
@@ -258,12 +320,27 @@ fun MainLayoutContainer() {
     }
 
     // ==========================================================
-    // NOVO: Sempre carregar a formação mais recente (pull)
+    // Sempre carregar a formação mais recente (pull)
     // - Apenas quando online e NÃO há pendência local (não sobrescreve alterações locais).
     // ==========================================================
     LaunchedEffect(online, teamLoaded, lastTeamData?.equipe, lastTeamData?.pendingSync) {
         if (!teamLoaded) return@LaunchedEffect
         teamSync.pullLatestIfSafe(context, online, lastTeamData)
+    }
+
+
+    // ==========================================================
+    // Retry / Pull do Status do Turno
+    // ==========================================================
+    LaunchedEffect(online, teamLoaded, equipe) {
+        if (!teamLoaded) return@LaunchedEffect
+        if (equipe.isBlank()) return@LaunchedEffect
+
+        turnoSync.tryPushPending(context, online, equipe)
+        // pullLatestIfSafe está com assinatura/escopo inconsistente no TurnoStatusSync.kt atual
+        // (aparece como "Unresolved reference" aqui).
+        // Vamos recolocar assim que corrigirmos o TurnoStatusSync.kt.
+        // turnoSync.pullLatestIfSafe(context, online, equipe)
     }
 
     // ==========================================================
@@ -361,166 +438,41 @@ fun MainLayoutContainer() {
                     }
                 )
                 Row(Modifier.weight(1f)) {
-
-                    Column(Modifier.width(220.dp).background(Color(0xFFEFEFEF))) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                             horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-
-                            // HOME
-                            IconButton(onClick = { selectedTraining = null }) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.bthome),
-                                    contentDescription = "Início",
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-
-                            // REFRESH => Refresh + Sync + DeleteOrfãos
-                            IconButton(onClick = { syncViewModel.syncNow() }) {
-                                if (syncState.isSyncing) {
-                                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Filled.Refresh, contentDescription = "Sincronizar agora")
-                                }
-                            }
-
-                            // RELATÓRIO DE PRESENÇAS
-                            IconButton(
-                                onClick = { showPresenceReport = true }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.CalendarMonth,
-                                    contentDescription = "Relatório de Presenças",
-                                    modifier = Modifier.size(30.dp)
-                                )
-                            }
-
-                            // WIFI (indicador somente)
-                            Icon(
-                                imageVector = if (online) Icons.Filled.Wifi else Icons.Filled.SignalWifiOff,
-                                contentDescription = if (online) "Online" else "Offline",
-                                tint = if (online) Color(0xFF4CAF50) else Color(0xFFF44336),
-                                modifier = Modifier.size(28.dp)
-                            )
+                    LeftSidebarSection(
+                        widthDp = 220,
+                        online = online,
+                        isSyncing = syncState.isSyncing,
+                        overallTotal = syncState.overallTotal,
+                        overallDone = syncState.overallDone,
+                        plannedTrainingsTotal = syncState.plannedTrainingsTotal,
+                        currentTotal = syncState.currentTotal,
+                        currentDone = syncState.currentDone,
+                        currentId = syncState.currentId,
+                        onHome = { selectedTraining = null },
+                        onSyncNow = { syncViewModel.syncNow() },
+                        onPresenceReport = { showPresenceReport = true },
+                        trainings = visibleTrainings,
+                        selectedTraining = selectedTraining,
+                        trainingStatus = trainingStatus,
+                        onSelectTraining = { tid ->
+                            selectedTraining = tid
+                            tempoInicioDDS = System.currentTimeMillis()
+                            showForm = false
+                        },
+                        // NOVO: turno
+                        turnoStatus = turnoStatus,
+                        turnoLastChangedAt = turnoLastChangedAt,
+                        turnoDeslocamentoMotivo = turnoDeslocamentoMotivo,
+                        turnoAttention = turnoAttention,
+                        onClickTurno = { showTurnoDialog = true },
+                        // Equipe
+                        equipe = equipe,
+                        eletricistas = eletricistas,
+                        onClickEquipe = {
+                            teamDialogMandatory = false
+                            showEditDialog = true
                         }
-
-
-                        // Barras de progresso (aparecem só durante a sync)
-                        if (syncState.isSyncing) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                                // Global
-                                val pGlobal = if (syncState.overallTotal > 0) syncState.overallDone.toFloat() / syncState.overallTotal else 0f
-
-
-                                Text(
-                                    "Baixando: ${syncState.plannedTrainingsTotal} treinamento(s)",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                LinearProgressIndicator(progress = { pGlobal }, modifier = Modifier.fillMaxWidth())
-                                // Atual (pasta)
-                                Spacer(Modifier.height(6.dp))
-                                val pAtual = if (syncState.currentTotal > 0) syncState.currentDone.toFloat() / syncState.currentTotal else 0f
-                                val title = trainingTitleFromId(syncState.currentId)
-
-                                Text(
-                                    "Treinamento: $title — ${syncState.currentDone} / ${syncState.currentTotal}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                LinearProgressIndicator(progress = { pAtual }, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-
-                        LazyColumn(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                            items(visibleTrainings) { t ->
-                                val isSel = t.id == selectedTraining
-                                val display = remember(t.id, t.date, t.title) { buildTrainingDisplay(t) }
-                                val isDone = remember(trainingStatus, t.id) {
-                                    trainingStatus.containsKey(t.id)
-                                }
-                                Card(
-                                    elevation = CardDefaults.cardElevation(defaultElevation = if (isSel) 8.dp else 0.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        .clickable {
-                                            selectedTraining = t.id
-                                            tempoInicioDDS = System.currentTimeMillis()
-                                            showForm = false
-                                        },
-                                    shape = RoundedCornerShape(4.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSel) Color(0xFFE0E0E0) else Color.Transparent
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (isDone) {
-                                            Icon(
-                                                imageVector = Icons.Filled.DoneAll,
-                                                contentDescription = "Treinamento executado",
-                                                tint = Color(0xFF2E7D32),
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                        } else {
-                                            // Mantém alinhamento do texto quando não há ícone
-                                            Spacer(Modifier.width(28.dp))
-                                        }
-
-                                        Column {
-                                            Text(
-                                                display.line1,
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                            Spacer(Modifier.height(4.dp))
-                                            Text(
-                                                display.line2,
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Card(
-                            Modifier.fillMaxWidth().padding(8.dp).clickable {
-                                    teamDialogMandatory = false
-                                    showEditDialog = true
-                                },
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFCCEEFF)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Box(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(8.dp)) {
-                                    Text("Equipe: ${equipe.ifBlank { "(não definida)" }}", style = MaterialTheme.typography.bodyMedium)
-                                    if (eletricistas.isNotEmpty() && equipe.isNotBlank()) {
-                                        Spacer(Modifier.height(4.dp))
-                                        //Text("Participantes:", style = MaterialTheme.typography.bodyMedium)   // retire o comentario do inicio da linha para mostrar o texto
-                                        eletricistas.forEach {
-                                            Text("• $it", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-                                IconButton(
-                                    onClick = {
-                                        teamDialogMandatory = false
-                                        showEditDialog = true
-                                        },
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = "Editar equipe",
-                                        tint = Color.DarkGray
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    )
                     // Cor do modo teste permanece fixa para destaque (ou pode ser PrimaryDark, se preferir)
                     val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
 
@@ -769,5 +721,67 @@ fun MainLayoutContainer() {
                 }
             }
         }
+    }
+
+    // ==========================================================
+    // Dialog seleção do status desejado
+    // ==========================================================
+    if (showTurnoDialog) {
+        TurnoStatusDialog(
+            statusAtual = turnoStatus,
+            ssNocAtual = turnoSsNoc,
+            onDismiss = { showTurnoDialog = false },
+            onConfirm = { novo, motivo, ssNoc ->
+                showTurnoDialog = false
+
+                // snapshot antes (para comparar)
+                val prevStatus = turnoStatus
+                val prevMotivo = turnoDeslocamentoMotivo
+                val prevSsNoc = turnoSsNoc
+
+                // normaliza
+                val novoMotivo = motivo?.trim()?.takeIf { it.isNotBlank() }
+                val novoSsNoc = ssNoc?.trim()?.takeIf { it.isNotBlank() }
+
+                val changedStatus = (novo != prevStatus)
+                val changedMotivo = (novoMotivo != prevMotivo)
+                val changedSsNoc = (novoSsNoc != prevSsNoc)
+
+                // Atualiza UI (status/motivo/ssnoc)
+                if (changedStatus) turnoStatus = novo
+                turnoDeslocamentoMotivo =
+                    if (turnoStatus == TurnoStatus.DESLOCAMENTO_ESPECIAL) novoMotivo else null
+                turnoSsNoc = novoSsNoc
+
+                // Se houve qualquer alteração relevante, atualiza timestamps de UI
+                if (changedStatus || changedMotivo || changedSsNoc) {
+                    val now = Instant.now()
+                    turnoLastChangedAt = turnoFmt.format(now)
+                    turnoChangedAtIso = now.toString()
+                }
+
+                scope.launch {
+                    val snapEquipe = equipe
+                    val snapEletricistas = eletricistas.toList()
+
+                    // 1️⃣ Salva local (offline-first)
+                    turnoSync.setStatus(
+                        context = context,
+                        equipe = snapEquipe,
+                        eletricistas = snapEletricistas,
+                        novoStatus = novo,
+                        deslocamentoMotivo = novoMotivo,
+                        ssNoc = novoSsNoc
+                    )
+
+                    // 2️⃣ Tenta gravar no Firestore imediatamente (se online)
+                    turnoSync.tryPushPending(
+                        context = context,
+                        online = online,
+                        equipe = snapEquipe
+                    )
+                }
+            }
+        )
     }
 }

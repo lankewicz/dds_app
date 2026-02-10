@@ -56,6 +56,12 @@ import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
+import com.chicoeletro.dds.data.local.PendingDdsStore
+import com.chicoeletro.dds.domain.RemoteDdsUploader
+import com.chicoeletro.dds.domain.SubmitDdsUseCase
+import com.chicoeletro.dds.domain.SubmitResult
+import com.chicoeletro.dds.sync.DdsSyncScheduler
+
 @Composable
 fun FormScreen(
     trainingName: String,
@@ -289,87 +295,37 @@ fun FormScreen(
                             )
                             scope.launch {
                                 try {
-                                    val dataHoraNome =
-                                        now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
-                                    val nomeFoto =
-                                        "${trainingName}_${equipe}_$dataHoraNome.jpg"
-                                    val storageRef =
-                                        FirebaseStorage.getInstance().reference.child("$pastaFotos/ChicoEletro/Fotos/$nomeFoto")
-                                    val thumbRef =
-                                        FirebaseStorage.getInstance().reference.child("$pastaFotos/ChicoEletro/Thumb/$nomeFoto")
+                                     val useCase = SubmitDdsUseCase(
+                                        context = context,
+                                        pendingStore = PendingDdsStore(context),
+                                        remote = RemoteDdsUploader(FirebaseStorage.getInstance(), FirebaseFirestore.getInstance()),
+                                        scheduler = DdsSyncScheduler(context, collectionName, pastaFotos)
+                                     )
 
-                                    storageRef.putFile(fotoUri!!).apply {
-                                        addOnProgressListener {
-                                            val pct =
-                                                (100.0 * it.bytesTransferred / it.totalByteCount).toInt()
-                                            Toast.makeText(
-                                                context,
-                                                "Enviando foto: $pct%",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }.await()
+                                     val result = useCase.submit(
+                                        submission = submission,
+                                        fotoUri = fotoUri!!,
+                                        thumbUri = thumbUri,
+                                        collectionName = collectionName,
+                                        pastaFotos = pastaFotos,
+                                        duracaoFormatada = duracaoFormatada
+                                     )
 
-                                    val fotoUrl = storageRef.downloadUrl.await().toString()
-                                    val thumbUrl = thumbUri?.let {
-                                        thumbRef.putFile(it).await()
-                                        thumbRef.downloadUrl.await().toString()
-                                    } ?: fotoUrl
+                                     // mantém seus callbacks
+                                     onSubmit(submission, LastTeamData(submission.equipe, submission.eletricistas))
+                                     onCompleted(submission.dataConclusao, submission.horaConclusao, duracaoFormatada)
 
-                                    FirebaseFirestore.getInstance()
-                                        .collection(collectionName)
-                                        .add(
-                                            mapOf(
-                                                "dataHora" to "${submission.dataConclusao} - ${submission.horaConclusao}",
-                                                "duracao" to duracaoFormatada,
-                                                "trainingName" to submission.trainingName,
-                                                "equipe" to submission.equipe,
-                                                "tema" to submission.tema,
-                                                "eletricistas" to submission.eletricistas,
-                                                "DataConclusao" to submission.dataConclusao,
-                                                "HoraConclusao" to submission.horaConclusao,
-                                                "headerDate" to submission.headerDate,
-                                                "headerTitle" to submission.headerTitle,
-                                                "fotoUrl" to fotoUrl,
-                                                "thumbUrl" to thumbUrl
-                                            )
-                                        ).await()
-
-                                    if (mostrarAvisoDepois) {
-                                        tempoFormatadoAviso = duracaoFormatada
-                                        mostrarAvisoTempo = true
-                                        enviarDepoisDoAlerta = true
-                                    } else {
-                                        onSubmit(
-                                            submission,
-                                            LastTeamData(
-                                                submission.equipe,
-                                                submission.eletricistas
-                                            )
-                                        )
-                                        // 🔹 avisa o container que concluiu
-                                        onCompleted(
-                                            submission.dataConclusao,
-                                            submission.horaConclusao,
-                                            duracaoFormatada
-                                        )
-
-                                        Toast.makeText(
-                                            context,
-                                            "Enviado com sucesso!",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Erro: ${e.message}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } finally {
-                                    isSubmitting = false
+                                     when (result) {
+                                       is SubmitResult.SentOnline ->
+                                          Toast.makeText(context, "Enviado com sucesso!", Toast.LENGTH_SHORT).show()
+                                       is SubmitResult.SavedOffline ->
+                                          Toast.makeText(context, "Sem internet. Salvo offline e será enviado ao conectar.", Toast.LENGTH_LONG).show()
+                                     }
+                                   } finally {
+                                     isSubmitting = false
+                                   }
                                 }
-                            }
+
                         },
                         enabled = todosCamposValidos,
                         modifier = Modifier.width(120.dp)

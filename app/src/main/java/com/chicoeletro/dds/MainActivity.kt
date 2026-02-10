@@ -3,6 +3,7 @@
 // delegando a execução ao TrainingSyncViewModel.
 // Autor: Valdinei Lankewicz
 // Atualizado: 07/11/2025
+//   - 04/02/2026: Suporte indireto a Status do Turno por equipe (Firestore).
 
 package com.chicoeletro.dds
 
@@ -60,7 +61,19 @@ class MainActivity : ComponentActivity() {
         // Sync no startup
         syncVM.startupSyncIfNeeded(hasInternet())
 
+        // Agenda envio de DDS pendentes (se houver) quando houver internet
+        com.chicoeletro.dds.sync.DdsSyncScheduler(
+            context = this,
+            collectionName = "DDS",
+            pastaFotos = "DDS_Fotos"
+        ).schedule()
 
+        // Se você também usa modo teste em runtime, pode agendar os dois:
+        com.chicoeletro.dds.sync.DdsSyncScheduler(
+            context = this,
+            collectionName = "TESTE_DDS",
+            pastaFotos = "TESTE_DDS_Fotos"
+        ).schedule()
     }
 
     /**
