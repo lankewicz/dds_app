@@ -459,12 +459,6 @@ fun MainLayoutContainer() {
                             tempoInicioDDS = System.currentTimeMillis()
                             showForm = false
                         },
-                        // NOVO: turno
-                        turnoStatus = turnoStatus,
-                        turnoLastChangedAt = turnoLastChangedAt,
-                        turnoDeslocamentoMotivo = turnoDeslocamentoMotivo,
-                        turnoAttention = turnoAttention,
-                        onClickTurno = { showTurnoDialog = true },
                         // Equipe
                         equipe = equipe,
                         eletricistas = eletricistas,
