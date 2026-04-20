@@ -1,0 +1,11 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "training_completions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dataHora", "order": "ASCENDING" }
+      ]
+    }
+  ]
+}

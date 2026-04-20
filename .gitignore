@@ -1,0 +1,73 @@
+@'
+# --- Android / Gradle ---
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+**/build/
+
+# Release artifacts
+/release/
+*.aab
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+.pytest_cache/
+
+# --- Sistema / IDE ---
+Thumbs.db
+Desktop.ini
+.vscode/
+
+# --- Logs / artefatos locais ---
+*.log
+*.zip
+build_output.txt
+
+# --- Firebase / secrets ---
+firebase_config.json
+**/firebase_config.json
+google-services.json
+.firebaserc.local
+*.key
+*.p12
+*.jks
+*.keystore
+*serviceAccount*.json
+**/keys/
+
+# --- Pastas locais sensíveis ---
+DDS-TOKEN/
+dds_token_server/
+
+# --- Patches locais ---
+*.patch
+
+# --- Ignorar se não fizer parte do repositório dds_app ---
+dds-turnos-monitor/
+backup_app_src_*.zip
+'@ | Set-Content .gitignore
+# segredos e credenciais
+BackEnd/.secrets/
+BackEnd/token_drive.json
+BackEnd/init/credentials_drive.json
+BackEnd/init/drive_sa.json
+BackEnd/init/firebase_service_account.json
+app/local.properties
+
+# artefatos locais
+app/release/
+BackEnd/*.pdf
+*.log
+*.zip

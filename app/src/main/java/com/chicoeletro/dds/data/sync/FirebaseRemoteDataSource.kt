@@ -1,0 +1,277 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/data/sync/FirebaseRemoteDataSource.kt
+// Função: Implementação remota para obtenção de recursos de treinamento via Firebase Storage. 
+//         Realiza o fetch do manifesto JSON e o download dos arquivos vinculados.
+// Tecnologias: Firebase Storage, Kotlin Coroutines.
+// Autor: Valdinei Lankewicz
+// Histórico de Alterações:
+
+package com.chicoeletro.dds.data.sync
+
+import android.content.Context
+import android.util.Log
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.tasks.await
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.LinkedHashMap
+import java.util.Locale
+
+class FirebaseRemoteDataSource(
+    private val firestore: FirebaseFirestore,
+    private val storage: FirebaseStorage,
+    private val context: Context
+) : ContentRemoteDataSource {
+
+    @Volatile private var cachedList: Pair<Long, String>? = null
+    @Volatile private var cachedIndex: Pair<Long, Map<String, List<String>>>? = null
+    private val LIST_TTL_MS = 60_000L  // 1 min (ajuste)
+
+
+    private enum class ManifestSource { NONE, FIRESTORE, LIST_JSON }
+    private enum class ListFetchMode { NONE, FRESH, STALE }
+
+    @Volatile private var lastManifestSource: ManifestSource = ManifestSource.NONE
+    @Volatile private var lastListFetchMode: ListFetchMode = ListFetchMode.NONE
+
+    /**
+     * Permite purge apenas quando temos alta confiança de que o remoto está "atual":
+     * - manifest veio do Firestore (fonte de verdade), OU
+     * - lista.json foi baixada fresh (não stale).
+     *
+     * Se lista.json estiver stale (offline), não purga para evitar remover cache válido por desatualização.
+     */
+    fun canPurgeWithConfidence(): Boolean {
+        return (lastManifestSource == ManifestSource.FIRESTORE) || (lastListFetchMode == ListFetchMode.FRESH)
+    }
+
+
+    // ------------------------------------------------------------
+    // Helpers de caminho relativo (preserva subpastas após o trainingId)
+    // Ex.: "DDSv2/2025-11-10 - TÍTULO/sub/Slide4.JPG" -> "sub/Slide4.JPG"
+    private fun computeRelativeLocalPath(originalPath: String, trainingId: String): String {
+        val norm = originalPath.replace('\\','/')
+        val i = norm.lowercase().indexOf(trainingId.lowercase())
+        val rel = if (i >= 0) norm.substring(i + trainingId.length) else norm.substringAfterLast('/')
+        return rel.trimStart('/')
+    }
+
+    /** Exposto para quem quiser reutilizar fora (UseCase/UI). */
+    fun relativeLocalPathFor(originalPath: String, trainingId: String): String =
+        computeRelativeLocalPath(originalPath, trainingId)
+
+
+
+    // ---------------- Manifest ----------------
+    override suspend fun fetchManifest(): List<ManifestItem> {
+        val fs = runCatching { fetchManifestFromFirestore() }.getOrNull()
+        if (!fs.isNullOrEmpty()) return fs
+        return fetchManifestFromListJson()
+    }
+
+    private suspend fun fetchManifestFromFirestore(): List<ManifestItem> {
+        val snap = firestore.collection("manifests").document("latest").get().await()
+        @Suppress("UNCHECKED_CAST")
+        val raw = snap.get("items") as? List<Map<String, Any?>> ?: emptyList()
+        val items = raw.mapNotNull { m ->
+            val id  = (m["id"] as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val url = (m["url"] as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val ver = when (val v = m["version"]) {
+                is Number -> v.toLong()
+                is String -> v.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            val hash = (m["hash"] as? String).orEmpty()
+            ManifestItem(id = id, version = ver, url = url, hash = hash)
+        }
+        Log.d("RemoteDS", "fetchManifest(Firestore): ${items.size} itens")
+        return items
+    }
+
+    private suspend fun fetchManifestFromListJson(): List<ManifestItem> {
+        val url = "gs://"+storage.reference.bucket+"/DDSv2/lista.json"
+        val idx = getListIndex(url)
+        val ids = idx.keys.sorted()
+        return ids.map { id -> ManifestItem(id = id, version = 0, url = url, hash = "") }
+    }
+
+    // ---------------- Baixa “em lote” (modo legado) ----------------
+    override suspend fun downloadAndSave(item: ManifestItem) {
+        val destDir = File(context.filesDir, "trainings/${item.id}")
+        if (!destDir.exists()) destDir.mkdirs()
+
+        val isJson = item.url.substringAfterLast('/').endsWith(".json", true)
+        if (!isJson) {
+            // raro no nosso fluxo, mas garanta subpasta se vier caminho
+            val rel = computeRelativeLocalPath(item.url, item.id)
+            val out = File(destDir, rel).apply { parentFile?.mkdirs() }
+            storage.getReferenceFromUrl(item.url).getFile(out).await()
+            return
+        }
+
+        val imgs = listImagesFor(item.id)
+        Log.d("RemoteDS", "LISTA contém ${imgs.size} imagens para '${item.id}' (modo legado)")
+
+        imgs.forEach { p -> downloadImageForTraining(p, item.id, destDir) }
+    }
+
+    // ---------------- Novos utilitários p/ progress ----------------
+
+    /** Lista todas as imagens de um treinamento (a partir do DDSv2/lista.json em cache). */
+    suspend fun listImagesFor(trainingId: String): List<String> {
+        val url = "gs://${storage.reference.bucket}/DDSv2/lista.json"
+        val idx = getListIndex(url)
+        return idx[trainingId].orEmpty()
+    }
+
+    /**
+    * Baixa UMA imagem (tenta com 'DDSv2/', sem prefixo, e a partir do próprio trainingId).
+    * Salva em destDir **preservando subpastas** após o trainingId.
+    * Retorna true se conseguiu salvar.
+    */
+
+    suspend fun downloadImageForTraining(originalPath: String, trainingId: String, destDir: File): Boolean {
+        val candidates = candidatePaths(originalPath, trainingId)
+        val rel = computeRelativeLocalPath(originalPath, trainingId)   // ← "sub/Slide4.JPG" ou "Slide4.JPG"
+        val outFile = File(destDir, rel).apply { parentFile?.mkdirs() }
+        for (p in candidates) {
+            try {
+                val ref = if (p.startsWith("gs://") || p.startsWith("https://"))
+                    storage.getReferenceFromUrl(p) else storage.getReference(p)
+                Log.d("RemoteDS", "Tentando: $p → ${outFile.invariantSeparatorsPath}")
+                ref.getFile(outFile).await()
+                Log.d("RemoteDS", "OK: $p")
+                return true
+            } catch (e: Exception) {
+                Log.w("RemoteDS", "Falha '$p' ($trainingId): ${e.message}")
+            }
+        }
+        Log.e("RemoteDS", "Desisti do arquivo: $originalPath")
+        return false
+    }
+
+    // ---------------- Cache do lista.json + parsing ----------------
+    private suspend fun getListJson(url: String): String {
+        val now = System.currentTimeMillis()
+        cachedList?.let { (ts, txt) ->
+            if (now - ts < LIST_TTL_MS) return txt
+        }
+
+        fun cacheAndReturn(txt: String): String {
+            cachedList = now to txt
+            cachedIndex = null // invalida o index (será reconstruído)
+            lastListFetchMode = ListFetchMode.FRESH
+            return txt
+        }
+
+        // ✅ Offline-first (stale): se falhar baixar e existir cache antigo, usa o cache.
+        // ✅ Aumenta limite: 10MB → 50MB para reduzir falhas quando lista.json crescer.
+        val bytes: ByteArray = try {
+            storage.getReferenceFromUrl(url).getBytes(50L * 1024 * 1024).await()
+        } catch (_: Exception) {
+            try {
+                storage.getReference("DDSv2/lista.json").getBytes(50L * 1024 * 1024).await()
+            } catch (e: Exception) {
+                cachedList?.second?.let { stale ->
+                    Log.w("RemoteDS", "Usando lista.json em cache (stale) por falha no download: ${e.message}")
+                    lastListFetchMode = ListFetchMode.STALE
+                    return stale
+                }
+                throw e
+            }
+        }
+
+        return cacheAndReturn(bytes.toString(Charsets.UTF_8))
+    }
+
+    /**
+     * Retorna um índice (trainingId -> lista de paths FULL) construído 1x por refresh do lista.json.
+     * Isso elimina o parse do JSON N vezes (uma por treinamento).
+     */
+    private suspend fun getListIndex(url: String): Map<String, List<String>> {
+        val json = getListJson(url)
+        val listTs = cachedList?.first ?: System.currentTimeMillis()
+
+        cachedIndex?.let { (ts, idx) ->
+            if (ts == listTs) return idx
+        }
+
+        val all = parseAllPaths(json)
+        val idx = buildIndex(all)
+        cachedIndex = listTs to idx
+        return idx
+    }
+
+    private fun buildIndex(allPaths: List<String>): Map<String, List<String>> {
+        val m = LinkedHashMap<String, MutableList<String>>()
+        for (p in allPaths) {
+            val id = extractTrainingId(p) ?: continue
+            m.getOrPut(id) { mutableListOf() }.add(p)
+        }
+        return m
+    }
+
+
+    private fun parseAllPaths(json: String): List<String> {
+        runCatching {
+            val arr = JSONArray(json)
+            return (0 until arr.length()).mapNotNull { arr.optString(it, null) }.filter { it.isNotBlank() }
+        }
+        val obj = runCatching { JSONObject(json) }.getOrNull() ?: return emptyList()
+        val keys = listOf("files", "imagens", "urls", "items", "pictures", "fotos", "arquivos")
+        for (k in keys) obj.opt(k)?.let { any -> parsePathsFromAny(any)?.let { return it } }
+        return buildList {
+            if (obj.has("url")) add(obj.optString("url"))
+            if (obj.has("path")) add(obj.optString("path"))
+        }
+    }
+
+    private fun parsePathsFromAny(any: Any?): List<String>? = when (any) {
+        is JSONArray -> buildList {
+            for (i in 0 until any.length()) when (val el = any.opt(i)) {
+                is String -> if (el.isNotBlank()) add(el)
+                is JSONObject -> {
+                    val u = when {
+                        el.has("url")  -> el.optString("url")
+                        el.has("path") -> el.optString("path")
+                        else -> null
+                    }
+                    if (!u.isNullOrBlank()) add(u)
+                }
+            }
+        }
+        is JSONObject -> when {
+            any.has("url")  -> listOfNotNull(any.optString("url"))
+            any.has("path") -> listOfNotNull(any.optString("path"))
+            else -> {
+                val keys = listOf("files", "imagens", "urls", "items", "pictures", "fotos", "arquivos")
+                keys.firstNotNullOfOrNull { k -> parsePathsFromAny(any.opt(k)) }
+            }
+        }
+        else -> null
+    }
+
+    private fun extractTrainingId(path: String): String? {
+        val p = path.removePrefix("gs://").removePrefix("https://").trimStart('/')
+        val noBucket = if (p.contains("/")) p.substringAfter('/') else p
+        val withoutDDS = noBucket.removePrefix("DDSv2/").removePrefix("DDS/")
+        return withoutDDS.substringBefore('/', "").takeIf { it.isNotBlank() }
+    }
+
+    private fun pathMatchesTraining(path: String, trainingId: String): Boolean {
+        if (path.isBlank()) return false
+        return path.lowercase(Locale.ROOT).contains(trainingId.lowercase(Locale.ROOT))
+    }
+
+    private fun candidatePaths(original: String, trainingId: String): List<String> {
+        val p0 = original.trim().trimStart('/')
+        val out = mutableListOf<String>()
+        out += p0
+        if (p0.startsWith("DDSv2/", true)) out += p0.removePrefix("DDSv2/")
+        if (p0.startsWith("DDS/",   true)) out += p0.removePrefix("DDS/")
+        val idx = p0.indexOf(trainingId)
+        if (idx >= 0) out += p0.substring(idx)
+        return out.distinct()
+    }
+}

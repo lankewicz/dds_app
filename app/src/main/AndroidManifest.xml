@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Módulo: app/src/main/AndroidManifest.xml
+  Função: Define permissões, recursos e componentes principais do aplicativo DDS
+  Autor: Valdinei Lankewicz
+  Histórico:
+    - 26/06/2025: Travar app em modo paisagem (sensorLandscape)
+    - 26/06/2025: Limitar WRITE_EXTERNAL_STORAGE a API ≤ 28 e incluir READ_MEDIA_IMAGES (API 33+)
+-->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 📡 Rede (Firebase, sync, etc.) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 📷 Câmera -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Gravar Audio-->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
+    <!-- ✅ Declara uso de câmera (ajuste required conforme sua necessidade) -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="true" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DDS"
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="31">
+
+        <!-- 🚀 Activity principal: trava toda a UI em paisagem
+        android:label="@string/app_name" deleted from activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+
+            android:theme="@style/Theme.DDS"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 🛡️ FileProvider para compartilhar imagens com URIs seguras -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <receiver
+            android:name=".core.notifications.NotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.chicoeletro.dds.ACTION_STILL_DISPLACING" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

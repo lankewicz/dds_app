@@ -1,0 +1,550 @@
+<!--
+============================================================
+FILE: templates/session_form.html
+FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
+============================================================
+-->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <h2>{{ heading }}</h2>
+
+  <form id="sessionForm" method="post" action="{{ action_url }}" enctype="multipart/form-data">
+    {# ============================================================
+       Tipo de DDS (NOVO)
+       - default: online (para manter o fluxo atual do painel)
+       - aceita "normal" ou "online"
+       ============================================================ #}
+    <div class="row" style="gap:16px; margin-bottom:10px;">
+      <strong style="min-width:110px;">Tipo de DDS</strong>
+      {% set _dds_type = (form.ddsType|default('online')) %}
+      <label style="display:flex; align-items:center; gap:8px; margin:0;">
+        <input id="ddsTypeNormal" type="radio" name="ddsType" value="normal"
+               {% if _dds_type == 'normal' %}checked{% endif %}>
+        DDS Normal
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:0;">
+        <input id="ddsTypeOnline" type="radio" name="ddsType" value="online"
+               {% if _dds_type != 'normal' %}checked{% endif %}>
+        DDS On-line
+      </label>
+    </div>
+
+    <label>Data
+      <input id="dateField" name="date" type="date" required value="{{ form.date|default('') }}" />
+    </label>
+
+    {# ============================================================
+       Campos exclusivos ONLINE (NOVO)
+       - ficam ocultos/desabilitados no DDS Normal
+       ============================================================ #}
+      <label>Equipe (HOST TEAM)
+        <input
+          id="hostTeamField"
+          name="hostTeam"
+          type="text"
+          required
+          value="{{ form.hostTeam|default('') }}"
+          placeholder="TEAM1"
+        />
+      </label>
+
+    <div id="onlineFields">
+      <label>Hora
+        <input id="timeField" name="time" type="time" required value="{{ form.time|default('') }}" />
+      </label>
+
+      <label>Duração (min)
+        <input id="durationField" name="durationMin" type="number" min="1" required value="{{ form.durationMin|default(30) }}" />
+      </label>
+
+      <label>Host
+        <input id="hostField" name="host" type="text" required value="{{ form.host|default('') }}" placeholder="Ex: Valdinei / Supervisor" />
+      </label>
+    </div>
+
+    <label>Assunto
+      <input name="subject" type="text" required value="{{ form.subject|default('') }}" placeholder="DDS – ..." />
+    </label>
+
+
+    {% if show_status %}
+      <label>Status
+        <select name="status">
+          {% for s in ["scheduled","running","finished","canceled"] %}
+            <option value="{{ s }}" {% if form.status==s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+
+    <h3>Slides (JPG)</h3>
+    <div class="muted">
+      Você pode adicionar arquivos em várias etapas (inclusive de pastas diferentes).
+      A ordem de inclusão será usada como Slide1, Slide2, Slide3...
+    </div>
+
+    <!-- Picker visível (sem name) para permitir múltiplas seleções acumuladas -->
+    <input id="slidesPicker" type="file" multiple accept="image/jpeg,.jpg,.jpeg" />
+
+    <div class="row" style="margin-top:10px;">
+      <button class="btn" type="button" id="btnAddMore">Adicionar mais arquivos</button>
+      <button class="btn btn-danger" type="button" id="btnClearSlides">Limpar lista</button>
+    </div>
+
+    <ul id="slidesPreview" class="slides"></ul>
+
+    <!-- Input real enviado no POST (nome = slides) -->
+    <input id="slidesSubmit" name="slides" type="file" multiple accept="image/jpeg,.jpg,.jpeg" style="display:none;" />
+ 
+    <!-- Contagem de slides (para backend criar package com N slides) -->
+    <input id="slidesCount" name="slidesCount" type="hidden" value="1" />
+
+    <div class="row">
+      <button class="btn btn-primary" id="btnSubmit" type="submit">Salvar</button>
+      <a class="btn" id="btnBack" href="{{ url_for('admin.dashboard') }}">Voltar</a>
+    </div>
+  </form>
+</div>
+
+<!-- Overlay de envio -->
+<div id="uploadOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:9999;">
+  <div style="max-width:520px; margin:12vh auto; background:#fff; border-radius:14px; padding:18px 18px 16px; box-shadow:0 10px 30px rgba(0,0,0,.25);">
+    <div style="font-size:18px; font-weight:700; margin-bottom:6px;">Enviando arquivos…</div>
+    <div id="uploadStatusText" style="color:#334155; margin-bottom:12px;">Preparando…</div>
+    <div style="height:12px; background:#e5e7eb; border-radius:999px; overflow:hidden;">
+      <div id="uploadProgressBar" style="height:100%; width:0%; background:#2563eb;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-top:10px; color:#64748b; font-size:13px;">
+      <div id="uploadCounter">0/0</div>
+      <div id="uploadPct">0%</div>
+    </div>
+    <div style="margin-top:14px; color:#94a3b8; font-size:12px;">
+      Não feche esta página até finalizar.
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ============================================================
+  // FILE: templates/session_form.html
+  // FUNCTION: Toggle fields according to DDS type (normal/online).
+  // ============================================================
+  (function () {
+    const rbNormal = document.getElementById("ddsTypeNormal");
+    const rbOnline = document.getElementById("ddsTypeOnline");
+    const onlineBox = document.getElementById("onlineFields");
+    const hostTeamEl = document.getElementById("hostTeamField");
+    const timeEl = document.getElementById("timeField");
+    const durationEl = document.getElementById("durationField");
+    const hostEl = document.getElementById("hostField");
+
+    function setOnlineMode(isOnline) {
+      if (!onlineBox) return;
+
+      // Mostra/oculta bloco
+      onlineBox.style.display = isOnline ? "" : "none";
+
+      // Ajusta required + disabled para não "vazar" campos no DDS Normal
+      [hostTeamEl, timeEl, durationEl, hostEl].forEach((el) => {
+        if (!el) return;
+        el.required = !!isOnline;
+        el.disabled = !isOnline;
+        if (!isOnline) {
+          // Limpa para evitar envio inadvertido e manter consistência
+          el.value = "";
+        }
+      });
+    }
+
+    function refresh() {
+      const isOnline = rbOnline && rbOnline.checked;
+      setOnlineMode(!!isOnline);
+    }
+
+    if (rbNormal) rbNormal.addEventListener("change", refresh);
+    if (rbOnline) rbOnline.addEventListener("change", refresh);
+
+    // Inicializa conforme estado do servidor (form.ddsType)
+    refresh();
+  })();
+  </script>
+
+  <script>
+  // ============================================================
+  // FILE: templates/session_form.html
+  // FUNCTION: Force native calendar (date picker) to open on focus/click.
+  // ============================================================
+  (function () {
+    const dateEl = document.getElementById("dateField");
+    if (!dateEl) return;
+
+    function openPicker() {
+      // Chrome/Edge support this API
+      if (typeof dateEl.showPicker === "function") {
+        try { dateEl.showPicker(); } catch (e) { /* ignore */ }
+      }
+    }
+
+    // Open when user focuses or clicks the field
+    dateEl.addEventListener("focus", openPicker);
+    dateEl.addEventListener("click", openPicker);
+  })();
+</script>
+<script>
+  // ============================================================
+  // FILE: templates/session_form.html
+  // FUNCTION: Manage slides file picker with multiple selection
+  //          and preview list with remove option.
+  // ============================================================
+
+  (function () {
+    const picker = document.getElementById("slidesPicker");
+    const submitInput = document.getElementById("slidesSubmit");
+    const preview = document.getElementById("slidesPreview");
+    const btnAddMore = document.getElementById("btnAddMore");
+    const btnClear = document.getElementById("btnClearSlides");
+
+    const formEl = document.getElementById("sessionForm");
+    const slidesCountEl = document.getElementById("slidesCount");
+
+    if (!picker || !submitInput || !preview) return;
+
+    const MAX_SLIDES = 60;
+    const dt = new DataTransfer();
+
+    const LIMIT_BYTES = 32 * 1024 * 1024; // 32MB (limite de request do Cloud Run)
+ 
+    function fmtMB(bytes) {
+      return (bytes / (1024 * 1024)).toFixed(2);
+    }
+    
+
+    function renderPreview() {
+      preview.innerHTML = "";
+      const files = Array.from(dt.files);
+      let totalBytes = 0;
+
+      files.forEach((f, idx) => {
+        totalBytes += (f.size || 0);
+        const li = document.createElement("li");
+        li.className = "slide-row";
+
+        const left = document.createElement("div");
+        left.className = "slide-meta";
+
+        const title = document.createElement("div");
+        title.className = "slide-title";
+        title.textContent = `Slide ${idx + 1}`;
+
+        const sub = document.createElement("div");
+        sub.className = "slide-sub";
+        const mb = fmtMB(f.size || 0);
+        sub.textContent = `${f.name} • ${mb} MB`;        
+
+        left.appendChild(title);
+        left.appendChild(sub);
+
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "btn btn-danger";
+        rm.textContent = "Remover";
+        rm.addEventListener("click", () => {
+          const next = new DataTransfer();
+          files.forEach((ff, i) => { if (i !== idx) next.items.add(ff); });
+          // reset dt
+          while (dt.items.length) dt.items.remove(0);
+          Array.from(next.files).forEach(ff => dt.items.add(ff));
+          submitInput.files = dt.files;
+          renderPreview();
+        });
+
+        li.appendChild(left);
+        li.appendChild(rm);
+        preview.appendChild(li);
+      });
+ 
+      // Atualiza slidesCount (mínimo 1)
+      const count = Math.max(1, files.length || 0);
+      if (slidesCountEl) slidesCountEl.value = String(count);
+ 
+      // Balança (informativa)
+      const warn = totalBytes > LIMIT_BYTES;
+      const footer = document.createElement("li");
+      footer.style.marginTop = "10px";
+      footer.style.fontWeight = "bold";
+      footer.style.padding = "8px";
+      footer.style.borderRadius = "8px";
+      footer.style.background = warn ? "#fee2e2" : "#ecfdf5";
+      footer.style.color = warn ? "#991b1b" : "#065f46";
+      footer.textContent = `Total selecionado: ${fmtMB(totalBytes)} MB / 32.00 MB` + (warn ? " ⚠️ (request excederia o limite)" : "");
+      preview.appendChild(footer);
+    }
+
+    function addFiles(fileList) {
+      const incoming = Array.from(fileList || []);
+      for (const f of incoming) {
+        if (dt.files.length >= MAX_SLIDES) break;
+        dt.items.add(f);
+      }
+      submitInput.files = dt.files;
+      renderPreview();
+    }
+
+    picker.addEventListener("change", () => {
+      addFiles(picker.files);
+      // Permite selecionar novamente (até da mesma pasta) sem perder o acumulado
+      picker.value = "";
+    });
+
+    btnAddMore?.addEventListener("click", () => {
+      // garante que abrirá o diálogo mesmo se for a mesma seleção
+      picker.value = "";
+      picker.click();
+    });
+
+    btnClear?.addEventListener("click", () => {
+      while (dt.items.length) dt.items.remove(0);
+      submitInput.files = dt.files;
+      picker.value = "";
+      renderPreview();
+    });
+
+    renderPreview();
+  })();
+  </script>
+  <script>
+  (function () {
+    const formEl = document.getElementById("sessionForm");
+    const picker = document.getElementById("slidesPicker");
+    const submitInput = document.getElementById("slidesSubmit");
+    const slidesCountEl = document.getElementById("slidesCount");
+
+    const btnSubmit = document.getElementById("btnSubmit");
+    const btnBack = document.getElementById("btnBack");
+
+    const overlay = document.getElementById("uploadOverlay");
+    const statusText = document.getElementById("uploadStatusText");
+    const bar = document.getElementById("uploadProgressBar");
+    const counter = document.getElementById("uploadCounter");
+    const pctEl = document.getElementById("uploadPct");
+    if (!formEl || !picker || !submitInput) return;
+
+    let isSubmitting = false;
+  
+    // =========
+    // Helpers
+    // =========
+    function isImage(file) {
+      return (file.type || "").startsWith("image/");
+    }
+  
+
+    function setOverlay(visible) {
+      if (!overlay) return;
+      overlay.style.display = visible ? "block" : "none";
+    }
+
+    function setProgress(done, total, label, currentFileName) {
+      const t = Math.max(1, total || 1);
+      const d = Math.min(t, Math.max(0, done || 0));
+      const p = Math.round((d / t) * 100);
+      if (statusText && label) statusText.textContent = label;
+
+      if (counter) {
+        const suffix = currentFileName ? ` • ${currentFileName}` : "";
+        counter.textContent = `${d}/${t}${suffix}`;
+      }
+
+      if (pctEl) pctEl.textContent = `${p}%`;
+      if (bar) bar.style.width = `${p}%`;
+    }
+
+    function setBackDisabled(disabled) {
+      if (!btnBack) return;
+      if (disabled) {
+        btnBack.dataset.href = btnBack.getAttribute("href") || "";
+        btnBack.removeAttribute("href");
+        btnBack.style.pointerEvents = "none";
+        btnBack.style.opacity = "0.55";
+        btnBack.style.cursor = "not-allowed";
+       btnBack.title = "Aguarde o envio terminar.";
+      } else {
+        const href = btnBack.dataset.href || "";
+        if (href) btnBack.setAttribute("href", href);
+        btnBack.style.pointerEvents = "";
+        btnBack.style.opacity = "";
+        btnBack.style.cursor = "";
+        btnBack.title = "";
+      }
+    }
+
+    function onBeforeUnload(e) {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    }
+
+    async function downscaleTo1080p(file, { maxW = 1920, maxH = 1080, quality = 0.82 } = {}) {
+      // converte para JPEG 1080p (mantém proporção)
+      const bmp = await createImageBitmap(file);
+      const ratio = Math.min(maxW / bmp.width, maxH / bmp.height, 1);
+      const w = Math.round(bmp.width * ratio);
+      const h = Math.round(bmp.height * ratio);
+  
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.drawImage(bmp, 0, 0, w, h);
+  
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      const base = (file.name || "slide").replace(/\.\w+$/, "");
+      const newName = base + "_1080p.jpg";
+      return new File([blob], newName, { type: "image/jpeg" });
+    }
+  
+    async function putToSignedUrl(uploadUrl, file) {
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file
+      });
+      if (!res.ok) throw new Error(`Falha upload: ${file.name}`);
+    }
+  
+    // =========
+    // Submit intercept:
+    // - Se não tem arquivos: mantém POST tradicional.
+    // - Se tem arquivos: prepara sessão -> upload direto -> redirect.
+    // =========
+    formEl.addEventListener("submit", async (ev) => {
+      const files = Array.from(submitInput.files || []);
+      if (!files.length) return; // sem anexos: POST normal
+  
+      ev.preventDefault();
+
+      if (isSubmitting) return;
+      isSubmitting = true;
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = "Enviando...";
+      }
+      setOverlay(true);
+      setProgress(0, 1, "Preparando…","");
+      setBackDisabled(true);
+      window.addEventListener("beforeunload", onBeforeUnload);
+
+      try {
+        // 1) Otimiza imagens para 1080p (client-side)
+        const optimized = [];
+        const totalOpt = Math.max(1, files.length);
+        for (let i = 0; i < files.length; i++) {
+          const originalName = (files[i] && files[i].name) ? files[i].name : "";
+          setProgress(i, totalOpt, `Otimizando imagem ${i + 1} de ${totalOpt}…`, originalName);
+
+          const f = files[i];
+          if (isImage(f)) optimized.push(await downscaleTo1080p(f));
+          else optimized.push(f);
+        }
+  
+        // 2) Prepara sessão e recebe signed URLs
+        setProgress(0, 1, "Preparando sessão no servidor…","");
+        const ddsType =
+          (formEl.querySelector('input[name="ddsType"]:checked')?.value || "online").trim().toLowerCase();
+
+        const subject = ((formEl.querySelector('input[name="subject"]')?.value || "").trim()).toUpperCase();
+
+        // Payload base (sempre)
+        const payload = {
+          ddsType,
+          date: (formEl.querySelector('input[name="date"]')?.value || "").trim(),
+          subject,
+          includePlaceholder: true,
+          slidesCount: Math.max(0, optimized.length),  // somente uploads do usuário
+          slides: optimized.map(f => ({ name: f.name, type: f.type, size: f.size }))
+        };
+
+        // Campos exclusivos ONLINE
+        if (ddsType === "online") {
+          payload.hostTeam = (((formEl.querySelector('input[name="hostTeam"]')?.value || "").trim()).toUpperCase());
+          payload.time = (formEl.querySelector('input[name="time"]')?.value || "").trim();
+          payload.durationMin = (formEl.querySelector('input[name="durationMin"]')?.value || "30").trim();
+        }
+  
+        
+        const prepRes = await fetch("{{ url_for('admin.session_prepare_uploads') }}", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        // Resposta robusta: pode vir JSON ou HTML (ex.: redirect/login ou erro)
+        const ct = (prepRes.headers.get("content-type") || "").toLowerCase();
+        const rawText = await prepRes.text();
+
+        if (prepRes.status === 401) {
+          // backend devolve JSON com redirect (com o patch acima), mas se vier HTML ainda assim redireciona
+          try {
+            const j = JSON.parse(rawText);
+            window.location.href = j.redirect || "{{ url_for('admin.login') }}";
+          } catch {
+            window.location.href = "{{ url_for('admin.login') }}";
+          }
+          return;
+        }
+
+        let prep = null;
+        if (ct.includes("application/json")) {
+          prep = JSON.parse(rawText);
+        } else {
+          // HTML inesperado
+          throw new Error("Resposta não-JSON do servidor. Verifique autenticação/logs. Trecho: " + rawText.slice(0, 120));
+        }
+
+        if (!prepRes.ok || !prep.ok) throw new Error(prep.error || "Falha ao preparar sessão.");
+  
+        // 3) Upload direto para o GCS (Slide1..SlideN)
+        const urls = prep.slides || [];
+        const totalUp = Math.max(1, optimized.length);
+        for (let i = 0; i < optimized.length; i++) {
+          const item = urls[i];
+          if (!item?.uploadUrl) throw new Error("Signed URL ausente para um dos slides.");
+          const upName = (optimized[i] && optimized[i].name) ? optimized[i].name : "";
+          setProgress(i, totalUp, `Enviando Slide ${item.index})…`, upName);
+          await putToSignedUrl(item.uploadUrl, optimized[i]);
+        }
+        setProgress(totalUp, totalUp, "Finalizando…", "");
+  
+        // 4) Redireciona para edição da sessão (ou dashboard)
+        window.removeEventListener("beforeunload", onBeforeUnload);
+
+        const dashBase = "{{ url_for('admin.dashboard') }}";
+        const month = (payload.date || "").slice(0, 7); // YYYY-MM
+        const team = (payload.hostTeam || "").trim();
+
+        const qs = new URLSearchParams();
+        if (month) qs.set("month", month);
+        if (team) qs.set("team", team);
+
+        const dashUrl = qs.toString() ? `${dashBase}?${qs.toString()}` : dashBase;
+        window.location.href = dashUrl;
+      } catch (e) {
+        setOverlay(false);
+        isSubmitting = false;
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = "Salvar";
+        }
+        setBackDisabled(false);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+        alert("Erro ao enviar slides: " + (e?.message || e));
+      }
+    });
+  })();
+  </script>
+  {% endblock %}
