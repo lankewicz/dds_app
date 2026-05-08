@@ -458,15 +458,7 @@
             </div>
           </section>
 
-          <section class="modalSection formSection importSection">
-            <div class="modalSectionTitle">Importação de Produção BMG</div>
-            <div class="formGrid">
-              <div class="configSummary formFieldFull">
-                Acesse a ferramenta dedicada para importação da planilha mensal de produção.
-              </div>
-              <button class="buttonGhost formFieldFull" id="openImportModalBtn" type="button" style="justify-content: center; font-weight: 500;">Abrir Importador</button>
-            </div>
-          </section>
+
         </form>
       </div>
 
@@ -480,82 +472,7 @@
     </section>
   </div>
 
-  <div class="modalShell" id="importModal" hidden>
-    <div class="modalBackdrop" id="importModalBackdrop"></div>
-    <section class="modalDialog importDialog" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
-      <header class="modalHeader">
-        <div class="modalTitleWrap">
-          <div class="modalVehicle">📊</div>
-          <div class="modalTitles">
-            <div class="modalTitle" id="importModalTitle">Importação de Produção BMG</div>
-            <div class="modalSubtitle">Envie a planilha-base recebida para atualizar o histórico</div>
-          </div>
-        </div>
-        <button class="modalClose" id="importModalClose" type="button" aria-label="Fechar">×</button>
-      </header>
 
-      <div class="modalBody">
-        <div class="formNotice" id="importNotice" hidden></div>
-
-        <form id="importForm" class="teamForm">
-          <section class="modalSection formSection">
-            <div class="formGrid">
-              <label class="formField formFieldFull">
-                <span class="formLabel">Arquivo Excel</span>
-                <input id="importFileInput" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" />
-                <small class="formHint">O arquivo será enviado para análise automaticamente ao ser selecionado.</small>
-              </label>
-
-              <div class="configSummary formFieldFull importDetectedSummary" id="importDetectedSummary">
-                Nenhum arquivo selecionado ainda.
-              </div>
-
-              <label class="formField">
-                <span class="formLabel">Mês da competência</span>
-                <select id="importMonthSelect">
-                  <option value="">Selecione</option>
-                  <option value="1">Janeiro</option>
-                  <option value="2">Fevereiro</option>
-                  <option value="3">Março</option>
-                  <option value="4">Abril</option>
-                  <option value="5">Maio</option>
-                  <option value="6">Junho</option>
-                  <option value="7">Julho</option>
-                  <option value="8">Agosto</option>
-                  <option value="9">Setembro</option>
-                  <option value="10">Outubro</option>
-                  <option value="11">Novembro</option>
-                  <option value="12">Dezembro</option>
-                </select>
-              </label>
-
-              <label class="formField">
-                <span class="formLabel">Ano da competência</span>
-                <input id="importYearInput" type="number" min="2020" max="2100" step="1" placeholder="2026" />
-              </label>
-
-              <div class="configSummary formFieldFull importCompetenciaWarning" id="importCompetenciaWarning" hidden></div>
-
-              <div class="importSummaryGrid formFieldFull" id="importSummaryGrid" hidden></div>
-              <div class="importIssuesList formFieldFull" id="importIssuesList" hidden></div>
-
-              <div class="configSummary formFieldFull importLastJob" id="importLastJob">
-                Nenhuma importação registrada ainda.
-              </div>
-            </div>
-          </section>
-        </form>
-      </div>
-
-      <footer class="modalFooter">
-        <div class="modalFooterMeta" id="importModalMeta">Aguardando arquivo...</div>
-        <div class="modalActions">
-          <button class="buttonGhost" id="importModalCancel" type="button">Cancelar</button>
-          <button class="buttonPrimary" id="importExecuteBtn" type="button" disabled>Importar produção</button>
-        </div>
-      </footer>
-    </section>
-  </div>
 
   <div class="appFooter">
     <span class="appVersion">v{{ app_version }}</span>

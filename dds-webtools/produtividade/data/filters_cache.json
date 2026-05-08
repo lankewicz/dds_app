@@ -1,0 +1,585 @@
+{
+    "regioes": [
+        "CEL",
+        "FBL",
+        "FOZ",
+        "LJS",
+        "PGO",
+        "PTO"
+    ],
+    "cidades": [
+        "ALTO AMPARO",
+        "ALTÔNIA",
+        "ASSIS CHAUTEBRIAND",
+        "BITURUNA",
+        "BOA VISTA DA APARECIDA",
+        "CANDOI",
+        "CAPITÃO LEONIDAS MARQUES",
+        "CASCAVEL",
+        "CHOPINZINHO",
+        "CIDADE GAUCHA",
+        "CLEVELANDIA",
+        "CORBÉLIA",
+        "CORONEL VIVIDA",
+        "DOIS VIZINHOS",
+        "ENEAS MARQUES",
+        "FERNANDES PINHEIRO - ANGAÍ",
+        "FOZ DO IGUAÇU",
+        "FRANCISCO BELTRÃO",
+        "GUARANIAÇU",
+        "HONORIO SERPA",
+        "IBEMA",
+        "IMBITUVA",
+        "INÁCIO MARTINS",
+        "IRATI",
+        "ITAIPULÂNDIA",
+        "ITAPEJARA DO OESTE",
+        "LARANJAL",
+        "LARANJEIRAS DO SUL",
+        "MALLET",
+        "MANGUEIRINHA",
+        "MARECHAL CANDIDO RONDON",
+        "MARECHAL CÂNDIDO RONDON",
+        "MARMELEIRO",
+        "MARQUINHOS",
+        "MEDIANEIRA",
+        "NOVA PRATA DO IGUAÇU",
+        "PALMAS",
+        "PALMITAL",
+        "PALOTINA",
+        "PARAÍSO DO NORTE",
+        "PATO BRANCO",
+        "PIRAÍ DO SUL",
+        "PITANGA",
+        "PONTA GROSSA",
+        "PRUDENTÓPOLIS",
+        "PÉROLA",
+        "PÉROLA DO OESTE",
+        "QUEDAS DO IGUAÇU",
+        "REALEZA",
+        "RESERVA DO IGUAÇU",
+        "RIO BONITO DO IGUAÇU",
+        "SANTA HELENA",
+        "SANTO ANTONIO DO SUDOESTE",
+        "SÃO JOÃO",
+        "SÃO MIGUEL DO IGUAÇU",
+        "TELEMACO BORBA",
+        "TIBAGI",
+        "TOLEDO",
+        "TRES BARRAS DO PARANÁ",
+        "TURVO",
+        "UMUARAMA",
+        "UNIÃO DA VITORIA",
+        "UNIÃO DA VITÓRIA",
+        "VERÊ"
+    ],
+    "agencias": [
+        "BSCCEL",
+        "BSCFBL",
+        "BSCFOZ",
+        "BSCGVA",
+        "BSCIRT",
+        "BSCLJS",
+        "BSCMCR",
+        "BSCMED",
+        "BSCPGO",
+        "BSCPTO",
+        "BSCRZA",
+        "BSCTDO",
+        "BSCTEL",
+        "BSCUVI"
+    ],
+    "contratos": [
+        "4600017026",
+        "4600017057",
+        "4600019981",
+        "4600025149",
+        "4600026988"
+    ],
+    "equipes": [
+        {
+            "id": "C30229",
+            "nome": "C30229"
+        },
+        {
+            "id": "E2146",
+            "nome": "E2146"
+        },
+        {
+            "id": "E2148",
+            "nome": "E2148"
+        },
+        {
+            "id": "E2151",
+            "nome": "E2151"
+        },
+        {
+            "id": "E2169",
+            "nome": "E2169"
+        },
+        {
+            "id": "E2176",
+            "nome": "E2176"
+        },
+        {
+            "id": "E2187",
+            "nome": "E2187"
+        },
+        {
+            "id": "E2265",
+            "nome": "E2265"
+        },
+        {
+            "id": "E2269",
+            "nome": "E2269"
+        },
+        {
+            "id": "E2270",
+            "nome": "E2270"
+        },
+        {
+            "id": "E2276",
+            "nome": "E2276"
+        },
+        {
+            "id": "E2277",
+            "nome": "E2277"
+        },
+        {
+            "id": "E2351",
+            "nome": "E2351"
+        },
+        {
+            "id": "E3107",
+            "nome": "E3107"
+        },
+        {
+            "id": "E3188",
+            "nome": "E3188"
+        },
+        {
+            "id": "E3340",
+            "nome": "E3340"
+        },
+        {
+            "id": "E3373",
+            "nome": "E3373"
+        },
+        {
+            "id": "E3380",
+            "nome": "E3380"
+        },
+        {
+            "id": "E3382",
+            "nome": "E3382"
+        },
+        {
+            "id": "E3389",
+            "nome": "E3389"
+        },
+        {
+            "id": "E3390",
+            "nome": "E3390"
+        },
+        {
+            "id": "E3474",
+            "nome": "E3474"
+        },
+        {
+            "id": "E3530",
+            "nome": "E3530"
+        },
+        {
+            "id": "E3539",
+            "nome": "E3539"
+        },
+        {
+            "id": "E3547",
+            "nome": "E3547"
+        },
+        {
+            "id": "E3548",
+            "nome": "E3548"
+        },
+        {
+            "id": "E3549",
+            "nome": "E3549"
+        },
+        {
+            "id": "E3550",
+            "nome": "E3550"
+        },
+        {
+            "id": "E3551",
+            "nome": "E3551"
+        },
+        {
+            "id": "E3552",
+            "nome": "E3552"
+        },
+        {
+            "id": "E3693",
+            "nome": "E3693"
+        },
+        {
+            "id": "E3695",
+            "nome": "E3695"
+        },
+        {
+            "id": "E3733",
+            "nome": "E3733"
+        },
+        {
+            "id": "E3734",
+            "nome": "E3734"
+        },
+        {
+            "id": "E3928",
+            "nome": "E3928"
+        },
+        {
+            "id": "E3929",
+            "nome": "E3929"
+        },
+        {
+            "id": "E3930",
+            "nome": "E3930"
+        },
+        {
+            "id": "E3939",
+            "nome": "E3939"
+        },
+        {
+            "id": "E3B17",
+            "nome": "E3B17"
+        },
+        {
+            "id": "E3B32",
+            "nome": "E3B32"
+        },
+        {
+            "id": "E3B39",
+            "nome": "E3B39"
+        },
+        {
+            "id": "E3B92",
+            "nome": "E3B92"
+        },
+        {
+            "id": "E3C02",
+            "nome": "E3C02"
+        },
+        {
+            "id": "E3C03",
+            "nome": "E3C03"
+        },
+        {
+            "id": "E3C04",
+            "nome": "E3C04"
+        },
+        {
+            "id": "E3C05",
+            "nome": "E3C05"
+        },
+        {
+            "id": "E3D31",
+            "nome": "E3D31"
+        },
+        {
+            "id": "E3F29",
+            "nome": "E3F29"
+        },
+        {
+            "id": "E3F37",
+            "nome": "E3F37"
+        },
+        {
+            "id": "E3F39",
+            "nome": "E3F39"
+        },
+        {
+            "id": "E3F40",
+            "nome": "E3F40"
+        },
+        {
+            "id": "E3F41",
+            "nome": "E3F41"
+        },
+        {
+            "id": "E3F42",
+            "nome": "E3F42"
+        },
+        {
+            "id": "E3F43",
+            "nome": "E3F43"
+        },
+        {
+            "id": "E3G63",
+            "nome": "E3G63"
+        },
+        {
+            "id": "E3G64",
+            "nome": "E3G64"
+        },
+        {
+            "id": "E3G65",
+            "nome": "E3G65"
+        },
+        {
+            "id": "E3G66",
+            "nome": "E3G66"
+        },
+        {
+            "id": "E3G67",
+            "nome": "E3G67"
+        },
+        {
+            "id": "E3I96",
+            "nome": "E3I96"
+        },
+        {
+            "id": "E3J85",
+            "nome": "E3J85"
+        },
+        {
+            "id": "E3K59",
+            "nome": "E3K59"
+        },
+        {
+            "id": "E3K60",
+            "nome": "E3K60"
+        },
+        {
+            "id": "E3K61",
+            "nome": "E3K61"
+        },
+        {
+            "id": "E3K62",
+            "nome": "E3K62"
+        },
+        {
+            "id": "E3K81",
+            "nome": "E3K81"
+        },
+        {
+            "id": "E3K91",
+            "nome": "E3K91"
+        },
+        {
+            "id": "E3K92",
+            "nome": "E3K92"
+        },
+        {
+            "id": "E3L00",
+            "nome": "E3L00"
+        },
+        {
+            "id": "E3P01",
+            "nome": "E3P01"
+        },
+        {
+            "id": "E3P03",
+            "nome": "E3P03"
+        },
+        {
+            "id": "E3P08",
+            "nome": "E3P08"
+        },
+        {
+            "id": "E3P14",
+            "nome": "E3P14"
+        },
+        {
+            "id": "E3P20",
+            "nome": "E3P20"
+        },
+        {
+            "id": "E3P21",
+            "nome": "E3P21"
+        },
+        {
+            "id": "E3P28",
+            "nome": "E3P28"
+        },
+        {
+            "id": "E3P29",
+            "nome": "E3P29"
+        },
+        {
+            "id": "E3P31",
+            "nome": "E3P31"
+        },
+        {
+            "id": "E3Q73",
+            "nome": "E3Q73"
+        },
+        {
+            "id": "E3S03",
+            "nome": "E3S03"
+        },
+        {
+            "id": "E3S04",
+            "nome": "E3S04"
+        },
+        {
+            "id": "E3S06",
+            "nome": "E3S06"
+        },
+        {
+            "id": "E3T05",
+            "nome": "E3T05"
+        },
+        {
+            "id": "E3T06",
+            "nome": "E3T06"
+        },
+        {
+            "id": "E3T99",
+            "nome": "E3T99"
+        },
+        {
+            "id": "E3U00",
+            "nome": "E3U00"
+        },
+        {
+            "id": "E3U76",
+            "nome": "E3U76"
+        },
+        {
+            "id": "E3U79",
+            "nome": "E3U79"
+        },
+        {
+            "id": "E3U86",
+            "nome": "E3U86"
+        },
+        {
+            "id": "E3U90",
+            "nome": "E3U90"
+        },
+        {
+            "id": "E3V00",
+            "nome": "E3V00"
+        },
+        {
+            "id": "E3V12",
+            "nome": "E3V12"
+        },
+        {
+            "id": "E3V28",
+            "nome": "E3V28"
+        },
+        {
+            "id": "E3V35",
+            "nome": "E3V35"
+        },
+        {
+            "id": "E3V36",
+            "nome": "E3V36"
+        },
+        {
+            "id": "E3V55",
+            "nome": "E3V55"
+        },
+        {
+            "id": "E3V56",
+            "nome": "E3V56"
+        },
+        {
+            "id": "E3V57",
+            "nome": "E3V57"
+        },
+        {
+            "id": "E3V58",
+            "nome": "E3V58"
+        },
+        {
+            "id": "E3V65",
+            "nome": "E3V65"
+        },
+        {
+            "id": "E3V66",
+            "nome": "E3V66"
+        },
+        {
+            "id": "E3V68",
+            "nome": "E3V68"
+        },
+        {
+            "id": "E3V75",
+            "nome": "E3V75"
+        },
+        {
+            "id": "E3V77",
+            "nome": "E3V77"
+        },
+        {
+            "id": "E3W00",
+            "nome": "E3W00"
+        },
+        {
+            "id": "E3W28",
+            "nome": "E3W28"
+        },
+        {
+            "id": "E3X12",
+            "nome": "E3X12"
+        },
+        {
+            "id": "E3X32",
+            "nome": "E3X32"
+        },
+        {
+            "id": "E3X38",
+            "nome": "E3X38"
+        },
+        {
+            "id": "E3X82",
+            "nome": "E3X82"
+        },
+        {
+            "id": "E3X83",
+            "nome": "E3X83"
+        },
+        {
+            "id": "E3X86",
+            "nome": "E3X86"
+        },
+        {
+            "id": "E3X87",
+            "nome": "E3X87"
+        },
+        {
+            "id": "E3X88",
+            "nome": "E3X88"
+        },
+        {
+            "id": "E3X89",
+            "nome": "E3X89"
+        },
+        {
+            "id": "E3X90",
+            "nome": "E3X90"
+        },
+        {
+            "id": "E3X91",
+            "nome": "E3X91"
+        },
+        {
+            "id": "E3X92",
+            "nome": "E3X92"
+        },
+        {
+            "id": "E3X93",
+            "nome": "E3X93"
+        },
+        {
+            "id": "T30016",
+            "nome": "T30016"
+        },
+        {
+            "id": "V36117",
+            "nome": "V36117"
+        }
+    ]
+}

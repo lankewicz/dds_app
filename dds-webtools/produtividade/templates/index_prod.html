@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            background: white;
+            padding: 0.25rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .competencia-badge {
+            background: #dbeafe;
+            color: var(--primary);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .container {
+            max-width: 98%;
+            margin: 0.25rem auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            border: 1px solid #f1f5f9;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .stat-value.success { color: var(--success); }
+
+        .ranking-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        .ranking-section h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 2px solid #f1f5f9;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.9375rem;
+        }
+
+        .team-badge {
+            background: #f1f5f9;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .back-btn {
+            text-decoration: none;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            transition: color 0.2s;
+        }
+
+        .back-btn:hover {
+            color: var(--primary);
+        }
+
+        .filter-bar {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-right: 1.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.65rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .filter-group select {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.75rem;
+            color: var(--text-main);
+            background: #f8fafc;
+            height: 28px;
+            min-width: 120px;
+        }
+
+        .btn-filter {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            height: 38px;
+        }
+
+        .btn-filter:hover {
+            background: var(--primary-dark);
+        }
+        .btn-clear {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .btn-clear:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-color);
+        }
+
+        /* Scoreboard Panel (Details Bar) */
+        .details-scoreboard {
+            background: #1e1e2e;
+            margin: 0.5rem 35px 0.5rem 35px; /* Alinhado com a margem do filtro */
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            color: #e0e0e0;
+            border: 1px solid rgba(255,255,255,0.05);
+            min-height: 50px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        .scoreboard-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .scoreboard-label {
+            font-size: 0.6rem;
+            font-weight: 700;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .scoreboard-value {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        .scoreboard-value.highlight {
+            color: #4ade80;
+            font-weight: 800;
+            font-size: 1rem;
+        }
+        .scoreboard-placeholder {
+            color: #64748b;
+            font-size: 0.8rem;
+            font-style: italic;
+            width: 100%;
+            text-align: center;
+        }
+        .tooltip-header {
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 0.6rem;
+            margin-bottom: 0.8rem;
+            font-weight: 700;
+            font-size: 1rem;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .tooltip-row {
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tooltip-label {
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        .tooltip-value {
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+        /* Truck Icon Styles */
+        .truck-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+        .truck-svg {
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));
+        }
+        .tooltip-members {
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            background: rgba(0,0,0,0.3);
+            padding: 0.6rem;
+            border-radius: 6px;
+            margin-top: 0.6rem;
+            line-height: 1.4;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        /* Sticky Table Styles */
+        .matrix-container {
+            max-height: calc(100vh - 200px); /* Ajustado para o novo placar */
+            overflow: auto;
+            position: relative;
+        }
+        .matrix-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #f8fafc;
+            box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+        }
+        .matrix-table tbody td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 15;
+            background: white;
+            box-shadow: 2px 0 2px -1px rgba(0,0,0,0.1);
+        }
+        .matrix-table thead th:first-child {
+            position: sticky;
+            left: 0;
+            top: 0;
+            z-index: 30;
+            background: #f1f5f9;
+        }
+
+        /* Filter Toggle */
+        .filter-section {
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        .filter-section.collapsed {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            margin-bottom: 0;
+            opacity: 0;
+        }
+        .toggle-filters-btn {
+            background: var(--primary-color);
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            position: absolute;
+            left: 5px;
+            top: 35px;
+            z-index: 110;
+        }
+        .toggle-filters-btn:hover {
+            transform: scale(1.1);
+            filter: brightness(1.2);
+        }
+        .filter-section.card {
+            padding: 0.25rem 0.75rem !important;
+            margin-left: 35px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+        }
+        /* Modal Styles */
+        .modal-shell {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+        }
+        .modal-dialog {
+            position: relative;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title-wrap {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .modal-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .modal-body {
+            padding: 1.5rem;
+        }
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .file-input {
+            width: 100%;
+            padding: 0.75rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            color: var(--text-color);
+        }
+        
+        .btn-import {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-import:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+        
+        .detected-summary {
+            padding: 1rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .issues-list {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(255, 193, 7, 0.1);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            color: #ffc107;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .last-job {
+            margin-top: 1.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+            padding-top: 1rem;
+        }
+
+        .rank-badge {
+            font-size: 1.2rem;
+            display: block;
+            margin-bottom: 0.2rem;
+        }
+        .avg-badge {
+            background: rgba(var(--primary-rgb), 0.1);
+            color: var(--primary-color);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.6rem;
+            font-weight: 800;
+            margin-top: 4px;
+            display: inline-block;
+        }
+        .medal-cell {
+            position: relative;
+        }
+        .medal-icon {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div style="display: flex; align-items: center; gap: 1.5rem;">
+            <a href="/" class="back-btn">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Início
+            </a>
+            <h1>{{ page_title }}</h1>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button id="openImportModalBtn" class="btn-import">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+                </svg>
+                Importar Produção
+            </button>
+            <div class="competencia-badge">
+                Ano Base: {{ selected_ano }}
+            </div>
+        </div>
+    </header>
+
+    <div class="container" style="position: relative; margin-top: 1rem;">
+        <button class="toggle-filters-btn" onclick="toggleFilters()" title="Alternar Filtros">
+            <svg id="toggleIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M4 6h16M4 12h16M4 18h7"></path>
+            </svg>
+        </button>
+
+        <form id="filterForm" method="GET" action="/produtividade" class="filter-section card" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; padding: 0.5rem 1rem; margin-top: 0;">
+            <div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; margin-right: 1rem; align-self: center;">FILTROS:</div>
+            <div class="filter-group">
+                <label>Ano Base</label>
+                <select name="ano" onchange="this.form.submit()">
+                    <option value="2024" {% if selected_ano == 2024 %}selected{% endif %}>2024</option>
+                    <option value="2025" {% if selected_ano == 2025 %}selected{% endif %}>2025</option>
+                    <option value="2026" {% if selected_ano == 2026 %}selected{% endif %}>2026</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Agência</label>
+                <select name="agencia" onchange="this.form.submit()">
+                    <option value="">Todas as Agências</option>
+                    {% for age in filters.agencias %}
+                    <option value="{{ age }}" {% if selected_agencia == age %}selected{% endif %}>{{ age }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Cidade</label>
+                <select name="cidade" onchange="this.form.submit()">
+                    <option value="">Todas as Cidades</option>
+                    {% for cid in filters.cidades %}
+                    <option value="{{ cid }}" {% if selected_cidade == cid %}selected{% endif %}>{{ cid }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Contrato</label>
+                <select name="contrato" onchange="this.form.submit()">
+                    <option value="">Todos os Contratos</option>
+                    {% for con in filters.contratos %}
+                    <option value="{{ con }}" {% if selected_contrato == con %}selected{% endif %}>{{ con }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group" style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                <a href="/produtividade" class="btn-clear" title="Limpar todos os filtros" style="height: 42px; display: flex; align-items: center; justify-content: center; width: 42px; border: 1px solid var(--border-color); border-radius: 8px;">✕</a>
+            </div>
+        </form>
+
+        <!-- Detalhes fixos (Placar) -->
+        <div id="detailsScoreboard" class="details-scoreboard">
+            <div id="scoreboardEmpty" class="scoreboard-placeholder">
+                Passe o mouse sobre um valor na tabela para ver os detalhes da equipe aqui...
+            </div>
+            <div id="scoreboardContent" style="display: none; width: 100%; justify-content: space-between; align-items: center;">
+                <div style="display: flex; gap: 2rem; align-items: center;">
+                    <div class="scoreboard-item">
+                        <span class="scoreboard-label">Equipe</span>
+                        <span class="scoreboard-value" id="sb-name">-</span>
+                    </div>
+                    <div class="scoreboard-item">
+                        <span class="scoreboard-label">Mês/Ref</span>
+                        <span class="scoreboard-value" id="sb-month">-</span>
+                    </div>
+                    <div class="scoreboard-item">
+                        <span class="scoreboard-label">Placa</span>
+                        <span class="scoreboard-value" id="sb-plate">-</span>
+                    </div>
+                    <div class="scoreboard-item">
+                        <span class="scoreboard-label">Agência</span>
+                        <span class="scoreboard-value" id="sb-agency">-</span>
+                    </div>
+                    <div class="scoreboard-item">
+                        <span class="scoreboard-label" style="display: block; margin-bottom: 2px;">Membros</span>
+                        <span class="scoreboard-value" id="sb-members" style="max-width: 400px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; color: #cbd5e1;">-</span>
+                    </div>
+                </div>
+                <div class="scoreboard-item" style="text-align: right;">
+                    <span class="scoreboard-label">Produção Total</span>
+                    <span class="scoreboard-value highlight"><span id="sb-value">0,00</span> US</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="content">
+        <div class="matrix-container" style="background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); overflow: hidden; border: 1px solid #e2e8f0;">
+            <div style="overflow-x: auto;">
+<table class="matrix-table" style="width: 100%; border-collapse: collapse; min-width: 800px;">
+                    <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                        <tr>
+                            <th style="padding: 1rem; text-align: left; position: sticky; left: 0; background: #f8fafc; z-index: 10; border-right: 2px solid #e2e8f0;">Mês/Ano</th>
+                            {% for team in data.teams %}
+                            {% set overall_rank = loop.index %}
+                            <th style="padding: 0.5rem; text-align: center; min-width: 130px; border-right: 1px solid #e2e8f0; background: white; position: relative; padding-top: 1.2rem;">
+                                {% set target_us = (team.goal.targetUs if team.goal and team.goal.targetUs else 859) %}
+                                {% set is_cesto = target_us == 811 or "(CESTO)" in (team.displayName or "")|upper or team.teamKey in ['E3K91', 'E3K81'] %}
+                                
+                                {% if is_cesto %}
+                                <div class="truck-icon" style="position: absolute; top: 5px; left: 5px;" title="Equipe STC CESTO">
+                                    <svg class="truck-svg" viewBox="0 0 64 64" width="33" height="33">
+                                        <rect x="10" y="38" width="38" height="7" rx="1" fill="#475569" />
+                                        <path d="M35 30 L50 34 L50 40 L35 40 Z" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+                                        <rect x="34" y="32" width="9" height="9" rx="1" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5" />
+                                        <path d="M18 38 L25 18 L42 14" fill="none" stroke="#64748b" stroke-width="3" stroke-linecap="round" />
+                                        <rect x="6" y="20" width="12" height="14" rx="2" fill="#f97316" stroke="#ea580c" stroke-width="1.5" />
+                                        <circle cx="20" cy="45" r="4" fill="#1e293b" />
+                                        <circle cx="43" cy="45" r="4" fill="#1e293b" />
+                                    </svg>
+                                </div>
+                                {% endif %}
+
+                                <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        {% if overall_rank <= 3 %}
+                                            <span style="font-size: 1.3rem; margin-top: -6px;" title="{{ overall_rank }}º Lugar Geral">
+                                                {% if overall_rank == 1 %}🥇{% elif overall_rank == 2 %}🥈{% else %}🥉{% endif %}
+                                            </span>
+                                        {% endif %}
+                                        <div class="team-badge" style="font-size: 1.1rem; font-weight: 800; padding: 2px 10px;">{{ team.teamKey }}</div>
+                                    </div>
+                                    
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 700; line-height: 1.1; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ team.displayName }}">
+                                        {{ team.cityBase }}
+                                    </div>
+                                </div>
+                            </th>
+                            {% endfor %}
+                            <th style="padding: 1rem; text-align: right; font-weight: 700; background: #f1f5f9; position: sticky; right: 0; z-index: 5; border-left: 2px solid #e2e8f0; font-size: 0.8rem;">TOTAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set month_names = {
+                            '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
+                            '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
+                            '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+                        } %}
+                        {% for month in data.months %}
+                        <tr>
+                            {% set m_num = month.split('_')[1] if '_' in month else '00' %}
+                            <td style="padding: 1rem; font-weight: 600; color: var(--text-main); border-right: 2px solid #e2e8f0;">
+                                {{ month_names.get(m_num, month) }}
+                            </td>
+                            
+                            {% set row_total = namespace(value=0) %}
+                            {% for team in data.teams %}
+                                {% set cell = data.matrix[month][team.teamKey] %}
+                                {% set val = cell.val if cell and cell is mapping else (cell if cell is number else 0) %}
+                                {% set row_total.value = row_total.value + val %}
+                                <td class="team-cell medal-cell" 
+                                    onmouseenter="showTooltip(this)" 
+                                    onmouseleave="hideTooltip()"
+                                    data-name="{% if cell is mapping %}{{ cell.displayName or team.teamKey }}{% else %}{{ team.teamKey }}{% endif %}"
+                                    data-month="{{ month_names.get(m_num, month) }}"
+                                    data-plate="{% if cell is mapping %}{{ cell.plate or '-' }}{% else %}-{% endif %}"
+                                    data-contract="{% if cell is mapping %}{{ cell.contract or '-' }}{% else %}-{% endif %}"
+                                    data-agency="{% if cell is mapping %}{{ cell.agency or '-' }}{% else %}-{% endif %}"
+                                    data-members="{% if cell is mapping and cell.members %}{{ cell.members|join(', ') }}{% else %}Nenhum membro listado{% endif %}"
+                                    data-value="{{ val | format_number }}"
+                                    style="padding: 0.75rem 1rem; text-align: center; border-right: 1px solid #f1f5f9; color: {% if val > 0 %}#1e293b{% else %}#cbd5e1{% endif %}; font-size: 0.85rem; cursor: help;">
+                                    {% set ranking = data.rankings[month] %}
+                                    {% if ranking %}
+                                        {% if ranking.gold == team.teamKey %}<span class="medal-icon">🥇</span>
+                                        {% elif ranking.silver == team.teamKey %}<span class="medal-icon">🥈</span>
+                                        {% elif ranking.bronze == team.teamKey %}<span class="medal-icon">🥉</span>{% endif %}
+                                    {% endif %}
+                                    {{ val | format_number if val > 0 else '-' }}
+                                </td>
+                            {% endfor %}
+                            
+                             <td style="padding: 1rem; text-align: right; font-weight: 700; color: var(--primary-color); background: #f8fafc; position: sticky; right: 0; z-index: 5; border-left: 2px solid #e2e8f0; font-size: 0.9rem;">
+                                {{ row_total.value | format_number }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="border-top: 2px solid #cbd5e1; font-weight: 700;">
+                        <!-- Linha de TOTAL -->
+                        <tr style="background: #f8fafc;">
+                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569; position: sticky; left: 0; z-index: 10; background: #f8fafc;">TOTAL ACUMULADO</td>
+                            {% set grand_total = namespace(value=0) %}
+                            {% for team in data.teams %}
+                                {% set grand_total.value = grand_total.value + team.total_sum %}
+                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #e2e8f0; color: var(--text-main); font-size: 0.9rem;">
+                                    {{ team.total_sum | format_number }}
+                                </td>
+                            {% endfor %}
+                            <td style="padding: 0.8rem 1rem; text-align: right; background: #f1f5f9; position: sticky; right: 0; border-left: 2px solid #cbd5e1; color: var(--primary); font-size: 1rem; z-index: 5;">
+                                {{ grand_total.value | format_number }}
+                            </td>
+                        </tr>
+                        <!-- Linha de MÉDIA -->
+                        <tr style="background: #ffffff;">
+                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569; position: sticky; left: 0; z-index: 10; background: #ffffff;">MÉDIA MENSAL</td>
+                            {% set grand_avg_sum = namespace(value=0) %}
+                            {% for team in data.teams %}
+                                {% set target = (team.goal.targetUs if team.goal and team.goal.targetUs else 859) %}
+                                {% set is_above = team.average >= target %}
+                                {% set grand_avg_sum.value = grand_avg_sum.value + team.average %}
+                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #e2e8f0;">
+                                    <span style="color: {% if is_above %}#10b981{% else %}#ef4444{% endif %}; background: {% if is_above %}#ecfdf5{% else %}#fef2f2{% endif %}; padding: 2px 8px; border-radius: 6px; border: 1px solid {% if is_above %}#a7f3d0{% else %}#fecaca{% endif %}; font-size: 0.85rem;">
+                                        {{ team.average | format_number }}
+                                    </span>
+                                </td>
+                            {% endfor %}
+                            <td style="padding: 0.8rem 1rem; text-align: right; background: #f8fafc; position: sticky; right: 0; border-left: 2px solid #cbd5e1; color: #64748b; font-size: 0.85rem; z-index: 5;">
+                                Ø {{ (grand_avg_sum.value / data.teams|length) | format_number if data.teams|length > 0 else '0' }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            
+            {% if not data.months %}
+            <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">🔎</div>
+                Nenhum dado encontrado para os filtros selecionados.
+            </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-top: 1.5rem; color: var(--text-muted); font-size: 0.75rem; display: flex; gap: 2rem;">
+            <span>💡 <b>Dica:</b> Use o scroll horizontal para ver todas as equipes.</span>
+            <span>📍 <b>Legenda:</b> Valores representam o Total de US produzido no mês.</span>
+        </div>
+    </main>
+
+    <!-- Modal de Importação -->
+    <div class="modal-shell" id="importModal" hidden>
+        <div class="modal-backdrop" id="importModalBackdrop"></div>
+        <div class="modal-dialog">
+            <header class="modal-header">
+                <div class="modal-title-wrap">
+                    <span style="font-size: 1.5rem;">📊</span>
+                    <div>
+                        <div class="modal-title" id="importModalTitle">Importação de Produção BMG</div>
+                        <div class="modal-subtitle">Envie a planilha-base mensal para atualizar o histórico</div>
+                    </div>
+                </div>
+                <button class="modal-close" id="importModalClose">×</button>
+            </header>
+
+            <div class="modal-body">
+                <div class="form-notice" id="importNotice" hidden></div>
+                <form id="importForm">
+                    <div class="form-group">
+                        <label>Arquivo Excel</label>
+                        <input id="importFileInput" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" class="file-input" />
+                        <small>O arquivo será analisado automaticamente ao ser selecionado.</small>
+                    </div>
+
+                    <div class="detected-summary" id="importDetectedSummary">
+                        Nenhum arquivo selecionado.
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                        <div class="form-group">
+                            <label>Mês da competência</label>
+                            <select id="importMonthSelect">
+                                <option value="">Selecione</option>
+                                <option value="1">Janeiro</option>
+                                <option value="2">Fevereiro</option>
+                                <option value="3">Março</option>
+                                <option value="4">Abril</option>
+                                <option value="5">Maio</option>
+                                <option value="6">Junho</option>
+                                <option value="7">Julho</option>
+                                <option value="8">Agosto</option>
+                                <option value="9">Setembro</option>
+                                <option value="10">Outubro</option>
+                                <option value="11">Novembro</option>
+                                <option value="12">Dezembro</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Ano da competência</label>
+                            <input id="importYearInput" type="number" min="2020" max="2100" placeholder="2026" />
+                        </div>
+                    </div>
+
+                    <div id="importSummaryGrid" class="summary-grid" hidden></div>
+                    <div id="importIssuesList" class="issues-list" hidden></div>
+                    
+                    <div class="last-job" id="importLastJob">
+                        Carregando último status...
+                    </div>
+                </form>
+            </div>
+
+            <footer class="modal-footer">
+                <span id="importModalMeta">Aguardando arquivo...</span>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn-secondary" id="importModalCancel">Cancelar</button>
+                    <button class="btn-primary" id="importExecuteBtn" disabled>Importar Produção</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/static/productivity_import.js"></script>
+    <script>
+        function toggleFilters() {
+            const section = document.querySelector('.filter-section');
+            section.classList.toggle('collapsed');
+            localStorage.setItem('prod_filters_collapsed', section.classList.contains('collapsed'));
+        }
+
+        const scoreboardEmpty = document.getElementById('scoreboardEmpty');
+        const scoreboardContent = document.getElementById('scoreboardContent');
+
+        function showTooltip(cell) {
+            const name = cell.getAttribute('data-name');
+            if (!name) return;
+
+            // Preenche placar
+            document.getElementById('sb-name').textContent = name;
+            document.getElementById('sb-month').textContent = cell.getAttribute('data-month');
+            document.getElementById('sb-plate').textContent = cell.getAttribute('data-plate');
+            document.getElementById('sb-agency').textContent = cell.getAttribute('data-agency');
+            document.getElementById('sb-members').textContent = cell.getAttribute('data-members');
+            document.getElementById('sb-members').title = cell.getAttribute('data-members'); // Tooltip nativo para nomes longos
+            document.getElementById('sb-value').textContent = cell.getAttribute('data-value');
+
+            scoreboardEmpty.style.display = 'none';
+            scoreboardContent.style.display = 'flex';
+        }
+
+        function hideTooltip() {
+            // Podemos optar por não limpar o placar para manter o último visto, 
+            // ou voltar ao placeholder. Vou voltar ao placeholder para ficar claro.
+            // scoreboardEmpty.style.display = 'block';
+            // scoreboardContent.style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const isCollapsed = localStorage.getItem('prod_filters_collapsed') === 'true';
+            if (isCollapsed) document.querySelector('.filter-section').classList.add('collapsed');
+        });
+    </script>
+</body>
+</html>

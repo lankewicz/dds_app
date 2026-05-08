@@ -28,15 +28,16 @@ class BalanceRequestOut(BaseModel):
     def parse_numeric(cls, v: Any) -> Decimal:
         if v is None or v == "":
             return Decimal("0.00")
-        if isinstance(v, (int, float)):
-            return Decimal(str(v)).quantize(Decimal("0.01"))
-        if isinstance(v, str):
-            # Limpeza básica similar ao parse_decimal
-            clean_v = v.replace("R$", "").replace("$", "").replace(".", "").replace(",", ".").strip()
-            try:
-                return Decimal(clean_v).quantize(Decimal("0.01"))
-            except:
-                return Decimal("0.00")
+        try:
+            if isinstance(v, (int, float)):
+                # No Firestore os dados estão em centavos (ex: 10500 = R$ 105,00)
+                return (Decimal(str(v)) / 100).quantize(Decimal("0.01"))
+            if isinstance(v, str):
+                clean_v = v.replace("R$", "").replace("$", "").replace(".", "").replace(",", ".").strip()
+                # Assume que se vier do Firestore como string, também está em centavos
+                return (Decimal(clean_v) / 100).quantize(Decimal("0.01"))
+        except:
+            return Decimal("0.00")
         return Decimal("0.00")
 
     @field_validator("data_solicitacao", "previsao_uso", "data_aprovacao", mode="before")

@@ -31,23 +31,7 @@ const cfgAlertaPiscoMin = document.getElementById("cfgAlertaPiscoMin");
 const cfgFechadoViraDesatualizadoHoras = document.getElementById("cfgFechadoViraDesatualizadoHoras");
 const cfgDesatualizadoCriticoHoras = document.getElementById("cfgDesatualizadoCriticoHoras");
 const cfgPollingSeconds = document.getElementById("cfgPollingSeconds");
-const openImportModalBtn = document.getElementById("openImportModalBtn");
-const importModal = document.getElementById("importModal");
-const importModalBackdrop = document.getElementById("importModalBackdrop");
-const importModalClose = document.getElementById("importModalClose");
-const importModalCancel = document.getElementById("importModalCancel");
-const importNotice = document.getElementById("importNotice");
-const importModalMeta = document.getElementById("importModalMeta");
 
-const importFileInput = document.getElementById("importFileInput");
-const importMonthSelect = document.getElementById("importMonthSelect");
-const importYearInput = document.getElementById("importYearInput");
-const importExecuteBtn = document.getElementById("importExecuteBtn");
-const importDetectedSummary = document.getElementById("importDetectedSummary");
-const importCompetenciaWarning = document.getElementById("importCompetenciaWarning");
-const importSummaryGrid = document.getElementById("importSummaryGrid");
-const importIssuesList = document.getElementById("importIssuesList");
-const importLastJob = document.getElementById("importLastJob");
 
 let cfg = null;
 let pollingSeconds = 600;
@@ -57,8 +41,7 @@ let nextTickAtMs = null;
 let currentItems = [];
 let activeKpiFilter = "";
 let configSaveInFlight = false;
-let importPreviewData = null;
-let importInFlight = false;
+
 let lastData = null;
 
 function safeUpper(v) { return (v || "").toString().trim().toUpperCase(); }
@@ -102,13 +85,7 @@ function fmtHourMinute(dateLike) {
 
 function fmtMMSS(totalSeconds) { const s = Math.max(0, Math.floor(totalSeconds)); const mm = String(Math.floor(s / 60)).padStart(2, "0"); const ss = String(s % 60).padStart(2, "0"); return `${mm}:${ss}`; }
 function fmtAgeFromMinutes(mins) { if (!Number.isFinite(mins) || mins < 0) return "-"; if (mins < 60) return `${mins} min`; const hours = Math.floor(mins / 60); const remMin = mins % 60; if (hours < 24) return `${hours}h ${String(remMin).padStart(2, "0")}m`; const days = Math.floor(hours / 24); const remHours = hours % 24; return `${days}d ${remHours}h`; }
-function monthLabelFromNumber(monthNumber) {
-  const map = {
-    1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
-    7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro',
-  };
-  return map[Number(monthNumber)] || `Mês ${monthNumber || '-'}`;
-}
+
 
 function setRefreshInfo() {
   if (!nextRefresh) return;
@@ -172,9 +149,7 @@ function syncConfigSummary() {
 function openConfigModal() {
   fillConfigForm(cfg || {});
   setConfigNotice('');
-  syncImportCompetenciaWarning();
-  syncImportButtons();
-  loadLastImportJob();
+
   if (configModalMeta) configModalMeta.textContent = 'Edite os tempos e confirme para aplicar.';
   setConfigModalHidden(false);
 }
@@ -219,310 +194,7 @@ async function saveConfigModal() {
   }
 }
 
-function setImportModalHidden(hidden) {
-  if (!importModal) return;
-  importModal.hidden = hidden;
-  if (!hidden) document.body.classList.add('modalOpen');
-  else if (configModal?.hidden && document.getElementById('teamFormModal')?.hidden) {
-    document.body.classList.remove('modalOpen');
-  }
-}
 
-function setImportNotice(message = '', type = '') {
-  if (!importNotice) return;
-  const text = (message || '').trim();
-  importNotice.hidden = !text;
-  importNotice.textContent = text;
-  importNotice.className = 'formNotice';
-  if (type) importNotice.classList.add(type);
-}
-
-function openImportModal() {
-  closeConfigModal();
-  setImportModalHidden(false);
-  resetImportPreviewState();
-  if (importFileInput) importFileInput.value = '';
-  setImportDetectedSummary('Nenhum arquivo selecionado ainda.');
-  setImportNotice('', '');
-  if (importModalMeta) importModalMeta.textContent = 'Aguardando seleção do arquivo...';
-  loadLastImportJob();
-}
-
-function closeImportModal() {
-  if (importInFlight) return;
-  setImportModalHidden(true);
-}
-
-let importResolutions = {};
-
-window.setImportResolution = function(id, value) {
-  importResolutions[id] = value;
-  syncImportButtons();
-};
-
-function resetImportPreviewState() {
-  importPreviewData = null;
-  importResolutions = {};
-  if (importSummaryGrid) {
-    importSummaryGrid.hidden = true;
-    importSummaryGrid.innerHTML = '';
-  }
-  if (importIssuesList) {
-    importIssuesList.hidden = true;
-    importIssuesList.innerHTML = '';
-  }
-  syncImportButtons();
-  syncImportCompetenciaWarning();
-}
-
-function syncImportButtons() {
-  const hasFile = Boolean(importFileInput?.files?.length);
-  if (importExecuteBtn) {
-    let allResolved = true;
-    if (importPreviewData && Array.isArray(importPreviewData.issuesPreview)) {
-      const actionable = importPreviewData.issuesPreview.filter(i => i.type === 'contract_mismatch_vs_dds_teams');
-      allResolved = actionable.every(i => importResolutions[i.id]);
-    }
-    importExecuteBtn.disabled = !hasFile || !importPreviewData || importInFlight || !allResolved;
-    importExecuteBtn.textContent = importInFlight ? 'Aguarde, processando...' : 'Confirmar e Importar';
-    if (!allResolved) {
-      importExecuteBtn.title = "Resolva todos as ações pendentes acima para prosseguir.";
-    } else {
-      importExecuteBtn.title = "";
-    }
-  }
-}
-
-function setImportDetectedSummary(message) {
-  if (!importDetectedSummary) return;
-  importDetectedSummary.textContent = message || 'Nenhum arquivo selecionado ainda.';
-}
-
-function getSelectedCompetencia() {
-  return {
-    monthNumber: Number(importMonthSelect?.value || 0),
-    year: Number(importYearInput?.value || 0),
-  };
-}
-
-function syncImportCompetenciaWarning() {
-  if (!importCompetenciaWarning) return;
-  const selected = getSelectedCompetencia();
-  const detected = importPreviewData?.detectedCompetencia;
-  if (!selected.monthNumber || !selected.year || !detected) {
-    importCompetenciaWarning.hidden = true;
-    importCompetenciaWarning.textContent = '';
-    importCompetenciaWarning.className = 'configSummary formFieldFull importCompetenciaWarning';
-    return;
-  }
-
-  const differs = Number(detected.monthNumber) !== Number(selected.monthNumber) || Number(detected.year) !== Number(selected.year);
-  importCompetenciaWarning.hidden = !differs;
-  importCompetenciaWarning.className = 'configSummary formFieldFull importCompetenciaWarning';
-  if (!differs) {
-    importCompetenciaWarning.textContent = '';
-    return;
-  }
-  importCompetenciaWarning.classList.add('isWarning');
-  importCompetenciaWarning.textContent = `A competência escolhida (${monthLabelFromNumber(selected.monthNumber)}/${selected.year}) difere da detectada em A1 (${monthLabelFromNumber(detected.monthNumber)}/${detected.year}).`;
-}
-
-function fillCompetenciaFromPreview(previewData) {
-  const detected = previewData?.detectedCompetencia || {};
-  if (importMonthSelect && detected.monthNumber) importMonthSelect.value = String(detected.monthNumber);
-  if (importYearInput && detected.year) importYearInput.value = String(detected.year);
-  syncImportCompetenciaWarning();
-}
-
-function buildImportFormData() {
-  if (!importFileInput?.files?.length) throw new Error('Selecione um arquivo Excel para importar.');
-  const selected = getSelectedCompetencia();
-  const formData = new FormData();
-  formData.append('file', importFileInput.files[0]);
-  if (selected.monthNumber) formData.append('monthNumber', String(selected.monthNumber));
-  if (selected.year) formData.append('year', String(selected.year));
-  if (Object.keys(importResolutions).length > 0) {
-    formData.append('resolutions', JSON.stringify(importResolutions));
-  }
-  return formData;
-}
-
-function renderImportSummary(previewData) {
-  const summary = previewData?.summary || {};
-  const selected = previewData?.selectedCompetencia || {};
-  const cards = [
-    ['Competência', escapeHtml(selected.label || '-')],
-    ['Linhas detalhe', escapeHtml(String(summary.rawDataRows ?? '-'))],
-    ['Resumos ignorados', escapeHtml(String(summary.ignoredSummaryRows ?? '-'))],
-    ['Após dedupe', escapeHtml(String(summary.dedupedRows ?? '-'))],
-    ['Documentos', escapeHtml(String(summary.documentsToUpsert ?? '-'))],
-    ['Issues', escapeHtml(String(summary.issuesCount ?? '-'))],
-  ];
-  if (importSummaryGrid) {
-    importSummaryGrid.hidden = false;
-    importSummaryGrid.innerHTML = cards.map(([label, value]) => `
-      <div class="importSummaryCard">
-        <span class="importSummaryLabel">${label}</span>
-        <strong class="importSummaryValue">${value}</strong>
-      </div>
-    `).join('');
-  }
-
-  const warnings = Array.isArray(previewData?.warningsPreview) ? previewData.warningsPreview.filter(Boolean) : [];
-  const issuesPreview = Array.isArray(previewData?.issuesPreview) ? previewData.issuesPreview : [];
-  const docPreview = Array.isArray(previewData?.documentsPreview) ? previewData.documentsPreview : [];
-
-  if (!importIssuesList) return;
-  importIssuesList.hidden = false;
-  const warningsHtml = warnings.length
-    ? `<div class="importIssuesBlock"><div class="importIssuesTitle">Avisos</div><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`
-    : '';
-  const docsHtml = docPreview.length
-    ? `<div class="importIssuesBlock"><div class="importIssuesTitle">Preview de documentos</div><ul>${docPreview.map((item) => `<li><strong>${escapeHtml(item.docId || '')}</strong> · cidade ${escapeHtml(item.cityBase || '-')} · total US ${escapeHtml(String(item.totalUs ?? 0))}</li>`).join('')}</ul></div>`
-    : '';
-  const issuesHtml = issuesPreview.length
-    ? `<div class="importIssuesBlock"><div class="importIssuesTitle">Issues encontrados / Ações Pendentes</div><ul style="list-style:none; padding-left:0; margin:0;">${issuesPreview.map((item) => {
-        if (item.type === 'contract_mismatch_vs_dds_teams') {
-          const id = escapeHtml(item.id);
-          const selStr = importResolutions[item.id] || '';
-          return `
-            <li style="margin-top: 10px; padding: 14px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); border-radius: 12px;">
-              <strong style="color: rgba(248, 113, 113, 0.9);">Ação Pendente: Contrato divergente para ${escapeHtml(item.teamKey)}</strong><br/>
-              <span style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 12px; margin-top: 4px;">${escapeHtml(item.message)}</span>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                <label style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px;">
-                  <input type="radio" name="${id}" value="keep_db" onchange="window.setImportResolution('${id}', this.value)" ${selStr==='keep_db' ? 'checked' : ''}> 
-                  Manter valor do sistema (${escapeHtml(item.teamContract)})
-                </label>
-                <label style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px;">
-                  <input type="radio" name="${id}" value="use_sheet" onchange="window.setImportResolution('${id}', this.value)" ${selStr==='use_sheet' ? 'checked' : ''}> 
-                  Atualizar valor no sistema para igual a planilha (${escapeHtml(item.rawContract)})
-                </label>
-              </div>
-            </li>
-          `;
-        }
-        if (item.type === 'city_missing_after_enrichment') {
-          const id = escapeHtml(item.id);
-          const selStr = importResolutions[item.id] || '';
-          return `
-            <li style="margin-top: 10px; padding: 14px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); border-radius: 12px;">
-              <strong style="color: rgba(250, 204, 21, 0.9);">Ação Opcional: Cidade/Base pendente para ${escapeHtml(item.teamKey)}</strong><br/>
-              <span style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 12px; margin-top: 4px;">${escapeHtml(item.message)} Se deixar em branco, não será cadastrada/alterada.</span>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                <input type="text" placeholder="Ex: Curitiba / Leste" value="${escapeHtml(selStr)}" onchange="window.setImportResolution('${id}', this.value)" style="padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.2); color: white; font-size: 14px; width: 100%; max-width: 300px;">
-              </div>
-            </li>
-          `;
-        }
-        return `<li style="margin-top: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">${escapeHtml(item.message || JSON.stringify(item))}</li>`;
-      }).join('')}</ul></div>`
-    : '';
-  importIssuesList.innerHTML = warningsHtml + docsHtml + issuesHtml || '<div class="importIssuesBlock"><div class="importIssuesTitle">Análise</div><div class="importIssuesEmpty">Nenhum aviso encontrado.</div></div>';
-}
-
-function renderLastImportJob(job) {
-  if (!importLastJob) return;
-  if (!job) {
-    importLastJob.textContent = 'Nenhuma importação registrada ainda.';
-    return;
-  }
-  const selected = job.selectedCompetencia || {};
-  const executedAt = job.executedAt ? fmtDateTime(job.executedAt) : '-';
-  const docs = job.documentsUpserted ?? job.summary?.documentsToUpsert ?? '-';
-  importLastJob.innerHTML = `Última importação: <strong>${escapeHtml(selected.label || '-')}</strong> · arquivo <strong>${escapeHtml(job.fileName || '-')}</strong> · documentos <strong>${escapeHtml(String(docs))}</strong> · status <strong>${escapeHtml(job.status || '-')}</strong> · executado em <strong>${escapeHtml(executedAt)}</strong>`;
-}
-
-async function loadLastImportJob() {
-  if (!importLastJob) return;
-  try {
-    const response = await fetch('/api/producao/import/last');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.detail || 'Não foi possível carregar a última importação.');
-    renderLastImportJob(data?.job || null);
-  } catch (error) {
-    importLastJob.textContent = error?.message || 'Não foi possível carregar a última importação.';
-  }
-}
-
-async function previewImportFile() {
-  if (importInFlight) return;
-  try {
-    importInFlight = true;
-    syncImportButtons();
-    setImportNotice('Analisando arquivo... Isso pode levar alguns segundos dependendo do tamanho da planilha.', 'info');
-    if (importModalMeta) importModalMeta.textContent = 'Extraindo abas, limpando deduções e validando cruzamento BMG...';
-    setImportDetectedSummary('Enviando para o servidor e preparando visualizações...');
-    
-    if (importSummaryGrid) {
-      importSummaryGrid.hidden = false;
-      importSummaryGrid.innerHTML = `
-        <div class="importSummaryCard" style="grid-column: 1 / -1; align-items: center; justify-content: center; padding: 2rem; display: flex; gap: 8px;">
-          <div class="kpiDot dotBlue" style="animation: bounce 1s infinite alternate; width:12px; height: 12px;"></div>
-          <span>Extraindo dados da base e aplicando regras...</span>
-        </div>`;
-    }
-    const response = await fetch('/api/producao/import/preview', {
-      method: 'POST',
-      body: buildImportFormData(),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.detail || 'Falha ao analisar o arquivo.');
-    importPreviewData = data;
-    fillCompetenciaFromPreview(data);
-    setImportDetectedSummary(`Leitura concluída. Competência detectada: ${data?.detectedCompetencia?.label || '-'}. Mapeadas ${data?.summary?.documentsToUpsert ?? '-'} equipes baseadas nas frotas ativas.`);
-    renderImportSummary(data);
-    setImportNotice('Arquivo analisado com sucesso! Verifique o resumo abaixo, ajuste o Mês/Ano caso não corresponda ou esteja divergente, e confirme a importação.', 'success');
-    if (importModalMeta) importModalMeta.textContent = 'Pronto para gravar o consolidado.';
-  } catch (error) {
-    importPreviewData = null;
-    renderImportSummary(null);
-    setImportDetectedSummary('Processo interrompido devido a erro.');
-    setImportNotice(error?.message || 'Falha imprevista ao analisar o arquivo. Verifique a formatação da guia BMG.', 'error');
-    if (importModalMeta) importModalMeta.textContent = 'Corrija os erros e tente enviar novamente.';
-  } finally {
-    importInFlight = false;
-    syncImportButtons();
-    syncImportCompetenciaWarning();
-  }
-}
-
-async function executeImportFile() {
-  if (importInFlight) return;
-  try {
-    importInFlight = true;
-    syncImportButtons();
-    setImportNotice('Efetuando varredura no banco. Isso processará todas as métricas em lote para gerar logs...', 'info');
-    if (importModalMeta) importModalMeta.textContent = 'Salvando as execuções de dds_producao_mensal na nuvem...';
-    
-    if (importSummaryGrid) {
-      importSummaryGrid.innerHTML = `
-        <div class="importSummaryCard" style="grid-column: 1 / -1; align-items: center; justify-content: center; padding: 2rem; display: flex; gap: 8px;">
-          <div class="kpiDot dotGreen" style="animation: pulse 1s infinite alternate; width:12px; height: 12px;"></div>
-          <span>Atualizando histórico e gravando registros na nuvem...</span>
-        </div>`;
-    }
-    const response = await fetch('/api/producao/import/execute', {
-      method: 'POST',
-      body: buildImportFormData(),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.detail || 'Falha ao importar o arquivo.');
-    importPreviewData = data;
-    renderImportSummary(data);
-    renderLastImportJob(data?.job || null);
-    setImportDetectedSummary(`Importação concluída para ${data?.selectedCompetencia?.label || '-'} · documentos atualizados: ${data?.job?.documentsUpserted ?? data?.summary?.documentsToUpsert ?? '-'}.`);
-    setImportNotice('Importação confirmada na Collection. Os históricos e valores mensuráveis estão atualizados com sucesso.', 'success');
-    if (importModalMeta) importModalMeta.textContent = 'Sucesso! Saldo mês importado e auditato.';
-  } catch (error) {
-    setImportNotice(error?.message || 'Houve um erro no pacote de banco. A importação foi rejeitada.', 'error');
-    if (importModalMeta) importModalMeta.textContent = 'Erro: ' + (error?.message || 'Falha de conexão/escrita');
-  } finally {
-    importInFlight = false;
-    syncImportButtons();
-    syncImportCompetenciaWarning();
-  }
-}
 function normalizedState(state) {
   const raw = safeUpper(state);
   if (raw === "ESPECIAL" || raw === "DESLOCAMENTO") return "DESLOCAMENTO_ESPECIAL"; return raw;
@@ -1118,26 +790,7 @@ configModalCancel?.addEventListener('click', closeConfigModal);
 configModalBackdrop?.addEventListener('click', closeConfigModal);
 configModalSave?.addEventListener('click', saveConfigModal);
 [cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin, cfgFechadoViraDesatualizadoHoras, cfgDesatualizadoCriticoHoras, cfgPollingSeconds].forEach((el) => el?.addEventListener('input', syncConfigSummary));
-openImportModalBtn?.addEventListener('click', openImportModal);
-importModalClose?.addEventListener('click', closeImportModal);
-importModalCancel?.addEventListener('click', closeImportModal);
-importModalBackdrop?.addEventListener('click', closeImportModal);
 
-importFileInput?.addEventListener('change', () => {
-  resetImportPreviewState();
-  const fileName = importFileInput?.files?.[0]?.name || '';
-  if (!fileName) {
-    setImportDetectedSummary('O arquivo foi cancelado ou não localizado.');
-    syncImportButtons();
-    return;
-  }
-  setImportDetectedSummary('Iniciando processamento autônomo do Excel...');
-  syncImportButtons();
-  previewImportFile();
-});
-importMonthSelect?.addEventListener('change', syncImportCompetenciaWarning);
-importYearInput?.addEventListener('input', syncImportCompetenciaWarning);
-importExecuteBtn?.addEventListener('click', executeImportFile);
 searchInput.addEventListener('input', load);
 teamSelect?.addEventListener('change', load);
 

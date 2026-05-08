@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -168,7 +169,7 @@ fun HeaderBar(
                     }
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Chat,
+                        imageVector = Icons.AutoMirrored.Filled.Chat,
                         contentDescription = "Comunicação",
                         modifier = Modifier.size(28.dp),
                         tint = bubbleColor
