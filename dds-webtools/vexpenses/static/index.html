@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VExpenses | Gestor de Solicitações</title>
+    <link rel="stylesheet" href="/vexpenses/static/css/style.css?v={{ revision }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-theme="light">
+    <a href="/" class="home-button" title="Voltar para o Início">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+    </a>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">V</div>
+                <span>VExpenses</span>
+            </div>
+            <ul class="nav-links">
+                <li data-section="dashboard" class="active">
+                    <span class="icon">📊</span> Dashboard
+                </li>
+                <li data-section="reports">
+                    <span class="icon">📈</span> Relatórios
+                </li>
+                <li data-section="import">
+                    <span class="icon">📤</span> Importar
+                </li>
+            </ul>
+        </nav>
+        <div class="app-version-footer">{{ revision }}</div>
+
+        <!-- Main Content -->
+        <main class="content">
+            <header class="top-bar">
+                <h1 id="section-title">Dashboard</h1>
+                
+                <div class="header-actions">
+                    <div id="dashboard-exports" class="export-group">
+                        <button id="dash-print" class="btn-icon" title="Imprimir">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #8b5cf6;"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                        </button>
+                        <button id="dash-export-xlsx" class="btn-icon" title="Exportar Excel">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 13L12 17" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 13L8 17" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <button id="dash-export-pdf" class="btn-icon" title="Exportar PDF">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 15H12" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                    <div id="reports-exports" class="export-group hidden">
+                        <button id="rep-print-btn" class="btn-icon" title="Imprimir">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #8b5cf6;"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                        </button>
+                        <button id="rep-export-xlsx" class="btn-icon" title="Exportar Excel">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 13L12 17" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 13L8 17" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <button id="rep-export-pdf" class="btn-icon" title="Exportar PDF">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 15H12" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                    
+                    <div class="user-profile">
+                        <div class="avatar">U</div>
+                        <span>Usuário Admin</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Global Filter Bar -->
+            <div id="global-filter-bar" class="filter-bar">
+                <div class="filter-group">
+                    <label>Ano:</label>
+                    <select id="filter-year">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Mês:</label>
+                    <select id="filter-month">
+                        <option value="">Todos</option>
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Aprovador:</label>
+                    <select id="filter-approver">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Usuário:</label>
+                    <select id="filter-user">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Status:</label>
+                    <select id="filter-status">
+                        <option value="">Todos</option>
+                        <option value="Aprovado">Aprovado</option>
+                        <option value="Reprovado">Reprovado</option>
+                    </select>
+                </div>
+                <button id="clear-filters" class="btn-secondary">Limpar</button>
+            </div>
+
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="page-section active">
+                <div class="section-header">
+                    <h2>Visão Geral</h2>
+                    <span id="stats-subtitle" class="stats-subtitle">Período Total</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total Solicitado</h3>
+                        <p id="stat-total-requested">R$ 0,00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Aprovado</h3>
+                        <p id="stat-total-approved">R$ 0,00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Glosado</h3>
+                        <p id="stat-total-glosed">R$ 0,00</p>
+                        <span class="trend" title="Diferença em itens aprovados">ℹ️ Ajuste de valor</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Reprovado</h3>
+                        <p id="stat-total-rejected" class="text-danger">R$ 0,00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Nº de Solicitações</h3>
+                        <p id="stat-count">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Ticket Médio</h3>
+                        <p id="stat-avg">R$ 0,00</p>
+                    </div>
+                </div>
+
+                <div class="charts-container">
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h3>Evolução Mensal</h3>
+                            <button id="chart-back-btn" class="btn-back hidden">← Voltar</button>
+                        </div>
+                        <canvas id="monthlyChart"></canvas>
+                    </div>
+
+                    <div class="chart-box pie-chart-box">
+                        <div class="chart-header">
+                            <h3>Distribuição de Valores (Peso das Reprovações)</h3>
+                        </div>
+                        <div class="pie-container">
+                            <canvas id="pieChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- Reports Section -->
+            <section id="reports" class="page-section">
+                <div class="reports-type-selector">
+                    <button id="btn-report-users" class="btn-tab active">Por Usuário</button>
+                    <button id="btn-report-months" class="btn-tab">Por Mês</button>
+                </div>
+
+                <div id="reports-summary-view">
+                    <div class="section-header-compact">
+                        <h2 id="reports-view-title">Resumo por Usuário</h2>
+                        <p>Clique na linha para ver os detalhes</p>
+                    </div>
+                    <div class="table-container">
+                        <table id="reports-summary-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="usuario_origem">Usuário <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="quantidade">Qtd <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="total_solicitado">Total Solicitado <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="total_aprovado">Total Aprovado <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="total_reprovado">Total Reprovado <span class="sort-icon">⇅</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Summary rows will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="reports-detail-view" class="hidden">
+                    <div class="section-header-compact">
+                        <button id="back-to-summary" class="btn-back">← Voltar para a lista</button>
+                        <h2 id="detail-user-name">Detalhes do Usuário</h2>
+                    </div>
+                    <div class="table-container">
+                        <table id="user-details-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="data_solicitacao">Data <span class="sort-icon">⇅</span></th>
+                                    <th>Justificativa</th>
+                                    <th class="sortable" data-sort="valor_solicitado">Vl. Solicitado <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="valor_aprovado">Vl. Aprovado <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="aprovador">Aprovador <span class="sort-icon">⇅</span></th>
+                                    <th class="sortable" data-sort="status">Status <span class="sort-icon">⇅</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Details will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Import Section -->
+            <section id="import" class="page-section">
+                <div class="import-card">
+                    <h2>Importar Planilha Excel</h2>
+                    <p>Arraste seu arquivo .xlsx aqui ou clique para selecionar.</p>
+                    <div id="drop-zone" class="drop-zone">
+                        <span class="drop-icon">📁</span>
+                        <p>Clique ou arraste o arquivo</p>
+                        <input type="file" id="file-input" hidden accept=".xlsx">
+                    </div>
+                    <div id="file-status" class="file-status hidden">
+                        <span id="file-name"></span>
+                        <button id="upload-btn" class="btn-primary">Processar Agora</button>
+                    </div>
+                    <div id="import-progress" class="import-progress hidden">
+                        <div class="progress-track">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <div class="progress-info">
+                            <p id="progress-status">Iniciando processamento...</p>
+                            <div class="timer-info">
+                                <span id="elapsed-time">00:00</span> | 
+                                <span id="remaining-time">Calculando...</span>
+                            </div>
+                            <button id="cancel-import-btn" class="btn-cancel">Parar Importação</button>
+                        </div>
+                    </div>
+                    <div id="import-log" class="import-log hidden">
+                        <!-- Log messages will appear here -->
+                    </div>
+                    <div class="danger-zone">
+                        <p>Zona Crítica</p>
+                        <div class="danger-actions">
+                            <button id="rebuild-cache-btn" class="btn-warning">Recriar Índices</button>
+                            <button id="reset-db-btn" class="btn-danger">Limpar Tudo (Clique 2x)</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/vexpenses/static/js/app.js?v={{ revision }}"></script>
+</body>
+</html>

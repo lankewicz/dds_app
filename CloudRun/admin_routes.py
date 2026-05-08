@@ -62,13 +62,14 @@ from google.cloud import storage
 from google.auth import default as google_auth_default
 from google.auth import impersonated_credentials
 
-
 from storage_online_package import (
     list_all_sessions_from_storage,
     list_online_sessions_from_storage,
     update_online_package,
     create_online_package_and_update_lista_json,
+    list_all_folders_from_storage,
 )
+
 
 from storage_normal_package import (
     create_normal_package_and_update_lista_json,
@@ -177,6 +178,16 @@ def _sign_put_url(*, bucket_name: str, object_name: str, content_type: str, minu
     """
     # Preferir assinatura via IAMCredentials em Cloud Run (sem chave privada).
     signing_sa = (current_app.config.get("SIGNING_SERVICE_ACCOUNT") or "").strip()
+
+    # Fallback: Se estiver no Cloud Run e sem SA configurada, tenta descobrir a SA padrão do serviço
+    if not signing_sa and (os.getenv("K_SERVICE") or os.getenv("K_REVISION")):
+        try:
+            source_creds, _ = google_auth_default()
+            if hasattr(source_creds, "service_account_email"):
+                signing_sa = source_creds.service_account_email
+        except Exception:
+            pass
+
     if signing_sa:
         creds = _get_signing_credentials(signing_sa, lifetime_seconds=max(3600, minutes * 60))
         client = storage.Client(credentials=creds)
@@ -192,9 +203,10 @@ def _sign_put_url(*, bucket_name: str, object_name: str, content_type: str, minu
          )
 
     if os.getenv("K_SERVICE") or os.getenv("K_REVISION"):
+        # Se mesmo após o fallback não tivermos uma SA, lançamos o erro explicativo.
         raise RuntimeError(
-            "SIGNING_SERVICE_ACCOUNT não configurada no Cloud Run. "
-            "Configure a service account assinadora para gerar Signed URLs."
+            "SIGNING_SERVICE_ACCOUNT não configurada e não foi possível detectar a SA padrão no Cloud Run. "
+            "Configure a variável de ambiente SIGNING_SERVICE_ACCOUNT para gerar Signed URLs."
         )
 
 
@@ -257,6 +269,16 @@ def _sign_get_url(
     """Gera Signed URL (V4) para GET (preview/download) direto do GCS."""
     try:
         signing_sa = (current_app.config.get("SIGNING_SERVICE_ACCOUNT") or "").strip()
+
+        # Fallback: Se estiver no Cloud Run e sem SA configurada, tenta descobrir a SA padrão do serviço
+        if not signing_sa and (os.getenv("K_SERVICE") or os.getenv("K_REVISION")):
+            try:
+                source_creds, _ = google_auth_default()
+                if hasattr(source_creds, "service_account_email"):
+                    signing_sa = source_creds.service_account_email
+            except Exception:
+                pass
+
         if signing_sa:
             creds = _get_signing_credentials(signing_sa, lifetime_seconds=max(3600, minutes * 60))
             client = storage.Client(credentials=creds)
@@ -274,7 +296,7 @@ def _sign_get_url(
 
         if os.getenv("K_SERVICE") or os.getenv("K_REVISION"):
             raise RuntimeError(
-                "SIGNING_SERVICE_ACCOUNT não configurada no Cloud Run. "
+                "SIGNING_SERVICE_ACCOUNT não configurada e não detectada no Cloud Run. "
                 "Configure a service account assinadora para gerar Signed URLs."
             )
 
@@ -464,7 +486,6 @@ def login_post():
         return redirect(url_for("admin.login", next=next_url))
 
     session["is_admin"] = True
-    flash("Login realizado com sucesso.", "success")
     return redirect(next_url)
 
 
@@ -650,6 +671,61 @@ def dashboard():
         base_prefix=base_prefix,
         now=datetime.now(),
     )
+
+
+@admin_bp.get("/explorer")
+@login_required
+def explorer():
+    """Explorador: lista todas as pastas reais do Bucket (sem filtros do App)."""
+    bucket = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+
+    month = request.args.get("month", "").strip()
+    status = request.args.get("status", "").strip()
+    
+    if not bucket:
+        flash("DDS_BUCKET_NAME não configurado.", "error")
+        folders = []
+    else:
+        try:
+            folders = list_all_folders_from_storage(
+                bucket_name=bucket,
+                base_prefix=base_prefix
+            )
+        except Exception as e:
+            current_app.logger.exception("Erro no explorador: %s", e)
+            flash(f"Erro ao ler storage: {e}", "error")
+            folders = []
+
+    # Aplica os filtros
+    if month:
+        folders = [f for f in folders if f["date"].startswith(month)]
+    if status == "publicado":
+        folders = [f for f in folders if f["is_published"]]
+    elif status == "arquivado":
+        folders = [f for f in folders if not f["is_published"]]
+
+    # Calcula as estatísticas
+    today_str = date.today().strftime("%Y-%m-%d")
+    stats = {
+        "total": len(folders),
+        "agendado": len([f for f in folders if f["is_published"] and f["date"] >= today_str]),
+        "concluido": len([f for f in folders if f["is_published"] and f["date"] < today_str]),
+        "arquivado": len([f for f in folders if not f["is_published"]]),
+        "online": len([f for f in folders if f.get("type") == "online"]),
+        "normal": len([f for f in folders if f.get("type") == "normal"]),
+    }
+
+    return render_template(
+        "explorer.html",
+        folders=folders,
+        stats=stats,
+        month=month,
+        status=status,
+        base_prefix=base_prefix,
+        now=datetime.now(),
+    )
+
 
 
 
@@ -1421,6 +1497,48 @@ def session_new_post():
     return redirect(url_for("admin.dashboard"))
 
 
+@admin_bp.get("/explorer/slides")
+@login_required
+def explorer_slides():
+    """Retorna lista de URLs assinadas para os slides de uma pasta."""
+    folder_id = (request.args.get("folderId") or "").strip()
+    if not folder_id:
+        return jsonify({"ok": False, "error": "folderId é obrigatório"}), 400
+
+    bucket_name = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+    if not bucket_name:
+        return jsonify({"ok": False, "error": "Bucket não configurado"}), 500
+
+    prefix = f"{base_prefix}/{folder_id}/".replace("//", "/")
+    
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blobs = list(bucket.list_blobs(prefix=prefix))
+    
+    # Filtra slides
+    slide_regex = re.compile(r"(?i)slide\s*(\d+)\.(jpg|jpeg|png)")
+    slides = []
+    
+    for blob in blobs:
+        filename = blob.name.split("/")[-1]
+        match = slide_regex.search(filename)
+        if match:
+            idx = int(match.group(1))
+            url = _sign_get_url(
+                bucket_name=bucket_name,
+                object_name=blob.name,
+                minutes=20,
+                response_type="image/jpeg"
+            )
+            slides.append({"index": idx, "url": url})
+    
+    # Ordena por índice
+    slides.sort(key=lambda x: x["index"])
+    
+    return jsonify({"ok": True, "slides": slides})
+
+
 
 @admin_bp.get("/sessions/<session_id>/edit")
 @login_required
@@ -1573,6 +1691,62 @@ def session_cancel(session_id: str):
 @login_required
 def session_delete():
     """
-    Encaminha a exclusão de treinamentos para o módulo dedicado.
+    Encaminha a exclusão de treinamentos e trata o redirecionamento se for form.
     """
-    return handle_training_delete_request()
+    from flask import flash, redirect, url_for
+    
+    # Executa a exclusão (que retorna um JSON por padrão)
+    resp = handle_training_delete_request()
+    
+    # Se for uma requisição de formulário, queremos redirecionar com flash
+    if request.form:
+        result_json = resp.get_json() if hasattr(resp, "get_json") else {}
+        if result_json.get("ok"):
+            # Extrai o nome amigável do folderId (YYYY-MM-DD - NOME)
+            folder_id = request.form.get("folderId", "")
+            training_name = folder_id[13:] if len(folder_id) > 13 else folder_id
+            
+            # Pega contagem de arquivos deletados do objeto 'result' interno
+            res_data = result_json.get("result") or {}
+            deleted_count = res_data.get("objectsDeleted", 0)
+            
+            flash(f"Treinamento '{training_name}' excluído com sucesso. {deleted_count} arquivos foram apagados do servidor.", "success")
+        else:
+            flash(f"Erro ao excluir: {result_json.get('error')}", "error")
+            
+        target = request.form.get("redirect") or "dashboard"
+        if target == "explorer":
+            return redirect(url_for("admin.explorer"))
+        return redirect(url_for("admin.dashboard"))
+    
+    return resp
+
+
+@admin_bp.post("/maintenance/rebuild-index")
+@login_required
+def maintenance_rebuild_index():
+    """
+    Rota de manutenção para limpar e reconstruir o DDSv2/lista.json.
+    Pode ser chamada pelo Cloud Scheduler para automação.
+    """
+    from training_management.indexing import rebuild_lista_json
+
+    bucket = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+    tz = (current_app.config.get("TIMEZONE_NAME") or "America/Sao_Paulo").strip()
+
+    if not bucket:
+        return jsonify({"ok": False, "error": "DDS_BUCKET_NAME não configurado."}), 500
+
+    try:
+        result = rebuild_lista_json(
+            bucket_name=bucket,
+            base_prefix=base_prefix,
+            timezone_name=tz
+        )
+        if result.get("ok"):
+            current_app.logger.info(f"Índice reconstruído com sucesso: {result.get('details')}")
+        return jsonify(result)
+    except Exception as e:
+        current_app.logger.exception("Erro crítico ao reconstruir índice: %s", e)
+        return jsonify({"ok": False, "error": f"Erro interno: {str(e)}"}), 500

@@ -4,6 +4,8 @@
 // Tecnologias: Clean Architecture, Kotlin Coroutines.
 // Autor: Valdinei Lankewicz
 // Histórico de Alterações:
+// - 07/05/2026: Implementação inicial da arquitetura offline-first, persistência local de arquivos de mídia e integração com DdsSyncScheduler.
+// - 08/05/2026: Permitido fotoUri nulo para envios offline sem foto (quando der erro persistente/espaço).
 
 package com.chicoeletro.dds.domain
 
@@ -26,7 +28,7 @@ class SubmitDdsUseCase(
 ) {
     suspend fun submitLocalFirst(
         submission: FormSubmission,
-        fotoUri: Uri,
+        fotoUri: Uri?,
         thumbUri: Uri?,
         collectionName: String,
         pastaFotos: String,
@@ -36,14 +38,18 @@ class SubmitDdsUseCase(
 
         // Converta o Uri de FileProvider em File real (armazenamento privado)
         // Se o Uri não for file://, usamos copy para filesDir
-        val photoFile = uriToPrivateFile(fotoUri, "dds_${submission.submissionId}.jpg", context.filesDir)
+        val photoFile = fotoUri?.let { uriToPrivateFile(it, "dds_${submission.submissionId}.jpg", context.filesDir) }
 
         val thumbFile = thumbUri?.let {
-            uriToPrivateFile(it, "thumb_${submission.submissionId}.jpg", context.cacheDir)
+            runCatching { 
+                uriToPrivateFile(it, "thumb_${submission.submissionId}.jpg", context.cacheDir) 
+            }.onFailure { e ->
+                android.util.Log.e("SubmitDdsUseCase", "Falha ao processar thumbUri: ${e.message}", e)
+            }.getOrNull()
         }
 
         val enriched = submission.copy(
-            localPhotoPath = photoFile.absolutePath,
+            localPhotoPath = photoFile?.absolutePath,
             localThumbPath = thumbFile?.absolutePath,
             syncStatus = "PENDING",
             retryCount = 0,
@@ -77,12 +83,19 @@ class SubmitDdsUseCase(
             if (f.exists()) f else throw IllegalStateException("file uri não existe")
         }.getOrElse {
             // copia do contentResolver para diretório privado
-            val out = File(dir, fileName).apply { parentFile?.mkdirs() }
-            context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "Não foi possível abrir inputStream do uri" }
-                out.outputStream().use { input.copyTo(it) }
+            val out = File(dir, fileName)
+            try {
+                out.parentFile?.mkdirs()
+                context.contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input) { "Não foi possível abrir inputStream do uri" }
+                    out.outputStream().use { input.copyTo(it) }
+                }
+                // Limpeza: apaga o arquivo temporário original para não lotar o armazenamento
+                runCatching { context.contentResolver.delete(uri, null, null) }
+                out
+            } catch (e: Exception) {
+                throw Exception("Erro ao copiar Uri $uri para ${out.absolutePath}. Dir exists: ${dir.exists()}. Error: ${e.message}", e)
             }
-            out
         }
     }
 

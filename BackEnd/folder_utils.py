@@ -59,11 +59,10 @@ def parse_subject_to_folder(raw_subject: str) -> (str, date):
             clean_text = sanitize_text(text)
             folder_date = date_obj.strftime('%Y-%m-%d')
             return f"{folder_date} - {clean_text}", date_obj
-    # fallback: hoje e todo subject
+    # fallback: hoje e todo subject (sem prefixo de data para ser ignorado pelo indexador se não for um DDS válido)
     today = date.today()
     clean_text = sanitize_text(decoded)
-    folder_date = today.strftime('%Y-%m-%d')
-    return f"{folder_date} - {clean_text}", today
+    return clean_text, today
 
 
 def make_email_folder(subject: str) -> str:

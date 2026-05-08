@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -129,6 +130,14 @@ fun AgoraMeetingEntry(
                 if (localUid != 0) localUid else Random.nextInt(100_000, 999_999)
             }
 
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val cameraGranted = permissions[android.Manifest.permission.CAMERA] ?: false
+        val audioGranted = permissions[android.Manifest.permission.RECORD_AUDIO] ?: false
+        hasPermissions = cameraGranted && audioGranted
+    }
+
     LaunchedEffect(Unit) {
         val cameraGranted =
                 ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) ==
@@ -141,7 +150,17 @@ fun AgoraMeetingEntry(
                 ) == PackageManager.PERMISSION_GRANTED
 
         hasPermissions = cameraGranted && audioGranted
+        
+        if (!hasPermissions) {
+            launcher.launch(
+                arrayOf(
+                    android.Manifest.permission.CAMERA,
+                    android.Manifest.permission.RECORD_AUDIO
+                )
+            )
+        }
     }
+
     if (hasPermissions) {
         AgoraMeetingScreen(
                 appId = appId,
@@ -155,10 +174,27 @@ fun AgoraMeetingEntry(
         )
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                    "Permissões de câmera e microfone não concedidas. Volte e conceda as permissões no início do app.",
-                    textAlign = TextAlign.Center
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text(
+                        "Permissões de câmera e microfone são necessárias para a reunião.",
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(16.dp)
+                )
+                Button(onClick = {
+                    launcher.launch(
+                        arrayOf(
+                            android.Manifest.permission.CAMERA,
+                            android.Manifest.permission.RECORD_AUDIO
+                        )
+                    )
+                }) {
+                    Text("Conceder Permissões")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onLeave) {
+                    Text("Voltar")
+                }
+            }
         }
     }
 }

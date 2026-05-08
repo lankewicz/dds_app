@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_title }} - Escolha de Painel</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background-color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+    }
+
+    .container {
+      text-align: center;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+      max-width: 600px;
+      width: 90%;
+    }
+
+    h1 {
+      margin-top: 0;
+      color: #111827;
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: #6b7280;
+      margin-bottom: 32px;
+    }
+
+    .options {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      flex: 1;
+      min-width: 200px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .card:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .card-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-weight: 600;
+      font-size: 18px;
+      color: #1f2937;
+      margin-bottom: 8px;
+    }
+
+    .card-desc {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .app-version-footer {
+      position: fixed;
+      right: 12px;
+      bottom: 8px;
+      font-size: 7.5px;
+      color: #94a3b8;
+      font-family: inherit;
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.6;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Bem-vindo ao Sistema DDS</h1>
+    <p>Selecione qual ferramenta você deseja acessar:</p>
+
+    <div class="options">
+      <a href="/admin" class="card">
+        <div class="card-icon">🛠️</div>
+        <div class="card-title">Painel Administrativo</div>
+        <div class="card-desc">Gerenciamento de DDS, Treinamentos e Relatórios</div>
+      </a>
+
+      <a href="/monitor" class="card">
+        <div class="card-icon">📊</div>
+        <div class="card-title">Monitor de Turnos</div>
+        <div class="card-desc">Acompanhamento de equipes e importação de produção</div>
+      </a>
+
+      <a href="/vexpenses" class="card">
+        <div class="card-icon">💵</div>
+        <div class="card-title">VExpenses</div>
+        <div class="card-desc">Gestão de saldos, importação e relatórios SQL</div>
+      </a>
+    </div>
+  </div>
+  <div class="app-version-footer">
+    {{ revision }}
+  </div>
+</body>
+
+</html>

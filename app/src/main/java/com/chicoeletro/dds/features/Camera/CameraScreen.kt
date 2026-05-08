@@ -4,6 +4,8 @@
 // Tecnologias: Android CameraX, Jetpack Compose, File API.
 // Autor: Valdinei Lankewicz
 // Histórico de Alterações:
+// - 07/05/2026: Ajustes na captura de foto e salvamento isolado para melhorar estabilidade offline.
+// - 08/05/2026: Qualidade da foto reduzida de 85% para 75% e fixada resolução em 1080p.
 
 package com.chicoeletro.dds.features.Camera
 
@@ -263,15 +265,6 @@ fun CameraScreen(
                     }
                 }
 
-                OutlinedButton(onClick = {
-                    resolution = when (resolution.height) {
-                        720 -> android.util.Size(1920, 1080)
-                        1080 -> android.util.Size(3840, 2160)
-                        else -> android.util.Size(1280, 720)
-                    }
-                }) {
-                    Text("🎚️ ${resolution.height}p")
-                }
             }
         }
 
@@ -407,8 +400,9 @@ fun CameraScreen(
 
             } else {
                 OutlinedButton(onClick = {
-                    // Refazer: volta para preview de câmera
+                    // Refazer: volta para preview de câmera e apaga os arquivos órfãos
                     if (mode == CameraMode.ODOMETER) {
+                        runCatching { odoPreviewUri?.let { context.contentResolver.delete(it, null, null) } }
                         odoPreviewUri = null
                         ocrBusy = false
                         ocrKm = null
@@ -416,6 +410,7 @@ fun CameraScreen(
                         ocrRaw = null
                         ocrError = null
                     } else {
+                        runCatching { previewFotoUri?.let { context.contentResolver.delete(it, null, null) } }
                         previewFotoUri = null
                     }
                 }) {
@@ -566,7 +561,7 @@ private fun runOcrLocalMlKit(bmp: Bitmap): Pair<Long?, String?> {
 }
 
 // ======== util: força orientação "paisagem" 16:9 mesmo se o device estiver travado em retrato ========
-private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW: Int = 1920, minH: Int = 1080, quality: Int = 85) {
+private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW: Int = 1920, minH: Int = 1080, quality: Int = 75) {
     try {
         val optsForBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, optsForBounds) }

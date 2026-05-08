@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -235,6 +236,31 @@ fun ViewerScreen(
     Column(Modifier.fillMaxSize().pointerInput(Unit) {
         detectTapGestures(onTap = { viewModel.onUserInteraction() })
     }) {
+        // Alerta de Inatividade (8 min+)
+        if (ui.inactivityWarning) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "ALERTA: O tempo limite do treinamento está terminando! Conclua agora para não perder o progresso.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
         // Área principal da imagem ou placeholder de Início
         Box(
             modifier = Modifier
@@ -382,6 +408,12 @@ fun ViewerScreen(
                                             showWhyDialog = true
                                         } else if (canFinish) {
                                             onOpenForm()
+                                        } else {
+                                            // 🚨 Caso o tempo total tenha dado (falta <= 0) mas o tempo por slide
+                                            // ou visita de todos os slides ainda não tenha sido cumprido.
+                                            remainMs = 0
+                                            whyMode = WhyDialogMode.MIN_TIME
+                                            showWhyDialog = true
                                         }
                                     }
                                 },
@@ -533,6 +565,10 @@ fun ViewerScreen(
                                                 } else if (ui.canTakePhoto && !ui.invalidated) {
                                                     fullscreen = false
                                                     onOpenForm()
+                                                } else {
+                                                    // Feedback para quando o tempo total deu mas falta o tempo por slide
+                                                    whyModeFull = WhyDialogMode.MIN_TIME
+                                                    showWhyDialogFull = true
                                                 }
                                             }
                                         },
@@ -577,6 +613,22 @@ fun ViewerScreen(
                         .padding(padding),
                     contentAlignment = Alignment.Center
                 ) {
+                    if (ui.inactivityWarning) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(16.dp),
+                            color = Color.Red.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "⚠️ ATENÇÃO: CONCLUA O DDS AGORA PARA NÃO PERDER O TEMPO DECORRIDO!",
+                                color = Color.White,
+                                modifier = Modifier.padding(12.dp),
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     Crossfade(targetState = painter, label = "viewer-fullscreen") { p ->
                         Image(
                             painter = p,

@@ -14,13 +14,14 @@
 #       • Se algum arquivo já existir, considera a pasta inteira como 'IGNORADOS'.
 #       • Se nenhum arquivo existir, faz upload e retorna True (sucesso).
 #   - update_list_json(): lista todos os blobs sob 'DDSv2/' e salva em 'lista.json' no root local
-#       e no Storage (em 'lista.json').
+#       e no Storage (em 'DDSv2/lista.json').
 #   - move_to_sent(): move a pasta local para 'ENVIADOS'.
 #   - move_to_ignored(): move a pasta local para 'IGNORADOS'.
 
 import os
 import logging
 import json
+import re
 from firebase_admin import credentials, initialize_app, storage
 from config import FIREBASE_CREDENTIAL_PATH, FIREBASE_BUCKET, DDS_BASE, SENT_BASE, IGNORED_BASE
 
@@ -69,10 +70,22 @@ def update_list_json() -> None:
     Lista todos os blobs existentes sob o prefixo 'DDSv2/' no Storage
     e gera um arquivo 'lista.json' na raiz local do projeto, contendo:
         { "files": [<lista de paths completos dos blobs>] }
-    Em seguida, faz upload de 'lista.json' para o Storage no path 'lista.json'.
+    Em seguida, faz upload de 'lista.json' para o Storage no path 'DDSv2/lista.json'.
     """
     blobs = bucket.list_blobs(prefix="DDSv2/")
-    all_paths = [blob.name for blob in blobs]  # ex: ['DDSv2/2025-06-10 - TEMA X/arq1.jpg', ...]
+    
+    # Regra estrita: Apenas pastas que começam com data ISO (AAAA-MM-DD) são consideradas treinamentos.
+    # Isso ignora automaticamente a pasta _cache e qualquer outra pasta mal-formatada.
+    all_paths = []
+    for blob in blobs:
+        name = blob.name
+        if name.endswith("lista.json"):
+            continue
+            
+        # Verifica se o caminho segue o padrão DDSv2/YYYY-MM-DD ...
+        if re.match(r"^DDSv2/\d{4}-\d{2}-\d{2}", name):
+            all_paths.append(name)
+            
     data = {"files": sorted(all_paths)}
 
     # 1) Cria arquivo 'lista.json' na raiz do projeto
@@ -89,7 +102,7 @@ def update_list_json() -> None:
     try:
         blob = bucket.blob('DDSv2/lista.json')
         blob.upload_from_filename(local_path)
-        logger.info("Arquivo 'lista.json' enviado para o bucket em 'lista.json'.")
+        logger.info("Arquivo 'lista.json' enviado para o bucket em 'DDSv2/lista.json'.")
     except Exception as e:
         logger.error("Erro ao enviar lista.json para o bucket: %s", e)
 

@@ -41,6 +41,15 @@ object NotificationHelper {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(ddsChannel)
             manager.createNotificationChannel(turnoChannel)
+
+            val commChannel = NotificationChannel(
+                NotificationConfig.CHANNEL_COMM_ID,
+                "Mensagens e Avisos",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notificações de mensagens recebidas de outros setores."
+            }
+            manager.createNotificationChannel(commChannel)
         }
     }
 
@@ -100,6 +109,27 @@ object NotificationHelper {
         }
 
         notify(context, NotificationConfig.NOTIFICATION_ID_TURNO, builder.build())
+    }
+
+    fun showCommunicationNotification(context: Context, sender: String, content: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 4, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(context, NotificationConfig.CHANNEL_COMM_ID)
+            .setSmallIcon(R.drawable.dds)
+            .setContentTitle("Nova mensagem de $sender")
+            .setContentText(content)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notify(context, NotificationConfig.NOTIFICATION_ID_COMM, notification)
     }
 
     private fun notify(context: Context, id: Int, notification: android.app.Notification) {

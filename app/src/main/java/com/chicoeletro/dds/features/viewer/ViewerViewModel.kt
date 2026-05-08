@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import android.media.AudioManager
+import android.media.ToneGenerator
 import java.io.File
 import java.util.UUID
 
@@ -44,6 +46,7 @@ data class ViewerUiState(
     val blockMessage: String? = null,
     val invalidated: Boolean = false,
     val invalidateReason: String? = null,
+    val inactivityWarning: Boolean = false,
     // status pós-conclusão (exibido na barra inferior)
     val conclusionInfo: String? = null
 )
@@ -75,12 +78,19 @@ class ViewerViewModel(
     private var blockJob: Job? = null
     private var blockSeq: Long = 0L
 
+    private val toneGenerator = try {
+        ToneGenerator(AudioManager.STREAM_ALARM, 80)
+    } catch (_: Exception) {
+        null
+    }
+
     private companion object {
         const val MIN_TOTAL_MS = 120_000L      // 2 minutos
         const val MIN_FIRST_SLIDE_MS = 5_000L //5s primeiro Slide
         const val MIN_PER_SLIDE_MS = 10_000L   // 10s por slide
         const val MIN_OTHER_SLIDES_MS = 10_000L // 10s por slide
-        const val INACTIVITY_MS = 10 * 60 * 1000L // 10 min
+        const val MAX_SESSION_MS = 10 * 60 * 1000L // 10 min (Inatividade ou Total)
+        const val WARNING_START_MS = 8 * 60 * 1000L // 8 min
 
         // Tempo de vida da mensagem na barra de status (evita “ficar preso” e reduz poluição visual).
         // Ajuste conforme UX desejada.
@@ -290,6 +300,10 @@ class ViewerViewModel(
     }
 
     private fun minPerSlideMs(index: Int): Long {
+        val total = _ui.value.totalSlides
+        // O último slide não tem trava de tempo (exceto se for o único slide do DDS)
+        if (total > 1 && index == total - 1) return 0L
+        
         return if (index == 0) MIN_FIRST_SLIDE_MS else MIN_OTHER_SLIDES_MS
     }
 
@@ -387,8 +401,13 @@ class ViewerViewModel(
             while (isActive) {
                 delay(250)
                 val now = SystemClock.elapsedRealtime()
-                val add = now - (lastResumeMono ?: now)
-                _ui.update { it.copy(elapsedMs = activeAccumMs + add) }
+                val elapsed = activeAccumMs + (now - (lastResumeMono ?: now))
+                _ui.update { it.copy(elapsedMs = elapsed) }
+                
+                if (elapsed >= MAX_SESSION_MS) {
+                    invalidateSession("Tempo máximo de 10 minutos atingido.")
+                }
+                
                 checkGates()
             }
         }
@@ -444,15 +463,43 @@ class ViewerViewModel(
 
     private fun resetInactivityWatchdog() {
         inactivityJob?.cancel()
+        _ui.update { it.copy(inactivityWarning = false) }
         inactivityJob = viewModelScope.launch {
+            var lastBeepMono = 0L
             while (isActive) {
                 delay(5_000)
-                if (SystemClock.elapsedRealtime() - lastInteractionMono >= INACTIVITY_MS) {
+                val now = SystemClock.elapsedRealtime()
+                val inactiveTime = now - lastInteractionMono
+                val totalTime = _ui.value.elapsedMs
+                
+                if (inactiveTime >= MAX_SESSION_MS) {
                     invalidateSession("Inatividade por 10 minutos.")
                     break
                 }
+                
+                if (inactiveTime >= WARNING_START_MS || totalTime >= WARNING_START_MS) {
+                    _ui.update { it.copy(inactivityWarning = true) }
+                    // Alerta sonoro a cada 20 segundos na fase crítica
+                    if (now - lastBeepMono >= 20_000L) {
+                        try {
+                            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 600)
+                        } catch (_: Exception) {}
+                        lastBeepMono = now
+                    }
+                } else {
+                    if (_ui.value.inactivityWarning) {
+                        _ui.update { it.copy(inactivityWarning = false) }
+                    }
+                }
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            toneGenerator?.release()
+        } catch (_: Exception) {}
     }
     private fun invalidateSession(reason: String) {
         pauseAll()

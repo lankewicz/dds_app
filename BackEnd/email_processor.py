@@ -299,7 +299,7 @@ def _list_all_trainings_sorted(limit: int = 30) -> List[Dict[str, str]]:
         if not pasta or not arquivo or arquivo == "lista.json":
             continue
 
-        m = re.match(r"^(\\d{4}-\\d{2}-\\d{2})\\s*-\\s*(.+)$", pasta)
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})\s*-\s*(.+)$", pasta)
         if not m:
             continue
 

@@ -1,0 +1,10 @@
+# Finalidade: ignorar arquivos temporários, ambiente virtual e caches locais.
+.venv/
+__pycache__/
+*.pyc
+.env
+tmp/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/

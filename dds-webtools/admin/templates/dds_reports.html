@@ -1,0 +1,53 @@
+<!--
+============================================================
+FILE: templates/dds_reports.html
+FUNCTION: Formulário para solicitar relatórios DDS (execução).
+============================================================
+-->
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="header">
+    <div class="header-title">
+      <h1>Relatórios DDS</h1>
+      <p>Execução (Firestore) — pré-visualização no navegador e download em PDF</p>
+    </div>
+  </div>
+
+  <div class="filters-section">
+    <div class="filters-title">Parâmetros</div>
+    <form method="get" action="{{ url_for('admin.dds_reports_progress') }}" class="filters-grid">
+      <div class="filter-group">
+        <label>Data inicial</label>
+        <input type="date" name="start_date" value="{{ start_date }}" required />
+      </div>
+      <div class="filter-group">
+        <label>Data final</label>
+        <input type="date" name="end_date" value="{{ end_date }}" required />
+      </div>
+      <div class="filter-group">
+        <label>Tipo</label>
+        <select name="type">
+          <option value="fotos" {% if rtype=='fotos' %}selected{% endif %}>Relatório com Fotos</option>
+          <option value="detalhado" {% if rtype=='detalhado' %}selected{% endif %}>Detalhado</option>
+          <option value="presenca" {% if rtype=='presenca' %}selected{% endif %}>Presença (painel)</option>
+          <option value="ranking" {% if rtype=='ranking' %}selected{% endif %}>Ranking (Presença por Equipe)</option>
+
+        </select>
+      </div>
+      <div class="filter-group">
+        <label style="visibility:hidden;">Forçar</label>
+        <label style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+          <input type="checkbox" name="force" value="1" />
+          <span>Forçar regeneração</span>
+        </label>
+      </div>
+      <button class="btn btn-filter" type="submit">⚙️ Gerar</button>
+      <a class="btn btn-clear" href="{{ url_for('admin.dashboard') }}">Voltar</a>
+    </form>
+
+    <div style="margin-top:10px;" class="muted">
+      Cache inteligente: dias antigos usam cache; hoje e ontem são recalculados.
+    </div>
+  </div>
+{% endblock %}

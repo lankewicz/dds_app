@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import com.chicoeletro.dds.features.turno.EstadoTurno
 
 @Composable
@@ -48,12 +49,25 @@ fun TurnoBadge(
         shape = MaterialTheme.shapes.small,
         modifier = modifier.clickable { onClick() }
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+        ) {
+            // Linha 0: Rótulo
+            Text(
+                text = "Turno:",
+                color = textColor,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
+
+            Spacer(Modifier.height(2.dp))
+
             // Linha 1: Estado
             Text(
                 text = label,
                 color = textColor, // texto claro
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

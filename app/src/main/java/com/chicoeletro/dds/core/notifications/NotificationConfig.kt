@@ -11,6 +11,7 @@ object NotificationConfig {
     // Identificadores de Canais
     const val CHANNEL_DDS_ID = "dds_reminder_channel"
     const val CHANNEL_TURNO_ID = "turno_reminder_channel"
+    const val CHANNEL_COMM_ID = "comm_channel"
 
     // Horários e Limites Padrão (Fallback caso não definido na equipe)
     const val DEFAULT_WORK_START_HOUR = 7 // 07:00 AM
@@ -30,6 +31,7 @@ object NotificationConfig {
     // IDs de Notificação (estáticos para permitir substituição/atualização)
     const val NOTIFICATION_ID_DDS = 1001
     const val NOTIFICATION_ID_TURNO = 1002
+    const val NOTIFICATION_ID_COMM = 1003
 
     // Intent Actions para botões de notificação
     const val ACTION_STILL_DISPLACING = "com.chicoeletro.dds.ACTION_STILL_DISPLACING"

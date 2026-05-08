@@ -39,6 +39,10 @@ class DdsSyncWorker(
         val duracao = inputData.getString("duracaoDefault") ?: "" // opcional
 
         val pendentes = store.listPending()
+        
+        // Limpa qualquer "lixo" antigo que ficou esquecido no armazenamento antes das nossas correções
+        cleanupOrphanedFiles(applicationContext, pendentes)
+
         if (pendentes.isEmpty()) return Result.success()
 
         var hasFailures = false
@@ -155,5 +159,31 @@ class DdsSyncWorker(
             bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it)
         }
         return f
+    }
+
+    private fun cleanupOrphanedFiles(context: Context, pendentes: List<com.chicoeletro.dds.data.FormSubmission>) {
+        val activePaths = pendentes.flatMap { listOfNotNull(it.localPhotoPath, it.localThumbPath) }.toSet()
+        // Considera órfão arquivos com mais de 2 horas de vida (7200000 ms) para evitar apagar fotos de um DDS que está sendo preenchido no momento
+        val cutoffTime = System.currentTimeMillis() - 7200000
+
+        // Limpa arquivos da filesDir (dds_, odo_)
+        context.filesDir.listFiles()?.forEach { file ->
+            val name = file.name
+            if ((name.startsWith("dds_") || name.startsWith("odo_")) && file.lastModified() < cutoffTime) {
+                if (!activePaths.contains(file.absolutePath)) {
+                    runCatching { file.delete() }
+                }
+            }
+        }
+
+        // Limpa arquivos da cacheDir (thumb_, fallback_)
+        context.cacheDir.listFiles()?.forEach { file ->
+            val name = file.name
+            if ((name.startsWith("thumb_") || name.startsWith("fallback_")) && file.lastModified() < cutoffTime) {
+                if (!activePaths.contains(file.absolutePath)) {
+                    runCatching { file.delete() }
+                }
+            }
+        }
     }
 }

@@ -30,6 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +66,9 @@ fun HeaderBar(
     selectedTraining: String?,
     monthParticipationDays: List<MonthParticipationDay> = emptyList(),
     showTestCameraButton: Boolean = false,
-    onTestCameraClick: (() -> Unit)? = null
+    onTestCameraClick: (() -> Unit)? = null,
+    onCommunicationClick: () -> Unit = {},
+    bubbleColor: Color = Color.Gray
 ) {
     val pendingCount = rememberPendingDdsCount()
 
@@ -74,10 +80,11 @@ fun HeaderBar(
         raw.substringAfter("- ")
             .trim()
             .takeUnless { it.isBlank() }
-            ?: "DDS"
+            ?: "Diálogo Diário de Segurança"
     } else {
-        "DDS"
+        "Diálogo Diário de Segurança"
     }
+    val context = LocalContext.current
 
     HeaderBarState.datePart = date
     HeaderBarState.titlePart = title
@@ -147,24 +154,25 @@ fun HeaderBar(
                     }
                 }
 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    horizontalAlignment = Alignment.End
+                // Ícone de Comunicação (Futuro)
+                var lastClickTime by remember { mutableStateOf(0L) }
+                IconButton(
+                    onClick = {
+                        val now = System.currentTimeMillis()
+                        if (now - lastClickTime < 800) {
+                            onCommunicationClick()
+                        } else {
+                            Toast.makeText(context, "Função de comunicação ainda não disponível", Toast.LENGTH_SHORT).show()
+                        }
+                        lastClickTime = now
+                    }
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "   Diálogo Diário",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "   de Segurança",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.Chat,
+                        contentDescription = "Comunicação",
+                        modifier = Modifier.size(28.dp),
+                        tint = bubbleColor
+                    )
                 }
             }
         }

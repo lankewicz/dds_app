@@ -13,6 +13,8 @@
 // - 01/07/2025: Adicionado controle de tempo desde a leitura até a conclusão do DDS.
 // - 01/07/2025: Alerta bloqueia retorno à tela inicial até confirmação do usuário.
 // - 01/07/2025: ⬆️ Limitada a altura do Card principal para permitir rolagem total em telas pequenas (fillMaxHeight(0.9f))
+// - 07/05/2026: Migração do envio de DDS para a nova arquitetura offline-first (SubmitDdsUseCase).
+// - 08/05/2026: Adicionado tratamento de erro e limite de espaço para fotos; suporte a envio sem foto na falha.
 
 package com.chicoeletro.dds.features.form
 
@@ -100,11 +102,13 @@ fun FormScreen(
         }
     }
 
+    var photoErrorCount by remember { mutableStateOf(0) }
+
     val todosCamposValidos by derivedStateOf {
         equipe.trim().isNotBlank() &&
                 tema.trim().isNotBlank() &&
                 nomes.any { it.isNotBlank() } &&
-                fotoUri != null &&
+                (fotoUri != null || photoErrorCount > 0) &&
                 !isSubmitting &&
                 !jaConcluido  // 👈 NÃO DEIXA CONCLUIR NOVAMENTE
     }
@@ -223,9 +227,11 @@ fun FormScreen(
                                         )
                                     )
 
+                                    val uriToSubmit = if (photoErrorCount > 0 && fotoUri == null) null else fotoUri
+                                    
                                     val savedSubmission = useCase.submitLocalFirst(
                                         submission = submission,
-                                        fotoUri = fotoUri!!,
+                                        fotoUri = uriToSubmit,
                                         thumbUri = thumbUri,
                                         collectionName = collectionName,
                                         pastaFotos = pastaFotos,
@@ -244,26 +250,58 @@ fun FormScreen(
                                         savedSubmission.horaConclusao,
                                         duracaoFormatada
                                     )
-                                    Toast.makeText(
-                                        context,
-                                        "DDS salvo no aparelho. Sincronização em segundo plano.",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    val msgEnviado = if (uriToSubmit == null) {
+                                        "DDS salvo sem foto devido a erros. Sincronização em segundo plano."
+                                    } else {
+                                        "DDS salvo no aparelho. Sincronização em segundo plano."
+                                    }
+                                    Toast.makeText(context, msgEnviado, Toast.LENGTH_SHORT).show()
                                     onBack()
 
                                 } catch (e: DdsSubmissionWindowException) {
                                     Toast.makeText(
                                         context,
-                                        e.message
-                                            ?: "Este DDS está fora da janela permitida para conclusão.",
+                                        e.message ?: "Este DDS está fora da janela permitida para conclusão.",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Falha ao salvar DDS offline: ${e.message ?: "erro inesperado"}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    val errorMsg = e.message ?: "erro inesperado"
+                                    val isSpaceError = errorMsg.contains("ENOSPC", ignoreCase = true) || 
+                                                       errorMsg.contains("space", ignoreCase = true) || 
+                                                       errorMsg.contains("espaço", ignoreCase = true)
+
+                                    if (isSpaceError) {
+                                        Toast.makeText(
+                                            context,
+                                            "Atenção: O tablet está sem espaço! Libere espaço apagando fotos/vídeos antigos ou limpando o cache, e tente novamente.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        setFotoUri(null)
+                                    } else if (errorMsg.contains("ENOENT") || errorMsg.contains("Erro ao copiar Uri")) {
+                                        photoErrorCount++
+                                        if (photoErrorCount >= 2) {
+                                            // Envia sem foto: apenas esvazia fotoUri e pede para confirmar novamente
+                                            setFotoUri(null)
+                                            Toast.makeText(
+                                                context,
+                                                "O erro persiste. Pressione Confirmar para enviar o treinamento sem foto.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Houve um erro com a foto. Por favor, tire outra foto.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            setFotoUri(null)
+                                        }
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Falha ao salvar DDS offline: $errorMsg",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                 } finally {
                                     isSubmitting = false
                                 }

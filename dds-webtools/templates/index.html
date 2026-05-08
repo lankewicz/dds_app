@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
+  <link rel="stylesheet" href="/static/messaging.css?v={{ app_version }}">
+</head>
+
+<body data-team-view="{{ page_mode or 'active' }}">
+  <a href="/" class="home-button" title="Voltar para o Início">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+      <polyline points="9 22 9 12 15 12 15 22"></polyline>
+    </svg>
+  </a>
+  <header class="topbar">
+    <div class="topbarLeft">
+      <div class="brandCompany" aria-label="Empresa atual">
+        <div class="brandLogoShell brandLogoShellCompany">
+          <img class="brandLogo brandLogoCompany" src="/static/img/logo_chico_header.webp" alt="Logo da empresa" loading="lazy" />
+        </div>
+        <span class="srOnly" id="empresaLabel">-</span>
+      </div>
+    </div>
+
+    <div class="topbarCenter">
+      <div class="titleBlock">
+      <div class="titleRow">
+        <span class="titleBadge" aria-hidden="true">
+          <img class="titleBadgeIcon" src="/static/img/logo_dds.webp" alt="" loading="lazy" />
+        </span>
+          <div class="h1">{{ page_title or 'Monitor de Turnos' }}</div>
+        </div>
+
+        <nav class="viewSwitch" aria-label="Alternar entre equipes ativas e inativas">
+          <a href="/monitor" class="viewTab {% if page_mode == 'active' %}isActive{% endif %}">Equipes ativas</a>
+          <a href="/monitor/inativas" class="viewTab {% if page_mode == 'inactive' %}isActive{% endif %}">Equipes inativas</a>
+          <a href="/monitor/lixeira" class="viewTab {% if page_mode == 'trash' %}isActive{% endif %}">Lixeira</a>
+          <a href="#" id="requestsTab" class="viewTab">Solicitações <span class="badge" id="requestsBadge" hidden>0</span></a>
+        </nav>
+      </div>
+    </div>
+
+    <div class="topbarRight">
+      <div class="topbarStatusRow">
+        <div class="chip chipSync" id="lastSync">Atualizado: -</div>
+        <div class="chip chipNextRefresh" id="nextRefresh">Próxima: -</div>
+        
+        <div class="setorContainer">
+          <label for="setorSelector" class="srOnly">Setor:</label>
+          <select id="setorSelector" class="setorSelector">
+            <option value="OFICINA">OFICINA</option>
+            <option value="ALMOXARIFADO">ALMOX</option>
+            <option value="PONTO">PONTO</option>
+            <option value="ROTALOG">ROTALOG</option>
+          </select>
+        </div>
+
+        <button id="refreshBtn">Atualizar</button>
+        <button id="configBtn" type="button" aria-label="Configurações" title="Configurações">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M10.325 4.317a1.724 1.724 0 0 1 3.35 0l.18.826a1.724 1.724 0 0 0 2.573 1.07l.734-.42a1.724 1.724 0 0 1 2.37.632l.326.565a1.724 1.724 0 0 1-.632 2.37l-.734.42a1.724 1.724 0 0 0-.84 2.296c.1.24.1.51 0 .75a1.724 1.724 0 0 0 .84 2.296l.734.42a1.724 1.724 0 0 1 .632 2.37l-.326.565a1.724 1.724 0 0 1-2.37.632l-.734-.42a1.724 1.724 0 0 0-2.573 1.07l-.18.826a1.724 1.724 0 0 1-3.35 0l-.18-.826a1.724 1.724 0 0 0-2.573-1.07l-.734.42a1.724 1.724 0 0 1-2.37-.632l-.326-.565a1.724 1.724 0 0 1 .632-2.37l.734-.42a1.724 1.724 0 0 0 .84-2.296 1.724 1.724 0 0 1 0-.75 1.724 1.724 0 0 0-.84-2.296l-.734-.42a1.724 1.724 0 0 1-.632-2.37l.326-.565a1.724 1.724 0 0 1 2.37-.632l.734.42a1.724 1.724 0 0 0 2.573-1.07l.18-.826Z" />
+            <path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z" />
+          </svg>
+        </button>
+        <button id="messagesBtn" type="button" aria-label="Mensagens" title="Mensagens da Equipe">
+          <div class="messagesBtnIcon">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.8 8.38 8.38 0 0 1 3.8.9L21 3l-1.4 4.7a8.38 8.38 0 0 1 .9 3.8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            <span class="messagesBadge" id="globalMessagesBadge" hidden>0</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="topbarFilterRow">
+        <input id="empresaInput" type="hidden" />
+        <input id="searchInput" placeholder="Filtrar equipe..." />
+        <select id="teamSelect">
+          <option value="">Todas as equipes</option>
+        </select>
+      </div>
+
+      <div class="topbarSummaryRow">
+        <div class="teamCountChip" id="teamCount">Equipes: 0</div>
+        <div class="kpis" id="kpis"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="grid" id="grid"></main>
+  
+  <section class="requestsView" id="requestsView" hidden>
+    <header class="requestsHeader">
+      <h2>Pedidos de Alteração de Prefixo</h2>
+      <p>Abaixo estão as solicitações de mudança de veículo ou nova equipe enviadas pelos tablets. <strong>Ao aprovar, a alteração será aplicada no tablet na próxima sincronização dele.</strong></p>
+    </header>
+    <div class="requestsList" id="requestsList">
+      <div class="emptyState">Carregando solicitações...</div>
+    </div>
+  </section>
+
+  <aside class="messagingSidebar" id="messagingSidebar" hidden>
+    <header class="messagingSidebarHeader">
+      <div class="messagingSidebarTitle">Mensagens</div>
+      <button class="messagingSidebarClose" id="messagingSidebarClose">×</button>
+    </header>
+    <div class="messagingSidebarBody" id="messagingSidebarThreads">
+      <div class="emptyState">Nenhuma conversa ativa</div>
+    </div>
+  </aside>
+
+  <div class="modalShell" id="teamFormModal" hidden>
+    <div class="modalBackdrop" id="teamFormBackdrop"></div>
+    <section class="modalDialog teamFormDialog" role="dialog" aria-modal="true" aria-labelledby="teamFormTitle">
+      <header class="modalHeader">
+        <div class="modalTitleWrap">
+          <div class="modalVehicle" id="teamFormVehicle">🚚</div>
+          <div class="modalTitles">
+            <div class="modalTitle" id="teamFormTitle">Equipe</div>
+            <div class="modalSubtitle" id="teamFormSubtitle">Carregando informações...</div>
+          </div>
+        </div>
+        
+        <div class="modalHeaderComm">
+          <button type="button" id="teamFormCommBtn" class="modalHeaderCommBtn" title="Abrir comunicação com a equipe">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          
+          <div id="teamChatPopover" class="teamChatPopover" hidden>
+            <div class="chatPopoverHeader">
+              <span>Conversa com <strong id="chatPopoverTeamName">-</strong></span>
+              <button type="button" id="chatPopoverClose" class="chatPopoverClose">&times;</button>
+            </div>
+            <div class="chatPopoverBody">
+              <div id="teamChatHistory" class="messagingChatHistory"></div>
+            </div>
+            <div class="chatPopoverFooter">
+              <div class="messagingChatInputWrap">
+                <input type="text" id="teamChatMessageInput" placeholder="Digite uma mensagem..." autocomplete="off">
+                <button type="button" id="teamChatSendBtn">Enviar</button>
+              </div>
+              <div class="chatPopoverActions">
+                <button type="button" id="teamChatConcludeBtn" class="btnConcludeTiny">Concluir Conversa</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <button class="modalClose" id="teamFormClose" type="button" aria-label="Fechar" style="margin-left: auto;">×</button>
+      </header>
+
+      <div class="modalBody teamFormBody">
+        <div class="formNotice" id="teamFormNotice" hidden></div>
+
+        <form id="teamForm" class="teamForm">
+          <input type="hidden" id="formTeamKey" />
+          <input type="hidden" id="formEmpresa" />
+
+          <div class="teamFormSections">
+            <section class="modalSection formSection">
+              <div class="modalSectionTitle">Cadastro da Equipe</div>
+              <div class="formGrid">
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Nome da equipe</span>
+                  <input id="formDisplayName" type="text" placeholder="Ex.: Equipe CA001" />
+                </label>
+
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Integrantes</span>
+                  <textarea id="formMembers" rows="6" placeholder="Um nome por linha"></textarea>
+                  <small class="formHint">Digite um integrante por linha. Linhas vazias serão ignoradas.</small>
+                </label>
+
+                <div class="formField formFieldFull">
+                  <span class="formLabel">Equipamentos</span>
+                  <div class="equipmentCards" id="equipmentCards">
+                    <button class="equipmentCard" id="equipmentCardTablet" type="button" data-equipment-type="tablet">
+                      <span class="equipmentCardThumbWrap">
+                        <img class="equipmentCardThumb" src="/static/img/tablet.svg" alt="Tablet" loading="lazy" />
+                      </span>
+                      <span class="equipmentCardBody">
+                        <span class="equipmentCardTitle">Tablet</span>
+                        <span class="equipmentCardSummary" id="equipmentSummaryTablet">Nenhum equipamento
+                          vinculado</span>
+                      </span>
+                    </button>
+
+                    <button class="equipmentCard" id="equipmentCardCameraCopel" type="button"
+                      data-equipment-type="cameraCopel">
+                      <span class="equipmentCardThumbWrap">
+                        <img class="equipmentCardThumb" src="/static/img/camera-corporal.svg" alt="Câmera Copel"
+                          loading="lazy" />
+                      </span>
+                      <span class="equipmentCardBody">
+                        <span class="equipmentCardTitle">Câmera Copel</span>
+                        <span class="equipmentCardSummary" id="equipmentSummaryCameraCopel">Nenhum equipamento
+                          vinculado</span>
+                      </span>
+                    </button>
+
+                    <button class="equipmentCard" id="equipmentCardCameraVeicular" type="button"
+                      data-equipment-type="cameraVeicular">
+                      <span class="equipmentCardThumbWrap">
+                        <img class="equipmentCardThumb" src="/static/img/camera-veicular.svg" alt="Câmera veicular"
+                          loading="lazy" />
+                      </span>
+                      <span class="equipmentCardBody">
+                        <span class="equipmentCardTitle">Câmera veicular</span>
+                        <span class="equipmentCardSummary" id="equipmentSummaryCameraVeicular">Nenhum equipamento
+                          vinculado</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="teamManagementActions" style="display: flex; gap: 12px; margin-top: 16px;">
+                  <button type="button" class="buttonSecondary" id="teamFormToggleActiveBtn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; border-color: rgba(255,255,255,0.1);">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" id="iconEyeOpen"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" id="iconEyeClosed" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    <span id="textToggleActive">Ocultar Equipe</span>
+                  </button>
+                  <button type="button" class="buttonDanger" id="teamFormDeleteIcon" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Excluir
+                  </button>
+                </div>
+
+                <input id="formActive" type="hidden" value="true" />
+              </div>
+            </section>
+
+            <section class="modalSection formSection formSectionDark">
+              <div class="modalSectionTitle">Situação Atual do Turno</div>
+
+              <div class="liveSummary" id="teamLiveSummary">
+                <div class="liveSummaryItem"><span>Status atual</span><strong id="teamLiveStatus">-</strong></div>
+                <div class="liveSummaryItem"><span>SS / NOC</span><strong id="teamLiveSs">-</strong></div>
+                <div class="liveSummaryItem"><span>Atualizado</span><strong id="teamLiveUpdatedAt">-</strong></div>
+                <div class="liveSummaryItem"><span>Há</span><strong id="teamLiveAgo">-</strong></div>
+              </div>
+
+              <div class="modalSectionTitle" style="margin-top: 1.5rem;">Presenças no DDS (Últimos 20 dias)</div>
+              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem;">
+                <div class="popoverEmpty">Nenhum DDS registrado</div>
+              </div>
+
+              <div class="formGrid">
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Status</span>
+                  <select id="formEstado">
+                    <option value="ABERTO">ABERTO</option>
+                    <option value="INTERVALO">INTERVALO</option>
+                    <option value="DESLOCAMENTO_ESPECIAL">DESLOCAMENTO ESPECIAL</option>
+                    <option value="FECHADO">FECHADO</option>
+                    <option value="DESATUALIZADO">DESATUALIZADO</option>
+                    <option value="DESCONHECIDO">DESCONHECIDO</option>
+                  </select>
+                </label>
+
+                <label class="formField formFieldFull">
+                  <span class="formLabel">SS / NOC</span>
+                  <input id="formNocSs" type="text" placeholder="Ex.: SS-45678" />
+                </label>
+
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Motivo</span>
+                  <input id="formMotivo" type="text" placeholder="Ex.: Manutenção de rede" />
+                </label>
+
+                <label class="formField">
+                  <span class="formLabel">Hora de entrada</span>
+                  <input id="formHoraEntrada" type="time" />
+                </label>
+
+                <label class="formField">
+                  <span class="formLabel">Hora de saída</span>
+                  <input id="formHoraSaida" type="time" />
+                </label>
+
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Observações</span>
+                  <textarea id="formObservacoes" rows="6" placeholder="Observações complementares do turno"></textarea>
+                </label>
+              </div>
+            </section>
+
+            <!-- Seção de comunicação removida -->
+          </div>
+        </form>
+      </div>
+
+      <footer class="modalFooter">
+        <div class="modalFooterMeta" id="teamFormMeta">Pronto para edição</div>
+        <div class="modalActions">
+          <button class="buttonGhost" id="teamFormCancel" type="button" hidden>Cancelar</button>
+          <button class="buttonPrimary" id="teamFormSave" type="button">Fechar</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="modalShell" id="equipmentModal" hidden>
+    <div class="modalBackdrop" id="equipmentModalBackdrop"></div>
+    <section class="modalDialog equipmentDialog" role="dialog" aria-modal="true" aria-labelledby="equipmentModalTitle">
+      <header class="modalHeader">
+        <div class="modalTitleWrap equipmentTitleWrap">
+          <div class="equipmentModalThumbWrap">
+            <img class="equipmentModalThumb" id="equipmentModalImage" src="" alt="" />
+          </div>
+          <div class="modalTitles">
+            <div class="modalTitle" id="equipmentModalTitle">Equipamento</div>
+            <div class="modalSubtitle" id="equipmentModalSubtitle">Dados do equipamento vinculado à equipe</div>
+          </div>
+        </div>
+        <button class="modalClose" id="equipmentModalClose" type="button" aria-label="Fechar">×</button>
+      </header>
+
+      <div class="modalBody">
+        <div class="formNotice" id="equipmentFormNotice" hidden></div>
+
+
+        <div class="formGrid equipmentFormGrid">
+          <label class="formField formFieldFull">
+            <span class="formLabel">Serial do equipamento</span>
+            <input id="equipmentSerial" type="text" placeholder="Ex.: TAB-000123" />
+          </label>
+
+          <label class="formField" id="equipmentPatrimonioField">
+            <span class="formLabel">Patrimônio</span>
+            <input id="equipmentPatrimonio" type="text" placeholder="Ex.: PAT-12345" />
+          </label>
+
+          <label class="formField" id="equipmentImeiField">
+            <span class="formLabel">IMEI</span>
+            <input id="equipmentImei" type="text" placeholder="Ex.: 123456789012345" />
+          </label>
+
+          <label class="formField" id="equipmentPhoneField">
+            <span class="formLabel">Número do telefone</span>
+            <input id="equipmentPhone" type="text" placeholder="Ex.: (46) 99999-0000" />
+          </label>
+
+          <label class="formField formFieldFull" id="equipmentEmailField">
+            <span class="formLabel">Email</span>
+            <input id="equipmentEmail" type="email" placeholder="Ex.: equipe.e2269@empresa.com" />
+          </label>
+
+          <label class="formField formFieldFull">
+            <span class="formLabel">Motivo da substituição</span>
+            <select id="equipmentChangeReason">
+              <option value="">Selecione o motivo</option>
+              <option value="Carga Inicial">Carga Inicial</option>
+              <option value="Substituição por Falha">Substituição por Falha</option>
+              <option value="Furto">Furto</option>
+              <option value="Perda">Perda</option>
+              <option value="Substituição da Bateria">Substituição da Bateria</option>
+            </select>
+          </label>
+        </div>
+
+        <section class="equipmentHistorySection">
+          <div class="modalSectionTitle">Histórico</div>
+          <div class="equipmentHistoryTableWrap">
+            <table class="equipmentHistoryTable">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Serial</th>
+                  <th>Patrimônio</th>
+                  <th>Motivo da substituição</th>
+                </tr>
+              </thead>
+              <tbody id="equipmentHistoryTableBody">
+                <tr>
+                  <td colspan="4" class="equipmentHistoryEmptyCell">Nenhuma alteração registrada.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <footer class="modalFooter">
+        <div class="modalFooterMeta" id="equipmentModalMeta">Edite os dados do equipamento vinculado à equipe.</div>
+        <div class="modalActions">
+          <button class="buttonGhost" id="equipmentModalCancel" type="button" hidden>Cancelar</button>
+          <button class="buttonPrimary" id="equipmentModalSave" type="button">Fechar</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="modalShell" id="configModal" hidden>
+    <div class="modalBackdrop" id="configModalBackdrop"></div>
+    <section class="modalDialog configDialog" role="dialog" aria-modal="true" aria-labelledby="configModalTitle">
+      <header class="modalHeader">
+        <div class="modalTitleWrap">
+          <div class="modalVehicle">⏱️</div>
+          <div class="modalTitles">
+            <div class="modalTitle" id="configModalTitle">Configurações do Monitor</div>
+            <div class="modalSubtitle">Tempos de alerta, desatualização e intervalo de polling</div>
+          </div>
+        </div>
+        <button class="modalClose" id="configModalClose" type="button" aria-label="Fechar">×</button>
+      </header>
+
+      <div class="modalBody">
+        <div class="formNotice" id="configNotice" hidden></div>
+
+        <form id="configForm" class="teamForm">
+          <section class="modalSection formSection">
+            <div class="modalSectionTitle">Avisos por Tempo</div>
+            <div class="formGrid">
+              <label class="formField">
+                <span class="formLabel">Alerta amarelo (min)</span>
+                <input id="cfgAlertaAmareloMin" type="number" min="1" step="1" />
+              </label>
+
+              <label class="formField">
+                <span class="formLabel">Alerta vermelho (min)</span>
+                <input id="cfgAlertaVermelhoMin" type="number" min="1" step="1" />
+              </label>
+
+              <label class="formField">
+                <span class="formLabel">Alerta em pisco (min)</span>
+                <input id="cfgAlertaPiscoMin" type="number" min="1" step="1" />
+              </label>
+
+              <label class="formField">
+                <span class="formLabel">Polling automático (seg)</span>
+                <input id="cfgPollingSeconds" type="number" min="15" step="1" />
+              </label>
+            </div>
+          </section>
+
+          <section class="modalSection formSection formSectionDark">
+            <div class="modalSectionTitle">Fechado / Desatualizado</div>
+            <div class="formGrid">
+              <label class="formField">
+                <span class="formLabel">FECHADO vira DESATUALIZADO (h)</span>
+                <input id="cfgFechadoViraDesatualizadoHoras" type="number" min="1" step="1" />
+              </label>
+
+              <label class="formField">
+                <span class="formLabel">DESATUALIZADO vira CRÍTICO (h)</span>
+                <input id="cfgDesatualizadoCriticoHoras" type="number" min="1" step="1" />
+              </label>
+
+              <div class="configSummary formFieldFull" id="configSummary">
+                Os cartões usam estes tempos para definir bordas, status desatualizado e destaque crítico.
+              </div>
+            </div>
+          </section>
+
+          <section class="modalSection formSection importSection">
+            <div class="modalSectionTitle">Importação de Produção BMG</div>
+            <div class="formGrid">
+              <div class="configSummary formFieldFull">
+                Acesse a ferramenta dedicada para importação da planilha mensal de produção.
+              </div>
+              <button class="buttonGhost formFieldFull" id="openImportModalBtn" type="button" style="justify-content: center; font-weight: 500;">Abrir Importador</button>
+            </div>
+          </section>
+        </form>
+      </div>
+
+      <footer class="modalFooter">
+        <div class="modalFooterMeta" id="configModalMeta">Pronto para editar</div>
+        <div class="modalActions">
+          <button class="buttonGhost" id="configModalCancel" type="button">Cancelar</button>
+          <button class="buttonPrimary" id="configModalSave" type="button">Salvar</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="modalShell" id="importModal" hidden>
+    <div class="modalBackdrop" id="importModalBackdrop"></div>
+    <section class="modalDialog importDialog" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+      <header class="modalHeader">
+        <div class="modalTitleWrap">
+          <div class="modalVehicle">📊</div>
+          <div class="modalTitles">
+            <div class="modalTitle" id="importModalTitle">Importação de Produção BMG</div>
+            <div class="modalSubtitle">Envie a planilha-base recebida para atualizar o histórico</div>
+          </div>
+        </div>
+        <button class="modalClose" id="importModalClose" type="button" aria-label="Fechar">×</button>
+      </header>
+
+      <div class="modalBody">
+        <div class="formNotice" id="importNotice" hidden></div>
+
+        <form id="importForm" class="teamForm">
+          <section class="modalSection formSection">
+            <div class="formGrid">
+              <label class="formField formFieldFull">
+                <span class="formLabel">Arquivo Excel</span>
+                <input id="importFileInput" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" />
+                <small class="formHint">O arquivo será enviado para análise automaticamente ao ser selecionado.</small>
+              </label>
+
+              <div class="configSummary formFieldFull importDetectedSummary" id="importDetectedSummary">
+                Nenhum arquivo selecionado ainda.
+              </div>
+
+              <label class="formField">
+                <span class="formLabel">Mês da competência</span>
+                <select id="importMonthSelect">
+                  <option value="">Selecione</option>
+                  <option value="1">Janeiro</option>
+                  <option value="2">Fevereiro</option>
+                  <option value="3">Março</option>
+                  <option value="4">Abril</option>
+                  <option value="5">Maio</option>
+                  <option value="6">Junho</option>
+                  <option value="7">Julho</option>
+                  <option value="8">Agosto</option>
+                  <option value="9">Setembro</option>
+                  <option value="10">Outubro</option>
+                  <option value="11">Novembro</option>
+                  <option value="12">Dezembro</option>
+                </select>
+              </label>
+
+              <label class="formField">
+                <span class="formLabel">Ano da competência</span>
+                <input id="importYearInput" type="number" min="2020" max="2100" step="1" placeholder="2026" />
+              </label>
+
+              <div class="configSummary formFieldFull importCompetenciaWarning" id="importCompetenciaWarning" hidden></div>
+
+              <div class="importSummaryGrid formFieldFull" id="importSummaryGrid" hidden></div>
+              <div class="importIssuesList formFieldFull" id="importIssuesList" hidden></div>
+
+              <div class="configSummary formFieldFull importLastJob" id="importLastJob">
+                Nenhuma importação registrada ainda.
+              </div>
+            </div>
+          </section>
+        </form>
+      </div>
+
+      <footer class="modalFooter">
+        <div class="modalFooterMeta" id="importModalMeta">Aguardando arquivo...</div>
+        <div class="modalActions">
+          <button class="buttonGhost" id="importModalCancel" type="button">Cancelar</button>
+          <button class="buttonPrimary" id="importExecuteBtn" type="button" disabled>Importar produção</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="appFooter">
+    <span class="appVersion">v{{ app_version }}</span>
+  </div>
+
+  <!-- Modal de Confirmação de Lixeira -->
+  <div class="modalShell trashConfirmShell" id="trashConfirmModal" hidden style="z-index: 2000;">
+    <div class="modalBackdrop" id="trashConfirmModalBackdrop"></div>
+    <section class="modalDialog trashConfirmDialog" role="dialog" aria-modal="true" aria-labelledby="trashConfirmTitle" style="max-width: 500px; width: 90%;">
+      <header class="modalHeader">
+        <h2 class="modalTitle" id="trashConfirmTitle">Mover para a Lixeira</h2>
+        <button class="modalClose" id="trashConfirmClose" aria-label="Fechar">&times;</button>
+      </header>
+      <div class="modalBody">
+        <p class="trashInfo" style="margin-bottom: 16px;">Você está prestes a mover a equipe <strong id="trashTeamName"></strong> para a lixeira.</p>
+        <div class="trashStatsGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+          <div class="trashStatCard" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+            <span class="trashStatLabel" style="display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px;">Membros</span>
+            <strong class="trashStatValue" id="trashMembersCount" style="font-size: 18px; color: #fff;">-</strong>
+          </div>
+          <div class="trashStatCard" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+            <span class="trashStatLabel" style="display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px;">Treinamentos</span>
+            <strong class="trashStatValue" id="trashDdsCount" style="font-size: 18px; color: #fff;">-</strong>
+          </div>
+          <div class="trashStatCard" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+            <span class="trashStatLabel" style="display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px;">Equipamentos</span>
+            <strong class="trashStatValue" id="trashHistoryCount" style="font-size: 18px; color: #fff;">-</strong>
+          </div>
+        </div>
+        <p class="trashWarning" style="font-size: 13px; color: var(--muted);">A equipe e todos esses dados ficarão ocultos do monitor, mas poderão ser restaurados posteriormente.</p>
+      </div>
+      <footer class="modalFooter">
+        <div class="modalActions" style="width: 100%; display: flex; justify-content: flex-end; gap: 12px;">
+          <button class="buttonGhost" id="trashConfirmCancel" type="button">Cancelar</button>
+          <button class="buttonDanger" id="trashConfirmExecute" type="button">Sim, mover para lixeira</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    window.appVersion = "{{ app_version }}";
+  </script>
+  <script src="/static/app.js?v={{ app_version }}"></script>
+  <script src="/static/team-form.js?v={{ app_version }}"></script>
+  <script src="/static/messaging.js?v={{ app_version }}"></script>
+  <script src="/static/requests.js?v={{ app_version }}"></script>
+</body>
+
+</html>

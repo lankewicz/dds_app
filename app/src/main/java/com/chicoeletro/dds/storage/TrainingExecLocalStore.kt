@@ -114,8 +114,41 @@ object TrainingExecLocalStore {
         context.trainingExecDataStore.edit { prefs ->
             val current = prefs[prefKey]
             val map = if (current.isNullOrBlank()) mutableMapOf() else parse(current).toMutableMap()
-            map[trainingId] = entry
             prefs[prefKey] = toJson(map)
+        }
+    }
+
+    /**
+     * Migra todo o histórico local de uma equipe para um novo prefixo.
+     * Útil quando há mudança de veículo mas a equipe permanece a mesma.
+     */
+    suspend fun migrateTeam(context: Context, oldTeam: String, newTeam: String) {
+        val oldPrefix = "exec_${oldTeam.trim().uppercase()}_"
+        val newPrefix = "exec_${newTeam.trim().uppercase()}_"
+        
+        context.trainingExecDataStore.edit { prefs ->
+            val allEntries = prefs.asMap()
+            val toMove = allEntries.filter { it.key.name.startsWith(oldPrefix) }
+            
+            for ((oldKey, value) in toMove) {
+                val month = oldKey.name.removePrefix(oldPrefix)
+                val newKey = stringPreferencesKey(newPrefix + month)
+                
+                // Forçamos syncState = LOCAL_ONLY para que o app tente subir esse 
+                // histórico para o NOVO prefixo no Firestore.
+                val updatedValue = runCatching {
+                    val json = JSONObject(value as String)
+                    val keys = json.keys()
+                    while(keys.hasNext()){
+                        val id = keys.next()
+                        json.optJSONObject(id)?.put("syncState", TrainingExecSyncState.LOCAL_ONLY)
+                    }
+                    json.toString()
+                }.getOrElse { value as String }
+
+                prefs[newKey] = updatedValue
+                prefs.remove(oldKey)
+            }
         }
     }
 
@@ -150,5 +183,15 @@ object TrainingExecLocalStore {
             }
             out.toMap()
         }.getOrElse { emptyMap() }
+    }
+    /**
+     * Limpa todo o histórico local de uma equipe específica.
+     */
+    suspend fun clearLocalOnly(context: Context, teamName: String) {
+        val prefix = "exec_${teamName.trim().uppercase()}_"
+        context.trainingExecDataStore.edit { prefs ->
+            val keysToRemove = prefs.asMap().keys.filter { it.name.startsWith(prefix) }
+            keysToRemove.forEach { prefs.remove(it) }
+        }
     }
 }

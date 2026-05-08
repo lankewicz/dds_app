@@ -14,14 +14,7 @@ FUNCTION: Base layout for DDS Admin Site pages.
 </head>
 <body>
   <main class="container">
-    {# Barra removida: mantém apenas uma ação discreta de sair #}
-    {% if session.get('is_admin') %}
-      <div style="display:flex; justify-content:flex-end; padding: 6px 0 14px 0;">
-        <form method="post" action="{{ url_for('admin.logout') }}" style="margin:0;">
-          <button class="btn btn-ghost" type="submit">Sair</button>
-        </form>
-      </div>
-    {% endif %}
+    {# Botão de sair removido conforme solicitado #}
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}

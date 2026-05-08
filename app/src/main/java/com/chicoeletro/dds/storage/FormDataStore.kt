@@ -57,4 +57,27 @@ object FormDataStore {
             prefs.remove(key)
         }
     }
+
+    /**
+     * Migra todas as submissões locais de uma equipe para um novo prefixo.
+     */
+    suspend fun migrateTeam(context: Context, oldTeam: String, newTeam: String) {
+        val oldNormalized = oldTeam.trim().uppercase()
+        val newNormalized = newTeam.trim().uppercase()
+
+        context.dataStore.edit { prefs ->
+            val allKeys = prefs.asMap().keys
+            for (prefKey in allKeys) {
+                val key = stringPreferencesKey(prefKey.name)
+                val jsonString = prefs[key] as? String ?: continue
+                try {
+                    val submission = Json.decodeFromString<FormSubmission>(jsonString)
+                    if (submission.equipe.trim().uppercase() == oldNormalized) {
+                        val updated = submission.copy(equipe = newNormalized)
+                        prefs[key] = Json.encodeToString(updated)
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+    }
 }

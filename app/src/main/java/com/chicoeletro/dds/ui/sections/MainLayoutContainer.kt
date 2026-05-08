@@ -8,6 +8,7 @@
 package com.chicoeletro.dds.ui.sections
 
 import android.app.Application
+import android.util.Log
 import android.widget.Toast
 import android.os.Build
 import android.net.Uri
@@ -35,6 +36,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -66,8 +71,13 @@ import com.chicoeletro.dds.data.FormSubmission
 import com.chicoeletro.dds.features.Camera.CameraScreen
 import com.chicoeletro.dds.features.form.FormScreen
 import com.chicoeletro.dds.features.online.AgoraMeetingEntry
+import com.chicoeletro.dds.features.online.MeetingRepository
+import com.chicoeletro.dds.features.online.DdsSession
 import com.chicoeletro.dds.features.team.TeamConfigSync
 import com.chicoeletro.dds.features.team.TeamEditDialog
+import com.chicoeletro.dds.features.team.TeamChangeRequestRepository
+import com.chicoeletro.dds.features.team.RequestStatus
+import com.chicoeletro.dds.features.team.TeamChangeRequest
 import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
 import com.chicoeletro.dds.features.viewer.ViewerScreen
 import com.chicoeletro.dds.features.viewer.ViewerViewModel
@@ -98,17 +108,24 @@ import com.chicoeletro.dds.features.turno.TurnoSnapshot
 import com.chicoeletro.dds.features.turno.TurnoController
 import com.chicoeletro.dds.features.turno.TurnoPendingStore
 import com.chicoeletro.dds.features.turno.TurnoFirestoreUploader
+import com.chicoeletro.dds.ui.components.CommunicationDialog
+import com.chicoeletro.dds.features.communication.CommunicationRepository
+import com.chicoeletro.dds.features.communication.TeamMessage
+import com.chicoeletro.dds.ui.components.MessageHistoryDialog
 import com.chicoeletro.dds.features.turno.TurnoEventRemote
 import com.chicoeletro.dds.features.turno.TurnoStateRemote
 import com.chicoeletro.dds.features.turno.TurnoSessionRemote
 import com.chicoeletro.dds.features.turno.TurnoActor
 import com.chicoeletro.dds.features.turno.TurnoPhotoAudit
 import com.chicoeletro.dds.ui.components.TurnoControlDialog
+import com.chicoeletro.dds.ui.components.CommunicationScreen
 import com.chicoeletro.dds.ui.components.DdsWarningDialog
 import com.chicoeletro.dds.ui.components.UpdateBanner
 import com.chicoeletro.dds.ui.components.InterjornadaNotice
 import com.chicoeletro.dds.core.version.VersionChecker
 import com.chicoeletro.dds.core.version.VersionStatus
+import com.chicoeletro.dds.ui.components.TeamChangeReason
+import com.chicoeletro.dds.ui.components.TeamChangeReasonDialog
 import android.app.Activity
 
 // CameraScreen (modo odômetro)
@@ -183,6 +200,12 @@ fun MainLayoutContainer() {
     // ==========================================================
     var turnoSnap by remember { mutableStateOf(TurnoSnapshot()) }
     var showTurnoControl by remember { mutableStateOf(false) }
+    var showCommunicationDialog by rememberSaveable { mutableStateOf(false) }
+    val commRepo = remember { CommunicationRepository() }
+    var unreadIncomingCount by remember { mutableStateOf(0) }
+    var unreadOutgoingCount by remember { mutableStateOf(0) }
+    var showHistoryDialog by remember { mutableStateOf(false) }
+    var historyMessages by remember { mutableStateOf<List<TeamMessage>>(emptyList()) }
 
 
     var teamLoaded by remember { mutableStateOf(false) }
@@ -229,6 +252,18 @@ fun MainLayoutContainer() {
     }
 
     var showOnlineTest by remember { mutableStateOf(false) }
+
+    val meetingRepo = remember { MeetingRepository() }
+    val activeSessions by meetingRepo.observeActiveSessions().collectAsState(initial = emptyList())
+    var activeSessionChannel by remember { mutableStateOf<String?>(null) }
+    var showOrganizerDialog by remember { mutableStateOf<DdsSession?>(null) }
+    var isStartingMeeting by remember { mutableStateOf(false) }
+
+    var showReasonDialog by remember { mutableStateOf(false) }
+    var pendingTeamChange by remember { mutableStateOf<Triple<String, List<String>, com.chicoeletro.dds.core.WorkSchedule>?>(null) }
+    var pendingRequestId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeRequest by remember { mutableStateOf<TeamChangeRequest?>(null) }
+    val requestRepo = remember { TeamChangeRequestRepository() }
 
     val execRepo = remember { TeamTrainingExecutionRepository() }
     val statusMonth = remember(selectedTraining) {
@@ -281,6 +316,47 @@ fun MainLayoutContainer() {
                 }
             )
             onDispose { reg.remove() }
+        }
+    }
+
+    LaunchedEffect(pendingRequestId) {
+        val rid = pendingRequestId ?: return@LaunchedEffect
+        requestRepo.observeRequest(rid).collect { req ->
+            activeRequest = req
+            if (req?.status == "APPROVED") {
+                // Confirmado pelo monitor: Podemos limpar o pedido e seguir a vida
+                pendingRequestId = null
+                activeRequest = null
+                pendingTeamChange = null
+                requestRepo.deleteRequest(rid)
+                Log.d("TeamChange", "Alteração confirmada remotamente pelo monitor.")
+            } else if (req?.status == "REJECTED") {
+                // REJEITADO! Precisamos reverter tudo
+                val oldName = req.oldPrefix
+                val currentName = req.newPrefix
+                val reason = req.reason
+                
+                // 1. Reverte o histórico local (faz a migração de volta)
+                if (reason == "VEHICLE_CHANGE") {
+                    TrainingExecLocalStore.migrateTeam(context, currentName, oldName)
+                    FormDataStore.migrateTeam(context, currentName, oldName)
+                } else {
+                    // Se era nova equipe, limpamos o que foi gerado no nome novo
+                    TrainingExecLocalStore.clearLocalOnly(context, currentName)
+                }
+
+                // 2. Restaura o prefixo original
+                teamSync.savePendingLocal(context, oldName, eletricistas, lastTeamData?.workSchedule ?: com.chicoeletro.dds.core.WorkSchedule())
+                equipe = oldName
+                
+                // 3. Limpa estados
+                pendingRequestId = null
+                activeRequest = null
+                pendingTeamChange = null
+                
+                Toast.makeText(context, "ALTERAÇÃO REJEITADA PELO MONITOR! Retornando ao prefixo $oldName.", Toast.LENGTH_LONG).show()
+                requestRepo.deleteRequest(rid)
+            }
         }
     }
 
@@ -379,6 +455,26 @@ fun MainLayoutContainer() {
         teamSync.pullLatestIfSafe(context, online, lastTeamData)
     }
 
+    DisposableEffect(equipe) {
+        if (equipe.isBlank()) return@DisposableEffect onDispose {}
+        val regIn = commRepo.listenIncoming(equipe) { msgs ->
+            val unread = msgs.filter { it.status == "NÃO LIDO" }
+            if (unread.size > unreadIncomingCount) {
+                unread.maxByOrNull { it.timestamp?.time ?: 0L }?.let { 
+                    NotificationHelper.showCommunicationNotification(context, it.fromEquipe, it.content)
+                }
+            }
+            unreadIncomingCount = unread.size
+        }
+        val regOut = commRepo.listenOutgoing(equipe) { msgs ->
+            unreadOutgoingCount = msgs.filter { it.status == "NÃO LIDO" }.size
+        }
+        onDispose {
+            regIn.remove()
+            regOut.remove()
+        }
+    }
+
     LaunchedEffect(teamLoaded, lastTeamData, isInitializing) {
         if (!teamLoaded || isInitializing) return@LaunchedEffect
         val missingTeam = lastTeamData?.equipe.isNullOrBlank() || lastTeamData?.eletricistas.isNullOrEmpty()
@@ -439,6 +535,22 @@ fun MainLayoutContainer() {
             }
         )
     }
+    
+    val today = LocalDate.now()
+    val last7Due = trainings
+        .filter { t -> 
+            trainingIsoDateFromId(t.id)?.let { d -> !d.isAfter(today) } ?: false 
+        }
+        .sortedByDescending { it.id }
+        .take(7)
+    val allDone = last7Due.isEmpty() || last7Due.all { it.id in trainingStatus }
+
+    val bubbleColor = when {
+        unreadIncomingCount > 0 -> Color.Red
+        unreadOutgoingCount > 0 -> Color(0xFF2E7D32) // Verde
+        !allDone -> Color(0xFFFFC107) // Amarelo
+        else -> Color.Gray
+    }
 
     Box(Modifier.fillMaxSize()) {
         if (isInitializing) {
@@ -456,7 +568,9 @@ fun MainLayoutContainer() {
                     selectedTraining = selectedTraining,
                     monthParticipationDays = headerParticipationDays,
                     showTestCameraButton = modoTesteAtivo,
-                    onTestCameraClick = { if (modoTesteAtivo) showOnlineTest = true }
+                    onTestCameraClick = { if (modoTesteAtivo) showOnlineTest = true },
+                    onCommunicationClick = { showCommunicationDialog = true },
+                    bubbleColor = bubbleColor
                 )
                 Row(Modifier.weight(1f)) {
                     LeftSidebarSection(
@@ -472,17 +586,6 @@ fun MainLayoutContainer() {
                         onHome = { selectedTraining = null },
                         onSyncNow = { syncViewModel.syncNow() },
                         onPresenceReport = { 
-                            val today = LocalDate.now()
-                            // Pega os últimos 7 treinamentos agendados (até hoje)
-                            val last7Due = trainings
-                                .filter { t -> 
-                                    trainingIsoDateFromId(t.id)?.let { d -> !d.isAfter(today) } ?: false 
-                                }
-                                .sortedByDescending { it.id }
-                                .take(7)
-
-                            val allDone = last7Due.isEmpty() || last7Due.all { it.id in trainingStatus }
-
                             if (allDone) {
                                 showPresenceReport = true
                             } else {
@@ -553,6 +656,46 @@ fun MainLayoutContainer() {
                                         showForm = false
                                     }
                                 },
+                                onEnterAgora = {
+                                    val sessionIsoDate = currentId.substringBefore(" - ").trim()
+                                    val title = currentId.substringAfter(" - ").trim()
+                                    
+                                    val session = activeSessions.find { s ->
+                                        val parts = s.date.split("/")
+                                        val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
+                                        
+                                        val isDateMatch = formattedDate == sessionIsoDate
+                                        val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
+                                        
+                                        val isMatch = if (extractedTime != null) {
+                                            s.time == extractedTime
+                                        } else {
+                                            s.subject.trim().equals(title, ignoreCase = true)
+                                        }
+                                        
+                                        isDateMatch && isMatch
+                                    }
+                                    
+                                    if (session != null) {
+                                        val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
+                                        
+                                        if (session.status == "active") {
+                                            if (session.channelName.isNotBlank()) {
+                                                activeSessionChannel = session.channelName
+                                            } else {
+                                                Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else if (isHost) {
+                                            // É o organizador e a reunião ainda está 'scheduled'
+                                            showOrganizerDialog = session
+                                        } else {
+                                            // Participante comum e reunião não aberta
+                                            Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 onStatusChanged = { viewerStatus = it }
                             )
                         }
@@ -568,16 +711,62 @@ fun MainLayoutContainer() {
                 TeamEditDialog(
                     initialTeamName = equipe,
                     initialMembers  = eletricistas,
-                    initialWorkSchedule = lastTeamData?.workSchedule ?: com.chicoeletro.dds.core.WorkSchedule(),
-                    mandatory = teamDialogMandatory,
-                    onDismiss = { if (!teamDialogMandatory) showEditDialog = false },
+                    onDismiss = { showEditDialog = false },
                     onSave   = { name, members, schedule ->
+                        val oldName = equipe
+                        if (oldName.isNotBlank() && oldName != name) {
+                            // Mudança de prefixo: pede motivo antes de salvar
+                            pendingTeamChange = Triple(name, members, schedule)
+                            showReasonDialog = true
+                        } else {
+                            // Mesma equipe ou primeira vez: salva direto
+                            scope.launch {
+                                teamSync.savePendingLocal(context, name, members, schedule)
+                                equipe = name
+                                eletricistas = members
+                                teamDialogMandatory = false
+                                showEditDialog = false
+                            }
+                        }
+                    }
+                )
+            }
+
+            if (showReasonDialog && pendingTeamChange != null) {
+                TeamChangeReasonDialog(
+                    oldPrefix = equipe,
+                    newPrefix = pendingTeamChange!!.first,
+                    onCancel = { showReasonDialog = false },
+                    onConfirm = { reason ->
+                        val (name, members, schedule) = pendingTeamChange!!
+                        val oldName = equipe
+                        
                         scope.launch {
+                            // 1. APLICA IMEDIATAMENTE (FLUXO OTIMISTA)
+                            if (reason == TeamChangeReason.VEHICLE_CHANGE) {
+                                TrainingExecLocalStore.migrateTeam(context, oldName, name)
+                                FormDataStore.migrateTeam(context, oldName, name)
+                            } else {
+                                TrainingExecLocalStore.clearLocalOnly(context, oldName)
+                            }
+                            
                             teamSync.savePendingLocal(context, name, members, schedule)
                             equipe = name
                             eletricistas = members
-                            teamDialogMandatory = false
+                            
+                            // 2. CRIA O PEDIDO PARA AUDITORIA/REVERSÃO
+                            val rid = requestRepo.createRequest(
+                                oldPrefix = oldName,
+                                newPrefix = name,
+                                reason = reason.name,
+                                deviceId = deviceId,
+                                appVersion = appVersion
+                            )
+                            pendingRequestId = rid
+                            
+                            showReasonDialog = false
                             showEditDialog = false
+                            teamDialogMandatory = false
                         }
                     }
                 )
@@ -684,6 +873,78 @@ fun MainLayoutContainer() {
                         )
                     }
                 }
+            }
+
+            if (activeSessionChannel != null) {
+                Dialog(onDismissRequest = { activeSessionChannel = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        AgoraMeetingEntry(
+                            appId = AgoraConfig.APP_ID,
+                            channelName = activeSessionChannel!!,
+                            tempToken = AgoraConfig.TEMP_TOKEN, 
+                            localUid = AgoraConfig.LOCAL_USER_ID,
+                            presentationTitle = selectedTraining,
+                            teamName = equipe,
+                            teamMembers = eletricistas,
+                            onLeave = { activeSessionChannel = null }
+                        )
+                    }
+                }
+            }
+
+            // ======= TELA DO ORGANIZADOR (MODAL) =======
+            if (showOrganizerDialog != null) {
+                val session = showOrganizerDialog!!
+                AlertDialog(
+                    onDismissRequest = { if (!isStartingMeeting) showOrganizerDialog = null },
+                    title = { Text("Organizador: Abrir Reunião") },
+                    text = {
+                        Column {
+                            Text("Você é o organizador deste DDS Online.")
+                            Spacer(Modifier.height(8.dp))
+                            Text("Tema: ${session.subject}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text("Horário: ${session.time}", style = MaterialTheme.typography.bodySmall)
+                            
+                            if (isStartingMeeting) {
+                                Spacer(Modifier.height(16.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("Iniciando sessão...")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        isStartingMeeting = true
+                                        meetingRepo.updateSessionStatus(session.id, "active")
+                                        showOrganizerDialog = null
+                                        activeSessionChannel = session.channelName
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Falha ao iniciar: ${e.message}", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        isStartingMeeting = false
+                                    }
+                                }
+                            },
+                            enabled = !isStartingMeeting
+                        ) {
+                            Text("Iniciar Agora")
+                        }
+                    },
+                    dismissButton = {
+                        OutlinedButton(
+                            onClick = { showOrganizerDialog = null },
+                            enabled = !isStartingMeeting
+                        ) {
+                            Text("Cancelar")
+                        }
+                    }
+                )
             }
 
             if (showTurnoControl && equipe.isNotBlank()) {
@@ -948,6 +1209,18 @@ fun MainLayoutContainer() {
                     },
                     onDismiss = { versionStatus = VersionStatus.UP_TO_DATE }
                 )
+            }
+
+            if (showCommunicationDialog) {
+                Dialog(
+                    onDismissRequest = { showCommunicationDialog = false },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    CommunicationScreen(
+                        equipeOrigem = equipe,
+                        onDismiss = { showCommunicationDialog = false }
+                    )
+                }
             }
         }
     }
