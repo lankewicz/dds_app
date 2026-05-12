@@ -4,11 +4,13 @@
 # -----------------------------------------------------------------------------
 
 from services.firestore_client import db
+import services.turnos_service as turnos_service
 from datetime import datetime, timezone
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 def list_pending_requests():
     """Lista todas as solicitações de alteração de prefixo pendentes."""
-    docs = db.collection("prefix_change_requests").where("status", "==", "PENDING").stream()
+    docs = db.collection("monitor/requests/prefix_changes").where(filter=FieldFilter("status", "==", "PENDING")).stream()
     requests = []
     for doc in docs:
         data = doc.to_dict()
@@ -21,7 +23,7 @@ def list_pending_requests():
 
 def approve_request(request_id: str):
     """Aprova uma solicitação de alteração e migra o histórico no Firebase."""
-    doc_ref = db.collection("prefix_change_requests").document(request_id)
+    doc_ref = db.collection("monitor/requests/prefix_changes").document(request_id)
     req_data = doc_ref.get().to_dict()
     
     if not req_data:
@@ -37,7 +39,7 @@ def approve_request(request_id: str):
         batch = db.batch()
         count = 0
         
-        dds_docs = db.collection("DDS").where("equipe", "==", old_prefix).stream()
+        dds_docs = db.collection(turnos_service.DDS_COLLECTION).where(filter=FieldFilter("equipe", "==", old_prefix)).stream()
         for doc in dds_docs:
             batch.update(doc.reference, {"equipe": new_prefix})
             count += 1
@@ -50,14 +52,28 @@ def approve_request(request_id: str):
             batch.commit()
 
         # --- NOVA FAXINA: Remove rastro da equipe antiga para sumir do monitor ---
+        # A) Move o cadastro de equipes (dds_teams)
         cleanup_batch = db.batch()
-        
-        # A) Remove do cadastro de equipes (dds_teams)
         old_team_ref = db.collection("dds_teams").document(old_prefix)
-        cleanup_batch.delete(old_team_ref)
+        new_team_ref = db.collection("dds_teams").document(new_prefix)
+        
+        team_snap = old_team_ref.get()
+        if team_snap.exists:
+            team_data = team_snap.to_dict()
+            team_data["teamKey"] = new_prefix # Atualiza a chave interna
+            team_data["updatedAt"] = firestore.SERVER_TIMESTAMP
+            cleanup_batch.set(new_team_ref, team_data)
+            
+            # Migra histórico de equipamentos
+            history_docs = old_team_ref.collection("equipment_history").stream()
+            for h_doc in history_docs:
+                cleanup_batch.set(new_team_ref.collection("equipment_history").document(h_doc.id), h_doc.to_dict())
+                cleanup_batch.delete(h_doc.reference)
+            
+            cleanup_batch.delete(old_team_ref)
 
         # B) Remove das equipes ativas no monitor (turno/{empresa}/equipes/{prefixo})
-        # Como não temos a empresa no pedido, buscamos em todas as empresas (geralmente é uma só)
+        # O monitor irá recriar a nova equipe automaticamente no próximo sync
         empresas_docs = db.collection("turno").stream()
         for emp_doc in empresas_docs:
             old_shift_ref = db.collection("turno").document(emp_doc.id).collection("equipes").document(old_prefix)
@@ -75,7 +91,7 @@ def approve_request(request_id: str):
 
 def reject_request(request_id: str):
     """Rejeita uma solicitação de alteração."""
-    doc_ref = db.collection("prefix_change_requests").document(request_id)
+    doc_ref = db.collection("monitor/requests/prefix_changes").document(request_id)
     doc_ref.update({
         "status": "REJECTED",
         "rejectedAt": datetime.now(timezone.utc).isoformat()

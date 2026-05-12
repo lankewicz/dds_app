@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
-# Arquivo : static/messaging.js
-# Objetivo: Gerenciar a exibição do painel lateral de mensagens e as
-#           funcionalidades globais de comunicação.
-# -----------------------------------------------------------------------------
+// Arquivo : static/messaging.js
+// Objetivo: Gerenciar a exibição do painel lateral de mensagens e as
+//           funcionalidades globais de comunicação.
+// -----------------------------------------------------------------------------
 
 (function() {
   const messagingSidebar = document.getElementById('messagingSidebar');
@@ -20,6 +20,10 @@
 
   function closeSidebar() {
     messagingSidebar.hidden = true;
+  }
+
+  function escapeHtml(value) {
+    return (value ?? "").toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
   }
 
   async function loadThreads() {
@@ -41,15 +45,16 @@
         const isUnread = thread.status === 'NÃO LIDO' && thread.toSetor === currentSector;
         const time = thread.timestamp ? new Date(thread.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
         const date = thread.timestamp ? new Date(thread.timestamp).toLocaleDateString('pt-BR') : '';
+        const targetTeamKey = thread.fromEquipe === currentSector ? thread.toEquipe : thread.fromEquipe;
         
         return `
-          <div class="threadCard ${isUnread ? 'isUnread' : ''}" data-thread-id="${thread.threadId}" data-team-key="${thread.fromEquipe === currentSector ? thread.toEquipe : thread.fromEquipe}">
+          <div class="threadCard ${isUnread ? 'isUnread' : ''}" data-thread-id="${escapeHtml(thread.threadId)}" data-team-key="${escapeHtml(targetTeamKey)}">
             <div class="threadCardTop">
-              <span class="threadCardFrom">${thread.fromEquipe}</span>
+              <span class="threadCardFrom">${escapeHtml(thread.fromEquipe)}</span>
               <span class="threadCardTime">${date} ${time}</span>
             </div>
-            <div class="threadCardSubject">${thread.subject}</div>
-            <div class="threadCardPreview">${thread.content}</div>
+            <div class="threadCardSubject">${escapeHtml(thread.subject)}</div>
+            <div class="threadCardPreview">${escapeHtml(thread.content)}</div>
           </div>
         `;
       }).join('');

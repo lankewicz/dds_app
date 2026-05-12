@@ -800,8 +800,8 @@ def list_turnos(empresa: str, active: bool | None = True, *, manual_refresh: boo
                     except Exception:
                         pass
                 
-                # Se não temos sinal recente, inativamos os DESCONHECIDO
-                if not recent_turno and not recent_dds:
+                # Se temos algum sinal mas nenhum deles é recente, inativamos os DESCONHECIDO
+                if (dt or latest_dds_day) and not recent_turno and not recent_dds:
                     _persist_team_active_state(
                         team_key,
                         active=False,
@@ -963,24 +963,37 @@ def list_turnos(empresa: str, active: bool | None = True, *, manual_refresh: boo
     }
 
 
-def delete_team_runtime_and_history(team_key: str) -> None:
-    """
-    Remove o estado em tempo real (turno) e todos os registros de DDS vinculados
-    à equipe de forma permanente.
-    """
-    # 1. Remove das subcoleções de equipes de cada empresa na coleção 'turno'
-    for empresa_snap in db.collection("turno").stream():
-        doc_ref = empresa_snap.reference.collection("equipes").document(team_key)
-        doc_ref.delete()
 
-    # 2. Remove registros da coleção DDS (histórico de reuniões)
-    # Busca pelo team_key literal e pela versão normalizada
-    keys_to_clean = {team_key, _normalize_text(team_key)}
-    for key in keys_to_clean:
-        if not key:
-            continue
-        query = db.collection(DDS_COLLECTION).where("equipe", "==", key)
-        # Firestore delete limit is 500, but we assume it's not THAT many records 
-        # for a single team in one go. For safety, we stream and delete.
-        for snap in query.stream():
-            snap.reference.delete()
+def update_realtime_view(empresa: str, manual_refresh: bool = False, **kwargs) -> dict[str, Any]:
+    """
+    Força a atualização da visão em tempo real e persiste no Firestore para consumo
+    via onSnapshot no monitor.
+    """
+    data = list_turnos(empresa=empresa, manual_refresh=manual_refresh, **kwargs)
+    
+    batch = db.batch()
+    count = 0
+    for item in data["items"]:
+        # Persiste na coleção 'realtime'
+        doc_ref = db.collection("turno").document(empresa).collection("realtime").document(item["teamKey"])
+        batch.set(doc_ref, {
+            **item,
+            "viewUpdatedAt": firestore.SERVER_TIMESTAMP
+        })
+        count += 1
+        if count >= 400:
+            batch.commit()
+            batch = db.batch()
+            count = 0
+            
+    if count > 0:
+        batch.commit()
+        
+    # Salva metadado da última atualização
+    sync_time = datetime.now(timezone.utc).isoformat()
+    db.collection("turno").document(empresa).set({
+        "lastViewUpdate": sync_time,
+        "lastViewUpdateBy": "MONITOR_SYNC"
+    }, merge=True)
+    
+    return {**data, "lastViewUpdate": sync_time}

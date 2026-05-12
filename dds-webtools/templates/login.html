@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acesso Restrito | {{ app_title }}</title>
+    <link rel="stylesheet" href="/static/login.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-section">
+                <div style="background: #ffffff; padding: 25px; border-radius: 20px; display: inline-block; margin-bottom: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                    <img src="/static/img/logo_chico_header.webp" alt="Chico Eletro" style="max-width: 220px; display: block;">
+                </div>
+                <h1>Acesso à Organização</h1>
+                <p class="subtitle">Insira seu e-mail da Chico Eletro</p>
+            </div>
+
+            <div id="error-message"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">E-mail</label>
+                    <input type="email" id="username" placeholder="seuemail@chicoeletro.com.br" required autocomplete="email">
+                </div>
+                
+                <button type="submit" class="login-btn">
+                    <span class="btn-text">Verificar Acesso</span>
+                    <div class="loading-spinner"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.querySelector('.login-btn');
+            const btnText = document.querySelector('.btn-text');
+            const spinner = document.querySelector('.loading-spinner');
+            const errorMsg = document.getElementById('error-message');
+            
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            spinner.style.display = 'block';
+            errorMsg.style.display = 'none';
+
+            const email = document.getElementById('username').value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                const result = await response.json();
+
+                if (result.ok) {
+                    window.location.href = '/';
+                } else {
+                    throw new Error(result.message || 'E-mail não autorizado');
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btnText.style.display = 'block';
+                spinner.style.display = 'none';
+                errorMsg.textContent = err.message;
+                errorMsg.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -17,7 +17,12 @@ class Config:
     # ---------------------------------------------------------
     # Flask session / security
     # ---------------------------------------------------------
-    SECRET_KEY = env("APP_SECRET_KEY", "")
+    SECRET_KEY = env("APP_SECRET_KEY")
+    if not SECRET_KEY:
+        # Se for local dev, podemos tolerar, mas em produção deve falhar
+        if os.getenv("K_SERVICE"): # Indica Google Cloud Run
+             raise RuntimeError("A variável de ambiente APP_SECRET_KEY é obrigatória em produção.")
+        SECRET_KEY = "dev-secret-key-please-change-in-production"
 
     # ---------------------------------------------------------
     # Simple admin authentication (MVP)

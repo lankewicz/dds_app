@@ -14,7 +14,7 @@ from fastapi.encoders import jsonable_encoder
 import os
 from schemas.monitor_config_schema import MonitorConfigPayload
 from services.monitor_config_service import save_monitor_settings
-from services.turnos_service import APP_TITLE, DEFAULT_EMPRESA, get_monitor_config, list_turnos
+from services.turnos_service import APP_TITLE, DEFAULT_EMPRESA, get_monitor_config, list_turnos, update_realtime_view
 from services.teams_service import list_trash_teams_map, move_to_trash, restore_from_trash, permanently_delete, get_team_trash_preview, get_team, save_team
 from services.requests_service import list_pending_requests, approve_request, reject_request
 
@@ -82,16 +82,36 @@ def update_config(payload: MonitorConfigPayload):
 @router.get("/api/turnos")
 def turnos(
     empresa: str = Query(DEFAULT_EMPRESA),
-    active: bool | None = Query(True),
+    active: str | None = Query("true"), # Mudado para string para aceitar 'all'
+    refresh: str | None = Query(None),
+    setor: str = Query(None),
+):
+    # Converte a string do filtro para boolean ou None
+    active_bool = None
+    if active and active.lower() == "true":
+        active_bool = True
+    elif active and active.lower() == "false":
+        active_bool = False
+    # Se for 'all' ou qualquer outra coisa, active_bool continua None (todas)
+    
+    manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
+    kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": manual_refresh}
+    if setor:
+        kwargs["setor"] = setor
+    return JSONResponse(jsonable_encoder(list_turnos(**kwargs)))
+
+
+@router.post("/api/internal/sync-realtime")
+def sync_realtime(
+    empresa: str = Query(DEFAULT_EMPRESA),
     refresh: str | None = Query(None),
     setor: str = Query(None),
 ):
     manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
-    # Se setor não for passado, list_turnos usará o padrão interno
-    kwargs = {"empresa": empresa, "active": active, "manual_refresh": manual_refresh}
+    kwargs = {"empresa": empresa, "manual_refresh": manual_refresh}
     if setor:
         kwargs["setor"] = setor
-    return JSONResponse(jsonable_encoder(list_turnos(**kwargs)))
+    return JSONResponse(jsonable_encoder(update_realtime_view(**kwargs)))
 
 
 @router.get("/api/requests")
@@ -130,8 +150,12 @@ def restore_team_trash(team_key: str):
 
 @router.delete("/api/teams/{team_key}/permanent")
 def delete_team_permanent(team_key: str):
-    permanently_delete(team_key)
-    return JSONResponse({"ok": True, "message": f"Equipe {team_key} e todo seu histórico foram apagados permanentemente."})
+    logs = permanently_delete(team_key)
+    return JSONResponse({
+        "ok": True, 
+        "logs": logs,
+        "message": f"Equipe {team_key} e todo seu histórico foram apagados permanentemente."
+    })
 
 
 @router.get("/api/teams/{team_key}/trash-preview")
@@ -146,4 +170,10 @@ def toggle_team_active(team_key: str, active: bool):
         return JSONResponse({"ok": False, "message": "Equipe não encontrada"}, status_code=404)
     
     save_team(team_key, {**team, "active": active})
+    
+    # Força atualização do tempo real e limpa caches para que a equipe suma/apareça na hora
+    update_realtime_view()
+    from services.turnos_service import clear_all_monitor_caches
+    clear_all_monitor_caches()
+    
     return JSONResponse(jsonable_encoder({"ok": True, "message": f"Equipe {'ativada' if active else 'ocultada'} com sucesso."}))

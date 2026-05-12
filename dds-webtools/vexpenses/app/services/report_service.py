@@ -1,6 +1,6 @@
 # Finalidade: gerar relatórios agregados usando Firestore e processamento em memória.
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import pytz
@@ -117,7 +117,7 @@ class ReportService:
                     if corrections_count % 450 == 0:
                         correction_batch.commit()
                         correction_batch = db.batch()
-            except:
+            except Exception:
                 continue
         
         if corrections_count > 0:
@@ -208,7 +208,7 @@ class ReportService:
                 "total_aprovado": int(row["valor_aprovado"]),
                 "total_reprovado": int(row["valor_repro"]),
                 "total_glosado": int(row["valor_glosa"]),
-                "updated_at": datetime.now()
+                "updated_at": datetime.now(timezone.utc)
             }
             COL_SUMMARIES.document(f"month_{y}_{m}").set(cache_data)
             update_task(70 + int((i/len(grouped)) * 10), f"Gerando meses... ({i+1}/{len(grouped)})")
@@ -251,7 +251,7 @@ class ReportService:
         if task_id:
             db.collection("vexpenses").document("data").collection("system_tasks").document(task_id).update({
                 "status": "completed",
-                "finished_at": datetime.now()
+                "finished_at": datetime.now(timezone.utc)
             })
 
     def _get_base_query(
@@ -272,7 +272,7 @@ class ReportService:
         if cache_key in _REPORT_CACHE:
             entry = _REPORT_CACHE[cache_key]
             if now - entry['time'] < _CACHE_TTL:
-                return entry['data']
+                return entry['data'].copy()
 
         try:
             query = COL_REQUESTS
@@ -330,7 +330,7 @@ class ReportService:
                     dt = datetime.fromisoformat(dt_str.split('T')[0])
                     if ano and dt.year != int(ano): continue
                     if mes and dt.month != int(mes): continue
-                except: continue
+                except Exception: continue
 
             # Fallback de filtros em memória se a query nativa falhou ou não cobriu todos os campos
             if aprovador and aprovador.upper().strip() != (d.get("aprovador") or "").upper().strip():
@@ -348,8 +348,8 @@ class ReportService:
             df["valor_solicitado"] = pd.to_numeric(df["valor_solicitado"], errors='coerce').fillna(0.0)
             df["valor_aprovado"] = pd.to_numeric(df["valor_aprovado"], errors='coerce').fillna(0.0)
             
-        _REPORT_CACHE[cache_key] = {'time': now, 'data': df}
-        return df
+        _REPORT_CACHE[cache_key] = {'time': now, 'data': df.copy()}
+        return df.copy()
 
     def summary(
         self,
@@ -375,13 +375,13 @@ class ReportService:
                 
                 return SummaryReportOut(
                     total_registros=total_reg,
-                    total_solicitado=total_sol.quantize(Decimal("0.01")),
-                    total_aprovado=total_app.quantize(Decimal("0.01")),
-                    total_reprovado=total_repro.quantize(Decimal("0.01")),
-                    total_glosado=total_glosa.quantize(Decimal("0.01")),
-                    diferenca_total=(total_sol - total_app).quantize(Decimal("0.01")),
-                    ticket_medio_solicitado=(total_sol / total_reg if total_reg > 0 else Decimal(0)).quantize(Decimal("0.01")),
-                    ticket_medio_aprovado=(total_app / total_reg if total_reg > 0 else Decimal(0)).quantize(Decimal("0.01"))
+                    total_solicitado=(total_sol / 100).quantize(Decimal("0.01")),
+                    total_aprovado=(total_app / 100).quantize(Decimal("0.01")),
+                    total_reprovado=(total_repro / 100).quantize(Decimal("0.01")),
+                    total_glosado=(total_glosa / 100).quantize(Decimal("0.01")),
+                    diferenca_total=((total_sol - total_app) / 100).quantize(Decimal("0.01")),
+                    ticket_medio_solicitado=(total_sol / Decimal(total_reg * 100) if total_reg > 0 else Decimal(0)).quantize(Decimal("0.01")),
+                    ticket_medio_aprovado=(total_app / Decimal(total_reg * 100) if total_reg > 0 else Decimal(0)).quantize(Decimal("0.01"))
                 )
 
         # Lógica de Fragmentos (Cache Ultra Rápido)
@@ -466,7 +466,7 @@ class ReportService:
                 "diferenca_total": int(((total_solicitado - total_aprovado) * 100).to_integral_value()),
                 "ticket_medio_solicitado": int((media_solicitado * 100).to_integral_value()),
                 "ticket_medio_aprovado": int((media_aprovado * 100).to_integral_value()),
-                "updated_at": datetime.now()
+                "updated_at": datetime.now(timezone.utc)
             })
         return result
 
@@ -727,7 +727,7 @@ class ReportService:
         
         COL_SUMMARIES.document("default_filters").set({
             "data": result,
-            "updated_at": datetime.now()
+            "updated_at": datetime.now(timezone.utc)
         })
         return result
 

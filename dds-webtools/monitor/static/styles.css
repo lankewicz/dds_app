@@ -2091,6 +2091,8 @@ button {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  position: relative;
+  z-index: 50;
 }
 
 .btnRestore, .btnPermanentDelete {
@@ -2099,10 +2101,17 @@ button {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 8px;
+  padding: 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
+  pointer-events: auto;
+  position: relative;
+  z-index: 51;
+}
+
+.isTrashTile {
+  cursor: default !important;
 }
 
 .btnRestore {
@@ -2126,12 +2135,15 @@ button {
 }
 
 .isTrashTile {
-  --tile-grad-start: #334155;
-  --tile-grad-end: #1e293b;
+  --tile-grad-start: #1e293b;
+  --tile-grad-end: #0f172a;
   --tile-badge-bg: rgba(255, 255, 255, 0.05);
   --tile-badge-border: rgba(255, 255, 255, 0.1);
-  min-height: 180px;
-  height: 180px;
+  min-height: 220px; /* Aumentado para caber os botões confortavelmente */
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .buttonDanger {
@@ -2145,13 +2157,108 @@ button {
   transition: opacity 0.2s;
 }
 
-.buttonDanger:hover {
-  opacity: 0.85;
+/* Skeleton Loading Animation */
+@keyframes skeleton-pulse {
+  0% { opacity: 0.3; transform: scale(0.98); }
+  50% { opacity: 0.6; transform: scale(1); }
+  100% { opacity: 0.3; transform: scale(0.98); }
 }
 
-.buttonDanger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Notificações Multisetor (Estratégia 4) */
+.tileMessageIcon {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
+
+.tileMessageIcon.active {
+    background: #2563eb;
+    color: white;
+    animation: messagePulse 2s infinite;
+}
+
+.tileMessageIcon.others {
+    background: rgba(148, 163, 184, 0.2);
+    color: #94a3b8;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.tileMessageIcon svg {
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+.messageBadge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #ef4444;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #1e1e2e;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+@keyframes messagePulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+.skeletonContainer {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.skeletonTile {
+  height: 200px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: skeleton-pulse 1.5s infinite ease-in-out;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 12px;
+}
+
+.skeletonCircle {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 auto;
+}
+
+.skeletonLine {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.skeletonLine.short { width: 40%; margin: 0 auto; }
+.skeletonLine.mid { width: 70%; margin: 0 auto; }
+
+.hidden {
+  display: none !important;
 }
 
 .btnHeaderAction {

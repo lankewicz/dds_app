@@ -10,6 +10,7 @@ const empresaLabel = document.getElementById("empresaLabel");
 const lastSync = document.getElementById("lastSync");
 const nextRefresh = document.getElementById("nextRefresh");
 const teamCount = document.getElementById("teamCount");
+const skeletonGrid = document.getElementById("skeletonGrid");
 
 const empresaInput = document.getElementById("empresaInput");
 const searchInput = document.getElementById("searchInput");
@@ -39,10 +40,28 @@ let pollingTimer = null;
 let countdownTimer = null;
 let nextTickAtMs = null;
 let currentItems = [];
+let allRealtimeItems = []; // Guarda todos os items do onSnapshot
 let activeKpiFilter = "";
 let configSaveInFlight = false;
 
 let lastData = null;
+
+// ==========================================
+// CONFIGURAÇÃO DO FIREBASE WEB SDK
+// ==========================================
+// IMPORTANTE: Insira sua apiKey real aqui para o onSnapshot funcionar
+const firebaseConfig = {
+  apiKey: "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ",
+  authDomain: "dds-treinamentos.firebaseapp.com",
+  projectId: "dds-treinamentos"
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.firestore();
+let unsubMonitor = null;
+// ==========================================
 
 function safeUpper(v) { return (v || "").toString().trim().toUpperCase(); }
 function escapeHtml(value) { return (value ?? "").toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
@@ -120,7 +139,9 @@ function fillConfigForm(config) {
   if (cfgAlertaAmareloMin) cfgAlertaAmareloMin.value = rules.alertaAmareloMin ?? '';
   if (cfgAlertaVermelhoMin) cfgAlertaVermelhoMin.value = rules.alertaVermelhoMin ?? '';
   if (cfgAlertaPiscoMin) cfgAlertaPiscoMin.value = rules.alertaPiscoMin ?? '';
-  if (cfgFechadoViraDesatualizadoHoras) cfgFechadoViraDesatualizadoHoras.value = rules.fechadoViraDesatualizadoHoras ?? '';
+  if (cfgFechadoViraDesatualizadoHoras) {
+      cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
+  }
   if (cfgDesatualizadoCriticoHoras) cfgDesatualizadoCriticoHoras.value = rules.desatualizadoCriticoHoras ?? '';
   if (cfgPollingSeconds) cfgPollingSeconds.value = config?.pollingSeconds ?? '';
   syncConfigSummary();
@@ -133,7 +154,7 @@ function collectConfigPayload() {
       alertaAmareloMin: Number(cfgAlertaAmareloMin?.value || 0),
       alertaVermelhoMin: Number(cfgAlertaVermelhoMin?.value || 0),
       alertaPiscoMin: Number(cfgAlertaPiscoMin?.value || 0),
-      fechadoViraDesatualizadoHoras: Number(cfgFechadoViraDesatualizadoHoras?.value || 0),
+      autoDesatualizaFechadoHours: Number(cfgFechadoViraDesatualizadoHoras?.value || 0),
       desatualizadoCriticoHoras: Number(cfgDesatualizadoCriticoHoras?.value || 0),
     },
   };
@@ -143,7 +164,8 @@ function syncConfigSummary() {
   if (!configSummary) return;
   const payload = collectConfigPayload();
   const rules = payload.rules || {};
-  configSummary.textContent = `Amarelo em ${rules.alertaAmareloMin || '-'} min, vermelho em ${rules.alertaVermelhoMin || '-'} min, pisco em ${rules.alertaPiscoMin || '-'} min. FECHADO vira DESATUALIZADO em ${rules.fechadoViraDesatualizadoHoras || '-'}h e CRÍTICO em ${rules.desatualizadoCriticoHoras || '-'}h. Atualização automática a cada ${payload.pollingSeconds || '-'}s.`;
+  const closedDesat = rules.autoDesatualizaFechadoHours || rules.fechadoViraDesatualizadoHoras || '-';
+  configSummary.textContent = `Amarelo em ${rules.alertaAmareloMin || '-'} min, vermelho em ${rules.alertaVermelhoMin || '-'} min, pisco em ${rules.alertaPiscoMin || '-'} min. FECHADO vira DESATUALIZADO em ${closedDesat}h e CRÍTICO em ${rules.desatualizadoCriticoHoras || '-'}h. Atualização automática a cada ${payload.pollingSeconds || '-'}s.`;
 }
 
 function openConfigModal() {
@@ -223,9 +245,8 @@ function getViewMode() {
 }
 function getActiveFilterValue() {
   const mode = getViewMode();
-  if (mode === 'inactive') return 'false';
-  if (mode === 'trash') return 'all';
-  return 'true';
+  if (mode === 'trash') return 'all'; // Na lixeira buscamos tudo da lixeira
+  return 'all'; // Para Ativas/Inativas, buscamos tudo para manter em cache
 }
 function getTeamCountLabel() {
   const mode = getViewMode();
@@ -403,22 +424,43 @@ function tile(item) {
     ? `<div class="critical art66Badge"><div class="art66Line1">ART 66</div>${isBeforeSeven ? '' : `<div class="art66Line2">até ${escapeHtml(art66EndLabel)}</div>`}</div>`
     : (crit ? `<div class="critical">CRÍTICO</div>` : ``);
   
-  const unreadCount = Number(item.unreadMessages || 0);
-  const messageIconHtml = unreadCount > 0
-    ? `<div class="tileMessageIcon" title="${unreadCount} mensagens não lidas">
-         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
-           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.8 8.38 8.38 0 0 1 3.8.9L21 3l-1.4 4.7a8.38 8.38 0 0 1 .9 3.8Z" stroke-linecap="round" stroke-linejoin="round"/>
-         </svg>
-       </div>`
-    : "";
+  // Lógica de Mensagens Global por Setor (Estratégia 4)
+  const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
+  const unreadMap = item.unreadMap || {};
+  
+  let unreadCurrent = 0;
+  if (currentSector === 'TODOS') {
+      unreadCurrent = Object.values(unreadMap).reduce((a, b) => a + b, 0);
+  } else {
+      unreadCurrent = Number(unreadMap[currentSector] || 0);
+  }
+  
+  const totalUnread = Object.values(unreadMap).reduce((a, b) => a + b, 0);
+  const hasOthers = totalUnread > unreadCurrent;
+
+  let messageIconHtml = "";
+  if (totalUnread > 0) {
+    const iconClass = unreadCurrent > 0 ? "tileMessageIcon active" : "tileMessageIcon others";
+    const title = unreadCurrent > 0 
+      ? `${unreadCurrent} mensagens para seu setor (${currentSector})`
+      : `Mensagens pendentes para outros setores`;
+      
+    messageIconHtml = `
+      <div class="${iconClass}" title="${escapeHtml(title)}">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.8 8.38 8.38 0 0 1 3.8.9L21 3l-1.4 4.7a8.38 8.38 0 0 1 .9 3.8Z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        ${unreadCurrent > 0 ? `<span class="messageBadge">${unreadCurrent}</span>` : ""}
+      </div>`;
+  }
 
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: true, label: "DDS", hintText: "Últimas 5" });
  
   const isTrash = getViewMode() === 'trash';
   const trashActions = isTrash ? `
     <div class="tileTrashActions">
-      <button class="btnRestore" title="Restaurar Equipe" onclick="event.stopPropagation(); window.restoreTeam('${escapeHtml(teamKey)}')">Restaurar</button>
-      <button class="btnPermanentDelete" title="Excluir Permanentemente" onclick="event.stopPropagation(); window.deleteTeamPermanent('${escapeHtml(teamKey)}')">Excluir Permanente</button>
+      <button class="btnRestore" type="button" title="Restaurar Equipe" onclick="event.stopPropagation(); window.restoreTeam('${escapeHtml(teamKey)}')">Restaurar</button>
+      <button class="btnPermanentDelete" type="button" title="Excluir Permanentemente" onclick="event.stopPropagation(); window.deleteTeamPermanent('${escapeHtml(teamKey)}')">Excluir Permanente</button>
     </div>
   ` : '';
 
@@ -582,17 +624,112 @@ window.monitorState = {
   reload: (options = {}) => load(options),
   getCurrentItems: () => [...currentItems],
   getCurrentSector: () => {
-    const selector = document.getElementById('setorSelector');
-    return selector ? selector.value : (localStorage.getItem('dds_monitor_setor') || 'OFICINA');
+    const selector = document.getElementById('sectorSelector');
+    return selector ? selector.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
   },
 };
 
+function syncRealtimeData() {
+  const mode = getViewMode();
+  if (mode === 'trash') return; // Lixeira ainda usa fetch normal
+  
+  // Applica os filtros em cima da memória (allRealtimeItems)
+  const isInactiveMode = mode === 'inactive';
+  
+  const filtered = allRealtimeItems.filter(item => {
+      // 1. Filtro de Ativa/Inativa
+      const itemActive = item.active !== false; // Padrão é true
+      if (isInactiveMode && itemActive) return false;
+      if (!isInactiveMode && !itemActive) return false;
+      
+      // O Filtro de Setor (TIPO) agora é apenas para mensagens e requisições.
+      // As equipes aparecem globais para todos os setores conforme solicitado.
+
+      // 3. Filtros de Pesquisa e KPI (já existentes)
+      const q = safeUpper(searchInput.value);
+      const selectedTeam = safeUpper(teamSelect?.value);
+      const kpiFilter = normalizeKpiFilter(activeKpiFilter);
+      
+      const eq = safeUpper(item.equipe);
+      const teamKey = safeUpper(item.teamKey || item.equipe);
+      const shown = normalizedState(item.estado);
+      
+      const matchesText = !q || eq.includes(q) || teamKey.includes(q);
+      const matchesTeam = !selectedTeam || teamKey === selectedTeam;
+      const matchesKpi = !kpiFilter || (kpiFilter === "ALERTA" ? activeAlertFilter(item) : shown === kpiFilter);
+      
+      return matchesText && matchesTeam && matchesKpi;
+  });
+
+  currentItems = filtered;
+  renderData(filtered, lastData || { empresa: getEmpresaValue(), serverTime: new Date().toISOString() });
+}
+
 function startPolling() {
   if (pollingTimer) clearInterval(pollingTimer);
-  const safeSeconds = Math.max(15, pollingSeconds);
-  nextTickAtMs = Date.now() + safeSeconds * 1000;
-  startCountdown();
-  pollingTimer = setInterval(() => { load(); }, safeSeconds * 1000);
+  if (countdownTimer) clearInterval(countdownTimer);
+  if (unsubMonitor) {
+    unsubMonitor();
+    unsubMonitor = null;
+  }
+  
+  const mode = getViewMode();
+  if (mode === 'trash' || mode === 'inactive') {
+    // Para lixeira ou inativas, continua usando fetch manual
+    load();
+    return;
+  }
+
+  // ==========================================
+  // ESTRATÉGIA 3: ONSNAPSHOT REALTIME
+  // ==========================================
+  nextRefresh.textContent = "Real-time Ativo ⚡";
+  
+  unsubMonitor = db.collection("monitor").document("realtime").collection("equipes")
+    .onSnapshot((snapshot) => {
+      allRealtimeItems = [];
+      snapshot.forEach((doc) => {
+        allRealtimeItems.push(doc.data());
+      });
+      syncRealtimeData();
+    }, (error) => {
+      console.error("Erro no onSnapshot do Firebase:", error);
+      lastSync.textContent = "Atualizado: ERRO DE PERMISSÃO";
+    });
+
+  // Reloginho Local: Atualiza as cores (Amarelo, Vermelho) a cada 30 segundos
+  // sem fazer nenhuma leitura a mais no banco de dados!
+  pollingTimer = setInterval(() => {
+    recalculateLocalAlerts();
+  }, 30000);
+}
+
+function recalculateLocalAlerts() {
+  if (!allRealtimeItems.length || !cfg || !cfg.rules) return;
+  const now = new Date();
+  let changed = false;
+
+  allRealtimeItems.forEach(item => {
+    if (!item.updatedAt || item.estado === 'DESATUALIZADO') return;
+    const updated = new Date(item.updatedAt);
+    if (isNaN(updated.getTime())) return;
+
+    const diffMins = Math.floor((now - updated) / 60000);
+    let novoAlerta = "";
+    
+    if (diffMins >= cfg.rules.alertaPiscoMin) novoAlerta = "PULSE";
+    else if (diffMins >= cfg.rules.alertaVermelhoMin) novoAlerta = "RED";
+    else if (diffMins >= cfg.rules.alertaAmareloMin) novoAlerta = "YELLOW";
+
+    if (item.alerta !== novoAlerta) {
+      item.alerta = novoAlerta;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    syncRealtimeData();
+  }
 }
 
 async function loadConfig() {
@@ -610,8 +747,8 @@ async function load(options = {}) {
   if (empresa) qs.set('empresa', empresa);
   qs.set('active', getActiveFilterValue());
   
-  const sectorSelector = document.getElementById('setorSelector');
-  const selectedSector = sectorSelector ? sectorSelector.value : (localStorage.getItem('dds_monitor_setor') || 'OFICINA');
+  const sectorSelector = document.getElementById('sectorSelector');
+  const selectedSector = sectorSelector ? sectorSelector.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
   if (selectedSector) qs.set('setor', selectedSector);
 
   if (forceRefresh) qs.set('refresh', 'manual');
@@ -626,19 +763,24 @@ async function load(options = {}) {
     const r = await fetch(url, { cache: 'no-store' });
     const data = await r.json();
     
-    // Se for lixeira, o formato é um mapa de equipes direto, não o objeto de turnos
     if (mode === 'trash') {
       const teamsMap = data || {};
       const items = Object.values(teamsMap).map(t => ({
-        ...t,
-        equipe: t.displayName || t.teamKey,
-        estado: 'DESCONHECIDO'
+        ...t, equipe: t.displayName || t.teamKey, estado: 'DESCONHECIDO'
       }));
       renderData(items, { empresa: '-', serverTime: new Date().toISOString() });
       return;
     }
 
-    renderData(data.items || [], data);
+    if (mode === 'inactive') {
+      renderData(data.items || [], data);
+      return;
+    }
+
+    // Atualiza o cache local com os dados frescos do servidor
+    allRealtimeItems = data.items || [];
+    lastData = data;
+    syncRealtimeData();
   } catch (e) {
     console.error('Erro ao carregar monitor:', e);
     lastSync.textContent = 'Atualizado: ERRO';
@@ -653,13 +795,15 @@ async function load(options = {}) {
 }
 
 function renderData(items, meta) {
+    if (skeletonGrid) skeletonGrid.classList.add('hidden');
+    if (grid) grid.classList.remove('hidden');
+    
     if (empresaLabel) empresaLabel.textContent = meta.empresa || '-';
     lastSync.textContent = `Atualizado: ${fmtTimeOnly(meta.serverTime)}`;
     lastData = meta;
     
     syncTeamSelect(items);
-    const filtered = applyFilters(items);
-    currentItems = filtered;
+    currentItems = items;
     
     if (getViewMode() !== 'trash') {
         renderKpis(items);
@@ -668,8 +812,8 @@ function renderData(items, meta) {
         kpis.hidden = true;
     }
     
-    renderTeamCount(filtered);
-    grid.innerHTML = filtered.length ? filtered.map(tile).join('') : `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
+    renderTeamCount(currentItems);
+    grid.innerHTML = currentItems.length ? currentItems.map(tile).join('') : `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
     requestAnimationFrame(syncHoverPlacement);
     
     if (window.teamForm?.refreshOpenTeam) {
@@ -679,7 +823,14 @@ function renderData(items, meta) {
     
     const globalMessagesBadge = document.getElementById('globalMessagesBadge');
     if (globalMessagesBadge) {
-      const totalUnread = items.reduce((acc, it) => acc + (Number(it.unreadMessages) || 0), 0);
+      const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
+      const totalUnread = items.reduce((acc, it) => {
+        const unreadMap = it.unreadMap || {};
+        if (currentSector === 'TODOS') {
+          return acc + Object.values(unreadMap).reduce((a, b) => a + b, 0);
+        }
+        return acc + (Number(unreadMap[currentSector]) || 0);
+      }, 0);
       globalMessagesBadge.textContent = totalUnread;
       globalMessagesBadge.hidden = totalUnread === 0;
     }
@@ -700,10 +851,18 @@ window.deleteTeamPermanent = async function(teamKey) {
   if (!confirm(`ATENÇÃO: Deseja excluir PERMANENTEMENTE a equipe ${teamKey} e TODO o histórico dela? Esta ação não pode ser desfeita.`)) return;
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/permanent`, { method: 'DELETE' });
-    if (r.ok) await load();
-    else alert('Erro ao excluir equipe.');
+    const data = await r.json();
+    if (r.ok) {
+      if (data.logs && data.logs.length > 0) {
+        alert("Resultado da Faxina:\n\n" + data.logs.join("\n"));
+      }
+      await load();
+    } else {
+      alert('Erro ao excluir equipe: ' + (data.message || ''));
+    }
   } catch (e) {
     console.error(e);
+    alert('Erro de comunicação com o servidor.');
   }
 };
 
@@ -770,6 +929,7 @@ document.getElementById('trashConfirmExecute')?.addEventListener('click', async 
     const r = await fetch(`/api/teams/${encodeURIComponent(pendingTrashTeamKey)}/trash`, { method: 'POST' });
     if (r.ok) {
       closeTrashConfirmation();
+      window.teamForm?.closeTeamForm?.(); // Fecha a tela de detalhes da equipe
       await load();
     } else {
       const data = await r.json();
@@ -791,8 +951,8 @@ configModalBackdrop?.addEventListener('click', closeConfigModal);
 configModalSave?.addEventListener('click', saveConfigModal);
 [cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin, cfgFechadoViraDesatualizadoHoras, cfgDesatualizadoCriticoHoras, cfgPollingSeconds].forEach((el) => el?.addEventListener('input', syncConfigSummary));
 
-searchInput.addEventListener('input', load);
-teamSelect?.addEventListener('change', load);
+searchInput.addEventListener('input', () => syncRealtimeData());
+teamSelect?.addEventListener('change', () => syncRealtimeData());
 
 grid.addEventListener('click', (event) => {
   const tileEl = event.target.closest('.tile');
@@ -823,7 +983,7 @@ kpis.addEventListener('click', (event) => {
   }
 
   syncKpiSelection();
-  load();
+  syncRealtimeData(); // Troca instantânea em memória
   event.stopPropagation();
 });
 
@@ -837,13 +997,53 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(syncHoverPlacement);
 });
 
-const sectorSelector = document.getElementById('setorSelector');
+const sectorSelector = document.getElementById('sectorSelector');
 if (sectorSelector) {
-  const savedSector = localStorage.getItem('dds_monitor_setor');
-  if (savedSector) sectorSelector.value = savedSector;
+  sectorSelector.value = localStorage.getItem('dds_monitor_setor') || 'TODOS';
   sectorSelector.addEventListener('change', () => {
     localStorage.setItem('dds_monitor_setor', sectorSelector.value);
-    load({ forceRefresh: true });
+    syncRealtimeData();
+  });
+}
+
+// Lógica de Navegação Dinâmica (SPA)
+function initNavigation() {
+  document.querySelectorAll('.viewTab').forEach(tab => {
+    // A aba de solicitações tem comportamento próprio, ignoramos aqui
+    if (tab.id === 'requestsTab') return;
+
+    tab.addEventListener('click', async (e) => {
+      const url = new URL(tab.href);
+      const mode = url.pathname.includes('inativas') ? 'inactive' : 
+                   url.pathname.includes('lixeira') ? 'trash' : 'active';
+      
+      e.preventDefault();
+      
+      // 1. Atualiza a URL sem recarregar
+      history.pushState({ mode }, '', tab.href);
+      
+      // 2. Atualiza o estado visual
+      document.body.dataset.teamView = mode;
+      document.querySelectorAll('.viewTab').forEach(t => t.classList.remove('isActive'));
+      tab.classList.add('isActive');
+      
+      // 3. Atualiza o título da página
+      const pageTitle = document.querySelector('.h1');
+      if (pageTitle) {
+          pageTitle.textContent = mode === 'inactive' ? 'Equipes Inativas' : 
+                                 mode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
+      }
+
+      // 4. Reinicia o monitoramento/polling para o novo modo
+      startPolling();
+    });
+  });
+
+  // Trata o botão "Voltar" do navegador
+  window.addEventListener('popstate', (e) => {
+    const mode = e.state?.mode || 'active';
+    document.body.dataset.teamView = mode;
+    syncRealtimeData();
   });
 }
 
@@ -854,6 +1054,7 @@ if (sectorSelector) {
     console.error('Erro ao carregar configuração do monitor:', error);
     cfg = cfg || { defaultEmpresa: empresaInput?.value || '', pollingSeconds, rules: {} };
   }
+  initNavigation(); // Inicializa a navegação SPA
   await load();
   startPolling();
 })();

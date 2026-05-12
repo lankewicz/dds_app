@@ -67,19 +67,65 @@ def format_number(value):
 
 templates.env.filters['format_number'] = format_number
 
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse, RedirectResponse
+
+class LoginPayload(BaseModel):
+    email: str
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    public_paths = ["/login", "/api/login", "/static", "/favicon.ico"]
+    if not any(request.url.path.startswith(p) for p in public_paths):
+        user_email = request.cookies.get("user_email")
+        if not user_email:
+            return RedirectResponse(url="/login")
+    return await call_next(request)
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
+    user_email = request.cookies.get("user_email")
     revision = os.environ.get("K_REVISION", "local")
     if "-" in revision:
         parts = revision.split("-")
-        if len(parts) >= 2:
-            revision = "-".join(parts[-2:])
+        if len(parts) >= 2: revision = "-".join(parts[-2:])
             
     return templates.TemplateResponse("landing.html", {
         "request": request, 
         "app_title": APP_TITLE,
-        "revision": revision
+        "revision": revision,
+        "user_email": user_email
     })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login(request: Request):
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "app_title": APP_TITLE
+    })
+
+@app.post("/api/login")
+async def api_login(payload: LoginPayload):
+    try:
+        email = payload.email.lower().strip()
+        from monitor.services.firestore_client import db
+        user_doc = db.collection("dds_users").document(email).get()
+        
+        if user_doc.exists and user_doc.to_dict().get("active"):
+            response = JSONResponse(content={"ok": True})
+            response.set_cookie(key="user_email", value=email, max_age=604800, httponly=True)
+            return response
+        
+        return JSONResponse(content={"ok": False, "message": "E-mail não autorizado"}, status_code=401)
+    except Exception as e:
+        print(f"Erro no login: {e}")
+        return JSONResponse(content={"ok": False, "message": "Erro interno no servidor"}, status_code=500)
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("user_email")
+    return response
 
 # O Monitor vai ficar em /monitor, mas as APIs podem continuar em /api
 # No monitor_routes, os endpoints de HTML eram /, /inativas, /lixeira

@@ -25,7 +25,7 @@ from produtividade.services.cache_service import get_filters_cache
 router = APIRouter(prefix="/produtividade", tags=["Produtividade"])
 
 @router.get("/", response_class=HTMLResponse)
-async def productivity_home(request: Request, ano: int = None, cidade: str = None, regiao: str = None, agencia: str = None):
+async def productivity_home(request: Request, ano: int = None, cidade: str = None, regiao: str = None, agencia: str = None, tipo: str = None):
     # Se não informar ano, busca o último disponível no banco
     if not ano:
         latest_year, _ = get_latest_competence()
@@ -36,9 +36,28 @@ async def productivity_home(request: Request, ano: int = None, cidade: str = Non
     cidade = request.query_params.get("cidade")
     agencia = request.query_params.get("agencia")
     contrato = request.query_params.get("contrato")
+    tipo = request.query_params.get("tipo")
+    selected_team_key = request.query_params.get("equipe")
     
-    data = get_productivity_matrix(year=ano, region=regiao, city=cidade, agency=agencia, contract=contrato)
     filters = get_filters_cache()
+
+    # Lógica de Filtros Dependentes
+    if agencia:
+        agency_cities = filters.get("agency_to_cities", {}).get(agencia, [])
+        if agency_cities:
+            if cidade and cidade not in agency_cities:
+                cidade = None
+            filters["cidades"] = agency_cities
+
+    data = get_productivity_matrix(year=ano, region=regiao, city=cidade, agency=agencia, contract=contrato, tipo=tipo)
+    
+    # Se uma equipe específica for selecionada, buscamos os detalhes dela
+    selected_team_data = None
+    if selected_team_key:
+        for t in data["teams"]:
+            if t["teamKey"] == selected_team_key:
+                selected_team_data = t
+                break
     
     return templates.TemplateResponse("index_prod.html", {
         "request": request,
@@ -49,7 +68,10 @@ async def productivity_home(request: Request, ano: int = None, cidade: str = Non
         "selected_regiao": regiao,
         "selected_cidade": cidade,
         "selected_agencia": agencia,
-        "selected_contrato": contrato
+        "selected_contrato": contrato,
+        "selected_tipo": tipo,
+        "selected_team_key": selected_team_key,
+        "selected_team_data": selected_team_data
     })
 
 @router.get("/api/data")

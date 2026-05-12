@@ -11,14 +11,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.firestore_client import db
 import services.turnos_service as turnos_service
 
 
 COLLECTION_NAME = "dds_teams"
-TRASH_COLLECTION_NAME = "dds_teams_trash"
-DDS_TRASH_COLLECTION_NAME = "dds_trash"
+TRASH_COLLECTION_NAME = "monitor/trash/dds_teams"
+DDS_TRASH_COLLECTION_NAME = "monitor/trash/DDS"
+MENSAGENS_COLLECTION_NAME = "mensagens_comunicacao"
+MENSAGENS_TRASH_COLLECTION_NAME = "monitor/trash/mensagens_comunicacao"
+REQUESTS_COLLECTION_NAME = "monitor/requests/prefix_changes"
 EQUIPMENT_HISTORY_SUBCOLLECTION = "equipment_history"
 EQUIPMENT_TYPES = ("tablet", "cameraCopel", "cameraVeicular")
 
@@ -41,20 +45,32 @@ EQUIPMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     "cameraVeicular": {
         "kind": "cameraVeicular",
         "label": "Câmera veicular",
-        "supportsPatrimonio": True,
-        "supportsImei": False,
-        "supportsPhoneNumber": False,
+        "supportsPatrimonio": False,
+        "supportsImei": True,
+        "supportsPhoneNumber": True,
+        "supportsEmail": False,
     },
 }
 
 
 def get_team(team_key: str) -> dict[str, Any] | None:
-    snap = db.collection(COLLECTION_NAME).document(team_key).get()
+    # Tenta busca exata
+    doc_ref = db.collection(COLLECTION_NAME).document(team_key)
+    snap = doc_ref.get()
+    
+    if not snap.exists:
+        # Tenta busca case-insensitive
+        for doc in db.collection(COLLECTION_NAME).stream():
+            if doc.id.upper() == team_key.upper():
+                snap = doc
+                break
+    
     if not snap.exists:
         return None
+        
     data = snap.to_dict() or {}
+    data["teamKey"] = snap.id # Garante o ID real
     equipment = _read_equipment_map(data)
-    data["teamKey"] = team_key
     data["active"] = bool(data.get("active", True))
     data["equipment"] = equipment
     data["tablet"] = equipment["tablet"]["summary"]
@@ -94,21 +110,32 @@ def _list_collection_teams_map(collection_name: str, active: bool | None = None)
 
 
 def move_to_trash(team_key: str) -> None:
+    # 1. Localiza o ID correto (case-insensitive)
+    actual_team_key = team_key
     source_ref = db.collection(COLLECTION_NAME).document(team_key)
-    dest_ref = db.collection(TRASH_COLLECTION_NAME).document(team_key)
-
     snap = source_ref.get()
+    
     if not snap.exists:
+        for doc in db.collection(COLLECTION_NAME).stream():
+            if doc.id.upper() == team_key.upper():
+                actual_team_key = doc.id
+                source_ref = doc.reference
+                snap = doc
+                break
+                
+    if not snap.exists:
+        # Se não existe no dds_teams, ainda assim tentamos limpar os resquícios no monitor
+        _cleanup_team_runtime_and_realtime(team_key)
         return
 
+    dest_ref = db.collection(TRASH_COLLECTION_NAME).document(actual_team_key)
     data = snap.to_dict() or {}
     data["deletedAt"] = firestore.SERVER_TIMESTAMP
     
-    # Inicia transação ou batch para garantir que tudo seja movido
+    # 1. Move documento da equipe e histórico de equipamentos
     batch = db.batch()
     batch.set(dest_ref, data)
     
-    # Move histórico de equipamentos
     history_snaps = source_ref.collection(EQUIPMENT_HISTORY_SUBCOLLECTION).get()
     for h_snap in history_snaps:
         h_dest_ref = dest_ref.collection(EQUIPMENT_HISTORY_SUBCOLLECTION).document(h_snap.id)
@@ -118,13 +145,71 @@ def move_to_trash(team_key: str) -> None:
     batch.delete(source_ref)
     batch.commit()
 
-    # Move registros de DDS (Treinamentos/Histórico) para a lixeira de DDS
-    _move_dds_records(team_key, turnos_service.DDS_COLLECTION, DDS_TRASH_COLLECTION_NAME)
+    # 2. Identifica todos os possíveis nomes desta equipe para encontrar registros
+    aliases = _get_team_aliases(team_key, data)
 
-    # Remove o estado em tempo real (turno) para evitar que o monitor a recrie como inativa
+    # 3. Move registros de DDS para a lixeira (usando aliases)
+    _move_collection_records(aliases, "equipe", turnos_service.DDS_COLLECTION, DDS_TRASH_COLLECTION_NAME)
+
+    # 4. Move histórico de mensagens para a lixeira (usando aliases)
+    _move_collection_records(aliases, "fromEquipe", MENSAGENS_COLLECTION_NAME, MENSAGENS_TRASH_COLLECTION_NAME)
+    _move_collection_records(aliases, "toEquipe", MENSAGENS_COLLECTION_NAME, MENSAGENS_TRASH_COLLECTION_NAME)
+
+    # 5. Limpa estado em tempo real e caches
+    _cleanup_team_runtime_and_realtime(team_key)
+    turnos_service.clear_all_monitor_caches()
+
+
+def _cleanup_team_runtime_and_realtime(team_key: str) -> None:
+    """Limpa a equipe de todas as coleções de estado imediato."""
+    # Remove do monitor realtime (tenta o ID exato e o ID em caixa alta/baixa)
+    realtime_col = db.collection("monitor").document("realtime").collection("equipes")
+    realtime_col.document(team_key).delete()
+    
+    # Faxina agressiva no realtime (caso o ID lá seja diferente do ID no dds_teams)
+    for doc in realtime_col.stream():
+        if doc.id.upper() == team_key.upper():
+            doc.reference.delete()
+
+    # Remove de todas as empresas no 'turno'
     for empresa_snap in db.collection("turno").stream():
-        doc_ref = empresa_snap.reference.collection("equipes").document(team_key)
-        doc_ref.delete()
+        equipes_col = empresa_snap.reference.collection("equipes")
+        equipes_col.document(team_key).delete()
+        for doc in equipes_col.stream():
+            if doc.id.upper() == team_key.upper():
+                doc.reference.delete()
+
+
+def _delete_doc_and_subcollections(doc_ref: Any, batch_size: int = 400) -> None:
+    """Deleta um documento e todas as suas subcoleções recursivamente."""
+    # 1. Deleta subcoleções primeiro
+    for col_ref in doc_ref.collections():
+        # Deleta documentos da subcoleção em lotes
+        docs = col_ref.list_documents(page_size=batch_size)
+        for doc in docs:
+            _delete_doc_and_subcollections(doc, batch_size)
+    
+    # 2. Deleta o documento em si
+    doc_ref.delete()
+
+
+def _get_team_aliases(team_key: str, team_data: dict[str, Any]) -> set[str]:
+    """Retorna conjunto de nomes que podem identificar a equipe nos registros."""
+    from services.turnos_service import _normalize_text
+    aliases = {team_key}
+    
+    display_name = team_data.get("displayName")
+    if display_name:
+        aliases.add(display_name)
+    
+    # Adiciona versões normalizadas para garantir o 'match'
+    normalized = set()
+    for a in aliases:
+        if not a: continue
+        n = _normalize_text(a)
+        if n: normalized.add(n)
+        
+    return aliases | normalized
 
 
 def restore_from_trash(team_key: str) -> None:
@@ -155,58 +240,152 @@ def restore_from_trash(team_key: str) -> None:
     _move_dds_records(team_key, DDS_TRASH_COLLECTION_NAME, turnos_service.DDS_COLLECTION)
 
 
-def permanently_delete(team_key: str) -> None:
-    # 1. Deleta da lixeira (e seu histórico)
-    trash_ref = db.collection(TRASH_COLLECTION_NAME).document(team_key)
-    _delete_doc_and_subcollections(trash_ref)
+def permanently_delete(team_key: str) -> list[str]:
+    """Exclui permanentemente todos os vestígios da equipe e seus dados vinculados."""
+    logs = []
+    logs.append(f"Iniciando faxina completa para: {team_key}")
     
-    # 2. Deleta também da coleção principal (caso esteja lá por algum motivo)
-    main_ref = db.collection(COLLECTION_NAME).document(team_key)
-    _delete_doc_and_subcollections(main_ref)
-
-    # 3. Deleta registros de turno e histórico de DDS (coleção principal)
-    turnos_service.delete_team_runtime_and_history(team_key)
-
-    # 4. Limpa também a lixeira de DDS
-    _delete_dds_trash_records(team_key)
-
-
-def _move_dds_records(team_key: str, source_col: str, dest_col: str) -> None:
-    """
-    Move registros de DDS entre as coleções principal e lixeira.
-    Isso garante que treinamentos 'sumam' dos relatórios ao ir para a lixeira.
-    """
-    # Identifica as chaves de busca (literal e normalizada se necessário)
-    keys = {team_key}
+    # 1. Busca robusta pelo documento da equipe (pode estar com case diferente no ID)
+    actual_team_key = team_key
+    snap_trash = db.collection(TRASH_COLLECTION_NAME).document(team_key).get()
+    if not snap_trash.exists:
+        # Tenta buscar por case-insensitive na lixeira
+        all_trash = db.collection(TRASH_COLLECTION_NAME).stream()
+        for doc in all_trash:
+            if doc.id.upper() == team_key.upper():
+                actual_team_key = doc.id
+                snap_trash = doc
+                logs.append(f"Encontrado ID correspondente na lixeira: {actual_team_key}")
+                break
     
+    snap_main = db.collection(COLLECTION_NAME).document(actual_team_key).get()
+    data = (snap_trash.to_dict() or snap_main.to_dict()) if (snap_trash.exists or snap_main.exists) else {}
+    aliases = _get_team_aliases(actual_team_key, data)
+    logs.append(f"Aliases identificados: {', '.join(aliases)}")
+
+    # 2. Deleta as imagens do Storage vinculadas aos DDS desta equipe
+    img_count = _delete_team_storage_images(aliases)
+    if img_count > 0:
+        logs.append(f"Imagens removidas do Storage: {img_count}")
+
+    # 3. Deleta documentos base e lixeira
+    _delete_doc_and_subcollections(db.collection(TRASH_COLLECTION_NAME).document(actual_team_key))
+    _delete_doc_and_subcollections(db.collection(COLLECTION_NAME).document(actual_team_key))
+    logs.append("Cadastro base e histórico de equipamentos removidos.")
+
+    # 4. Deleta DDS (Principal e Lixeira)
+    dds_count = _delete_collection_records(aliases, "equipe", turnos_service.DDS_COLLECTION)
+    dds_trash_count = _delete_collection_records(aliases, "equipe", DDS_TRASH_COLLECTION_NAME)
+    if dds_count or dds_trash_count:
+        logs.append(f"Registros de DDS removidos: {dds_count} (ativos), {dds_trash_count} (lixeira)")
+
+    # 5. Deleta Mensagens (Principal e Lixeira)
+    msg_count = _delete_collection_records(aliases, "fromEquipe", MENSAGENS_COLLECTION_NAME)
+    msg_count += _delete_collection_records(aliases, "toEquipe", MENSAGENS_COLLECTION_NAME)
+    msg_trash_count = _delete_collection_records(aliases, "fromEquipe", MENSAGENS_TRASH_COLLECTION_NAME)
+    msg_trash_count += _delete_collection_records(aliases, "toEquipe", MENSAGENS_TRASH_COLLECTION_NAME)
+    if msg_count or msg_trash_count:
+        logs.append(f"Mensagens removidas: {msg_count} (ativas), {msg_trash_count} (lixeira)")
+
+    # 6. Deleta solicitações pendentes ou vinculadas
+    req_count = _delete_collection_records({actual_team_key, team_key}, "oldPrefix", REQUESTS_COLLECTION_NAME)
+    req_count += _delete_collection_records({actual_team_key, team_key}, "newPrefix", REQUESTS_COLLECTION_NAME)
+    if req_count > 0:
+        logs.append(f"Solicitações de alteração limpas: {req_count}")
+
+    # 7. Limpa estado runtime (turno, realtime) e caches
+    _cleanup_team_runtime_and_realtime(actual_team_key)
+    if actual_team_key != team_key:
+        _cleanup_team_runtime_and_realtime(team_key)
+    turnos_service.clear_all_monitor_caches()
+    logs.append("Caches do monitor e estado em tempo real limpos.")
+    
+    logs.append(f"Exclusão de '{actual_team_key}' concluída com sucesso.")
+    return logs
+
+
+def _move_collection_records(keys: set[str], field: str, source_col: str, dest_col: str) -> int:
+    """Move registros de qualquer coleção filtrando por um campo."""
+    total = 0
     for key in keys:
-        query = db.collection(source_col).where("equipe", "==", key)
+        if not key: continue
+        query = db.collection(source_col).where(filter=FieldFilter(field, "==", key))
         snaps = query.get()
-        if not snaps:
-            continue
-            
-        # Processa em lotes (Firestore limit 500)
+        total += len(snaps)
         for i in range(0, len(snaps), 400):
-            chunk = snaps[i : i + 400]
             batch = db.batch()
-            for snap in chunk:
+            for snap in snaps[i : i + 400]:
                 batch.set(db.collection(dest_col).document(snap.id), snap.to_dict())
                 batch.delete(snap.reference)
             batch.commit()
+    return total
 
 
-def _delete_dds_trash_records(team_key: str) -> None:
-    """
-    Remove permanentemente registros de DDS da lixeira.
-    """
-    query = db.collection(DDS_TRASH_COLLECTION_NAME).where("equipe", "==", team_key)
-    snaps = query.get()
-    for i in range(0, len(snaps), 400):
-        chunk = snaps[i : i + 400]
-        batch = db.batch()
-        for snap in chunk:
-            batch.delete(snap.reference)
-        batch.commit()
+def _delete_collection_records(keys: set[str], field: str, collection: str) -> int:
+    """Remove permanentemente registros de uma coleção."""
+    total = 0
+    for key in keys:
+        if not key: continue
+        query = db.collection(collection).where(filter=FieldFilter(field, "==", key))
+        snaps = query.get()
+        total += len(snaps)
+        for i in range(0, len(snaps), 400):
+            batch = db.batch()
+            for snap in snaps[i : i + 400]:
+                batch.delete(snap.reference)
+            batch.commit()
+    return total
+
+
+def _delete_team_storage_images(aliases: set[str]) -> int:
+    """Localiza todos os registros de DDS e deleta os arquivos do storage vinculados."""
+    collections = [turnos_service.DDS_COLLECTION, DDS_TRASH_COLLECTION_NAME]
+    bucket = turnos_service._storage_bucket()
+    count = 0
+    
+    for col in collections:
+        for alias in aliases:
+            if not alias: continue
+            query = db.collection(col).where(filter=FieldFilter("equipe", "==", alias))
+            for snap in query.stream():
+                data = snap.to_dict() or {}
+                # Campos comuns de imagem/foto
+                photo_fields = ["photoUrl", "photoPath", "signatureUrl", "vistoriasPhotos"]
+                for field in photo_fields:
+                    val = data.get(field)
+                    if not val: continue
+                    
+                    if isinstance(val, list):
+                        paths = val
+                    else:
+                        paths = [val]
+                        
+                    for path in paths:
+                        if not isinstance(path, str): continue
+                        if _safe_delete_storage_path(bucket, path):
+                            count += 1
+    return count
+
+
+def _safe_delete_storage_path(bucket, path: str) -> bool:
+    """Tenta extrair o blob name e deletar."""
+    try:
+        # Se for uma URL do Firebase, tenta extrair o path
+        # Ex: https://firebasestorage.googleapis.com/v0/b/.../o/DDSv2%2Fimage.jpg?alt=media
+        blob_name = path
+        if "firebasestorage.googleapis.com" in path:
+            import urllib.parse
+            parts = path.split("/o/")
+            if len(parts) > 1:
+                blob_name = urllib.parse.unquote(parts[1].split("?")[0])
+        
+        blob = bucket.blob(blob_name)
+        if blob.exists():
+            blob.delete()
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def get_team_trash_preview(team_key: str) -> dict[str, Any]:
@@ -225,7 +404,7 @@ def get_team_trash_preview(team_key: str) -> dict[str, Any]:
     
     # Conta registros de DDS
     dds_count = 0
-    dds_query = db.collection(turnos_service.DDS_COLLECTION).where("equipe", "==", team_key)
+    dds_query = db.collection(turnos_service.DDS_COLLECTION).where(filter=FieldFilter("equipe", "==", team_key))
     dds_snaps = dds_query.get()
     dds_count = len(dds_snaps)
     
@@ -238,14 +417,6 @@ def get_team_trash_preview(team_key: str) -> dict[str, Any]:
     }
 
 
-def _delete_doc_and_subcollections(doc_ref) -> None:
-    # Deleta histórico de equipamentos
-    history_snaps = doc_ref.collection(EQUIPMENT_HISTORY_SUBCOLLECTION).get()
-    for h_snap in history_snaps:
-        h_snap.reference.delete()
-    
-    # Deleta o documento principal
-    doc_ref.delete()
 
 
 def list_equipment_history(team_key: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -289,8 +460,11 @@ def save_team(
     incoming_equipment = _read_equipment_map(payload)
     clean_equipment = _resolve_equipment_for_save(previous_equipment, incoming_equipment)
 
+    # Garante que o teamKey salvo no documento seja o ID real (case-correct)
+    team_key_to_save = previous_snap.id if previous_snap.exists else team_key
+
     clean_payload = {
-        "teamKey": team_key,
+        "teamKey": team_key_to_save,
         "displayName": str(payload.get("displayName") or team_key).strip(),
         "members": _string_list(payload.get("members")),
         "equipment": clean_equipment,

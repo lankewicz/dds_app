@@ -45,6 +45,7 @@ class ImportService:
         
         try:
             df = pd.read_excel(file_path)
+            validate_columns(df)
             total_rows = len(df)
             
             # 1. Carregar hashes existentes em memória para evitar N chamadas de 'get()'
@@ -58,6 +59,10 @@ class ImportService:
             updated = 0
             unchanged = 0
             error_count = 0
+            
+            # Contadores de progresso real
+            p_inserted = 0
+            p_updated = 0
             now = datetime.now()
             
             # Preparar operações
@@ -174,11 +179,15 @@ class ImportService:
                 
                 firestore_batch.commit()
                 
-                # Atualizar progresso
+                # Atualizar progresso real baseado no que foi enviado para o Firestore
+                for op_type, _, _ in chunk:
+                    if op_type == "set": p_inserted += 1
+                    else: p_updated += 1
+
                 processed_so_far = i + len(chunk)
                 COL_BATCHES.document(batch_id).update({
-                    "inserted_count": inserted if processed_so_far == total_ops else min(inserted, processed_so_far),
-                    "updated_count": updated if processed_so_far == total_ops else min(updated, processed_so_far),
+                    "inserted_count": p_inserted,
+                    "updated_count": p_updated,
                     "unchanged_count": unchanged,
                     "error_count": error_count,
                     "progress": int((processed_so_far / total_ops) * 100) if total_ops > 0 else 100
@@ -186,6 +195,10 @@ class ImportService:
 
             # Finalizar lote
             COL_BATCHES.document(batch_id).update({
+                "inserted_count": p_inserted,
+                "updated_count": p_updated,
+                "unchanged_count": unchanged,
+                "error_count": error_count,
                 "status": "completed",
                 "progress": 100,
                 "finished_at": datetime.now()

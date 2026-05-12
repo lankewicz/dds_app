@@ -16,13 +16,26 @@ def build_filters_cache():
     agencies = set()
     contracts = set()
     teams = {} # teamKey -> displayName
+    
+    agency_to_cities = {} # agency -> set(cities)
 
     for d in docs:
         data = d.to_dict()
-        if data.get("base"): bases.add(data["base"].upper())
-        if data.get("cityBase"): cities.add(data["cityBase"].upper())
-        if data.get("agency"): agencies.add(data["agency"].upper())
-        if data.get("contract"): contracts.add(str(data["contract"]).upper())
+        base = data.get("base")
+        city = data.get("cityBase")
+        agencia = data.get("agency")
+        contract = data.get("contract")
+
+        if base: bases.add(base)
+        if city: cities.add(city)
+        if agencia: agencies.add(agencia)
+        if contract: contracts.add(str(contract))
+        
+        # Mapeia relação
+        if agencia and city:
+            if agencia not in agency_to_cities:
+                agency_to_cities[agencia] = set()
+            agency_to_cities[agencia].add(city)
         
         tk = data.get("teamKey")
         dn = data.get("displayName")
@@ -33,6 +46,7 @@ def build_filters_cache():
         "cidades": sorted(list(cities)),
         "agencias": sorted(list(agencies)),
         "contratos": sorted(list(contracts)),
+        "agency_to_cities": {k: sorted(list(v)) for k, v in agency_to_cities.items()},
         "equipes": [{"id": k, "nome": v} for k, v in sorted(teams.items())]
     }
 

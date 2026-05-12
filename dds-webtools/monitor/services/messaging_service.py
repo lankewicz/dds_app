@@ -10,11 +10,38 @@ import os
 from typing import Any, List, Optional
 from datetime import datetime, timezone
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 from services.firestore_client import db
 
 COLLECTION_MENSAGENS = "mensagens_comunicacao"
 # Setor padrão deste monitor (pode ser configurado via ENV)
 CURRENT_SETOR = os.getenv("DDS_MONITOR_SETOR", "OFICINA")
+
+def get_all_unread_counts_map() -> dict[str, dict[str, int]]:
+    """
+    Retorna um mapeamento global: { fromEquipe: { toSetor: quantidade } }
+    Isso permite que o monitor mostre notificações dinâmicas ao trocar de setor.
+    """
+    query = (
+        db.collection(COLLECTION_MENSAGENS)
+        .where(filter=FieldFilter("status", "==", "NÃO LIDO"))
+    )
+    
+    # Estrutura: { teamKey: { 'OFICINA': 2, 'ALMOX': 1 } }
+    global_counts = {}
+    for snap in query.stream():
+        data = snap.to_dict()
+        from_equipe = data.get("fromEquipe")
+        to_setor = data.get("toSetor")
+        
+        if from_equipe and to_setor:
+            if from_equipe not in global_counts:
+                global_counts[from_equipe] = {}
+            
+            global_counts[from_equipe][to_setor] = global_counts[from_equipe].get(to_setor, 0) + 1
+            
+    return global_counts
+
 
 def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:
     """
@@ -23,8 +50,8 @@ def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:
     """
     query = (
         db.collection(COLLECTION_MENSAGENS)
-        .where("toSetor", "==", setor)
-        .where("status", "==", "NÃO LIDO")
+        .where(filter=FieldFilter("toSetor", "==", setor))
+        .where(filter=FieldFilter("status", "==", "NÃO LIDO"))
     )
     
     counts = {}
@@ -38,31 +65,36 @@ def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:
 def get_open_threads(setor: str = CURRENT_SETOR) -> List[dict[str, Any]]:
     """
     Busca todas as mensagens que não estão CONCLUIDAS e que envolvem o setor.
-    Agrupa por threadId retornando a mais recente de cada.
+    Se o setor for 'TODOS', traz todas as mensagens não concluídas.
     """
-    # Como o Firestore não suporta Group By, buscamos todas as abertas e agrupamos em memória
-    # Ou filtramos pelas destinadas ao setor ou enviadas pelo setor.
-    
-    # Busca mensagens destinadas ao setor ou enviadas pelo setor que não estão concluídas
-    query_to = db.collection(COLLECTION_MENSAGENS).where("toSetor", "==", setor).where("status", "!=", "CONCLUIDA")
-    query_from = db.collection(COLLECTION_MENSAGENS).where("fromEquipe", "==", setor).where("status", "!=", "CONCLUIDA")
-    
-    messages = []
-    seen_ids = set()
-    
-    for snap in query_to.stream():
-        if snap.id not in seen_ids:
+    if setor == "TODOS":
+        query = db.collection(COLLECTION_MENSAGENS).where(filter=FieldFilter("status", "!=", "CONCLUIDA"))
+        messages = []
+        for snap in query.stream():
             msg = snap.to_dict()
             msg["id"] = snap.id
             messages.append(msg)
-            seen_ids.add(snap.id)
-            
-    for snap in query_from.stream():
-        if snap.id not in seen_ids:
-            msg = snap.to_dict()
-            msg["id"] = snap.id
-            messages.append(msg)
-            seen_ids.add(snap.id)
+    else:
+        # Busca mensagens destinadas ao setor ou enviadas pelo setor que não estão concluídas
+        query_to = db.collection(COLLECTION_MENSAGENS).where(filter=FieldFilter("toSetor", "==", setor)).where(filter=FieldFilter("status", "!=", "CONCLUIDA"))
+        query_from = db.collection(COLLECTION_MENSAGENS).where(filter=FieldFilter("fromEquipe", "==", setor)).where(filter=FieldFilter("status", "!=", "CONCLUIDA"))
+        
+        messages = []
+        seen_ids = set()
+        
+        for snap in query_to.stream():
+            if snap.id not in seen_ids:
+                msg = snap.to_dict()
+                msg["id"] = snap.id
+                messages.append(msg)
+                seen_ids.add(snap.id)
+                
+        for snap in query_from.stream():
+            if snap.id not in seen_ids:
+                msg = snap.to_dict()
+                msg["id"] = snap.id
+                messages.append(msg)
+                seen_ids.add(snap.id)
             
     # Agrupar por threadId
     threads = {}
@@ -92,7 +124,7 @@ def get_thread_messages(thread_id: str) -> List[dict[str, Any]]:
     """
     query = (
         db.collection(COLLECTION_MENSAGENS)
-        .where("threadId", "==", thread_id)
+        .where(filter=FieldFilter("threadId", "==", thread_id))
     )
     
     result = []
@@ -107,13 +139,12 @@ def get_thread_messages(thread_id: str) -> List[dict[str, Any]]:
 def mark_thread_as_read(thread_id: str, setor: str = CURRENT_SETOR) -> int:
     """
     Marca como LIDO todas as mensagens destinadas ao setor nesta thread.
+    Se o setor for 'TODOS', marca todas as mensagens não lidas da thread.
     """
-    query = (
-        db.collection(COLLECTION_MENSAGENS)
-        .where("threadId", "==", thread_id)
-        .where("toSetor", "==", setor)
-        .where("status", "==", "NÃO LIDO")
-    )
+    query = db.collection(COLLECTION_MENSAGENS).where(filter=FieldFilter("threadId", "==", thread_id)).where(filter=FieldFilter("status", "==", "NÃO LIDO"))
+    
+    if setor != "TODOS":
+        query = query.where(filter=FieldFilter("toSetor", "==", setor))
     
     count = 0
     batch = db.batch()
@@ -155,7 +186,7 @@ def conclude_thread(thread_id: str) -> int:
     """
     Marca todas as mensagens de uma thread como CONCLUIDA.
     """
-    query = db.collection(COLLECTION_MENSAGENS).where("threadId", "==", thread_id)
+    query = db.collection(COLLECTION_MENSAGENS).where(filter=FieldFilter("threadId", "==", thread_id))
     
     count = 0
     batch = db.batch()

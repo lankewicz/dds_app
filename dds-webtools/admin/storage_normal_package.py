@@ -36,7 +36,7 @@ def _load_fonts() -> Tuple[ImageFont.ImageFont, ImageFont.ImageFont, ImageFont.I
 
 
 def _sanitize_subject_for_folder(subject: str, *, max_len: int = 80) -> str:
-    """
+    r"""
     Sanitiza o assunto para usar como nome de pasta:
     - remove apenas separadores de path (/, \)
     - remove chars de controle

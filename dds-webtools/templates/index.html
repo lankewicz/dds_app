@@ -10,6 +10,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
   <link rel="stylesheet" href="/static/messaging.css?v={{ app_version }}">
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.11.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore-compat.js"></script>
 </head>
 
 <body data-team-view="{{ page_mode or 'active' }}">
@@ -49,12 +53,13 @@
 
     <div class="topbarRight">
       <div class="topbarStatusRow">
-        <div class="chip chipSync" id="lastSync">Atualizado: -</div>
-        <div class="chip chipNextRefresh" id="nextRefresh">Próxima: -</div>
+        <div class="chip chipSync" id="lastSync" hidden>Atualizado: -</div>
+        <div class="chip chipNextRefresh" id="nextRefresh" hidden>Próxima: -</div>
         
         <div class="setorContainer">
-          <label for="setorSelector" class="srOnly">Setor:</label>
-          <select id="setorSelector" class="setorSelector">
+          <label for="sectorSelector" class="srOnly">Setor:</label>
+          <select id="sectorSelector" class="setorSelector">
+            <option value="TODOS">TODOS</option>
             <option value="OFICINA">OFICINA</option>
             <option value="ALMOXARIFADO">ALMOX</option>
             <option value="PONTO">PONTO</option>
@@ -94,7 +99,22 @@
     </div>
   </header>
 
-  <main class="grid" id="grid"></main>
+  <main class="mainContent">
+    <div id="skeletonGrid" class="skeletonContainer">
+      <!-- 10 cards pulsantes para o carregamento inicial -->
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+      <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
+    </div>
+    <div id="grid" class="grid hidden"></div>
+  </main>
   
   <section class="requestsView" id="requestsView" hidden>
     <header class="requestsHeader">
@@ -302,7 +322,7 @@
         <div class="modalFooterMeta" id="teamFormMeta">Pronto para edição</div>
         <div class="modalActions">
           <button class="buttonGhost" id="teamFormCancel" type="button" hidden>Cancelar</button>
-          <button class="buttonPrimary" id="teamFormSave" type="button">Fechar</button>
+          <button class="buttonPrimary" id="teamFormSave" type="button">Salvar e fechar</button>
         </div>
       </footer>
     </section>

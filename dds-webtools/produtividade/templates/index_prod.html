@@ -5,15 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }}</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --primary: #2563eb;
+            --primary-color: #2563eb;
             --primary-dark: #1e40af;
             --success: #10b981;
             --bg: #f8fafc;
             --card-bg: #ffffff;
             --text-main: #1e293b;
             --text-muted: #64748b;
+            --border-color: #e2e8f0;
         }
 
         body {
@@ -460,13 +463,15 @@
             background: var(--primary-color);
             color: white;
             border: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 8px;
-            font-weight: 500;
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
+            justify-content: center;
             cursor: pointer;
             transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
         }
         .btn-import:hover {
             filter: brightness(1.1);
@@ -531,6 +536,102 @@
             right: 2px;
             font-size: 0.8rem;
         }
+
+        /* Detailed Team View Styles */
+        .detailed-view {
+            margin-top: 1rem;
+            animation: fadeIn 0.4s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .team-info-card {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        .info-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        .info-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .chart-box {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            height: 400px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        .stats-table-container {
+            background: white;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .stats-table th {
+            background: #f8fafc;
+            padding: 1rem;
+            text-align: right;
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            border-bottom: 2px solid #f1f5f9;
+        }
+
+        .stats-table th:first-child { text-align: left; }
+
+        .stats-table td {
+            padding: 1rem;
+            text-align: right;
+            border-bottom: 1px solid #f1f5f9;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        .stats-table td:first-child {
+            text-align: left;
+            font-family: inherit;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .stats-table tr:last-child {
+            background: #f0f9ff;
+            font-weight: 900;
+            color: var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -545,11 +646,10 @@
             <h1>{{ page_title }}</h1>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
-            <button id="openImportModalBtn" class="btn-import">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+            <button id="openImportModalBtn" class="btn-import" title="Importar Planilha de Produção BMG">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                 </svg>
-                Importar Produção
             </button>
             <div class="competencia-badge">
                 Ano Base: {{ selected_ano }}
@@ -601,6 +701,23 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="filter-group">
+                <label>Tipo</label>
+                <select name="tipo" onchange="this.form.submit()">
+                    <option value="">Todos</option>
+                    <option value="CESTO" {% if selected_tipo == 'CESTO' %}selected{% endif %}>STC Cesto</option>
+                    <option value="ESCADA" {% if selected_tipo == 'ESCADA' %}selected{% endif %}>STC Escada</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Análise por Equipe</label>
+                <select name="equipe" onchange="this.form.submit()" style="background: #eef2ff; border-color: var(--primary); font-weight: 700;">
+                    <option value="">Visão Geral (Matriz)</option>
+                    {% for team in data.teams %}
+                    <option value="{{ team.teamKey }}" {% if selected_team_key == team.teamKey %}selected{% endif %}>{{ team.displayName }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="filter-group" style="display: flex; gap: 0.5rem; align-items: flex-end;">
                 <a href="/produtividade" class="btn-clear" title="Limpar todos os filtros" style="height: 42px; display: flex; align-items: center; justify-content: center; width: 42px; border: 1px solid var(--border-color); border-radius: 8px;">✕</a>
             </div>
@@ -643,6 +760,128 @@
     </div>
 
     <main class="content">
+        {% if selected_team_data %}
+        <!-- DETAILED VIEW -->
+        <div class="detailed-view">
+            <div class="team-info-card">
+                <div class="info-group">
+                    <div class="info-label">Equipe</div>
+                    <div class="info-value" style="font-size: 1.5rem; color: var(--primary);">{{ selected_team_data.displayName }}</div>
+                    <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
+                        {{ selected_team_data.cityBase }} | {{ selected_team_data.contract }}
+                    </div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">Integrantes</div>
+                    <div class="info-value" style="font-size: 0.9rem; line-height: 1.4;">
+                        {% if selected_team_data.members %}
+                            {{ selected_team_data.members | join(' | ') }}
+                        {% else %}
+                            <span style="color: var(--text-muted); font-weight: 400;">Não informados</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="info-group" style="text-align: right;">
+                    <div class="info-label">Meta Mensal</div>
+                    <div class="info-value" style="color: #f59e0b;">{{ selected_team_data.goal.targetUs }} US</div>
+                </div>
+            </div>
+
+            <div class="chart-box">
+                <canvas id="performanceChart"></canvas>
+            </div>
+
+            <div class="stats-table-container">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Mês Referência</th>
+                            <th>Produção (US)</th>
+                            <th>Dias Trab.</th>
+                            <th>KM Rodado</th>
+                            <th>Comerciais</th>
+                            <th>Emergência</th>
+                            <th>Serviços</th>
+                            <th>Média Serv/Dia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set total_us = 0 %}
+                        {% set total_days = 0 %}
+                        {% set total_km = 0 %}
+                        {% set total_com = 0 %}
+                        {% set total_emerg = 0 %}
+                        {% set total_serv = 0 %}
+                        {% set count_months = 0 %}
+                        
+                        {% for month_key in data.months %}
+                            {% set cell = data.matrix[month_key][selected_team_key] if data.matrix[month_key] and selected_team_key in data.matrix[month_key] else None %}
+                            {% set m_metrics = cell.metrics if cell and cell is mapping and cell.metrics else {} %}
+                            <tr>
+                                <td>{{ month_key | replace('_', '/') }}</td>
+                                {% if cell %}
+                                    <td>{{ cell.val | format_number }}</td>
+                                    <td>{{ m_metrics.workDays | default(0) | int }}</td>
+                                    <td>{{ cell.km | format_number }}</td>
+                                    <td>{{ cell.comerciais }}</td>
+                                    <td>{{ cell.emergenciais }}</td>
+                                    <td>{{ cell.servicos }}</td>
+                                    <td>{{ (cell.servicos / m_metrics.workDays if m_metrics.workDays > 0 else 0) | format_number }}</td>
+                                    
+                                    {% set total_us = total_us + cell.val %}
+                                    {% set total_days = total_days + (m_metrics.workDays | default(0)) %}
+                                    {% set total_km = total_km + cell.km %}
+                                    {% set total_com = total_com + cell.comerciais %}
+                                    {% set total_emerg = total_emerg + cell.emergenciais %}
+                                    {% set total_serv = total_serv + cell.servicos %}
+                                    {% set count_months = count_months + 1 %}
+                                {% else %}
+                                    <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+                                {% endif %}
+                            </tr>
+                        {% endfor %}
+                        <tr>
+                            <td>CONSOLIDADO / MÉDIA</td>
+                            <td>{{ (total_us / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_days / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_km / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_com / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_emerg / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_serv / count_months if count_months > 0 else 0) | format_number }}</td>
+                            <td>{{ (total_serv / total_days if total_days > 0 else 0) | format_number }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const ctx = document.getElementById('performanceChart').getContext('2d');
+                    const months = [{% for mk in data.months %}"{{ mk | replace('_', '/') }}",{% endfor %}];
+                    const production = [{% for mk in data.months %}{% set cell = data.matrix[mk][selected_team_key] if data.matrix[mk] and selected_team_key in data.matrix[mk] else None %}{{ cell.val if cell else 0 }},{% endfor %}];
+                    const targetVal = {{ selected_team_data.goal.targetUs }};
+                    const targets = months.map(() => targetVal);
+
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: months,
+                            datasets: [
+                                { label: 'Produção (US)', data: production, backgroundColor: '#2563eb', borderRadius: 8, order: 2 },
+                                { label: 'Meta (US)', data: targets, type: 'line', borderColor: '#f97316', borderWidth: 4, pointRadius: 0, fill: false, order: 1 }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { position: 'top' } },
+                            scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+                        }
+                    });
+                });
+            </script>
+        </div>
+        {% else %}
+        <!-- ORIGINAL MATRIX VIEW -->
         <div class="matrix-container" style="background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); overflow: hidden; border: 1px solid #e2e8f0;">
             <div style="overflow-x: auto;">
 <table class="matrix-table" style="width: 100%; border-collapse: collapse; min-width: 800px;">
@@ -782,6 +1021,7 @@
             <span>💡 <b>Dica:</b> Use o scroll horizontal para ver todas as equipes.</span>
             <span>📍 <b>Legenda:</b> Valores representam o Total de US produzido no mês.</span>
         </div>
+        {% endif %}
     </main>
 
     <!-- Modal de Importação -->
@@ -896,5 +1136,76 @@
             if (isCollapsed) document.querySelector('.filter-section').classList.add('collapsed');
         });
     </script>
+    <!-- Modal de Importação -->
+    <div class="modal-shell" id="importModal" hidden>
+        <div class="modal-backdrop" id="importModalBackdrop"></div>
+        <div class="modal-dialog">
+            <header class="modal-header">
+                <div class="modal-title-wrap">
+                    <span style="font-size: 1.5rem;">📊</span>
+                    <div>
+                        <div class="modal-title" id="importModalTitle">Importação de Produção BMG</div>
+                        <div class="modal-subtitle">Envie a planilha-base mensal para atualizar o histórico</div>
+                    </div>
+                </div>
+                <button class="modal-close" id="importModalClose">×</button>
+            </header>
+
+            <div class="modal-body">
+                <div class="form-notice" id="importNotice" hidden></div>
+                <form id="importForm">
+                    <div class="form-group">
+                        <label>Arquivo Excel</label>
+                        <input id="importFileInput" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" class="file-input" />
+                        <div class="file-help">O arquivo será analisado automaticamente ao ser selecionado.</div>
+                    </div>
+
+                    <div id="importDetectedSummary" style="margin: 1.5rem 0; font-weight: 600; color: var(--primary);"></div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Mês da competência</label>
+                            <select id="importMonthSelect">
+                                <option value="">Auto-detectar</option>
+                                <option value="1">Janeiro</option>
+                                <option value="2">Fevereiro</option>
+                                <option value="3">Março</option>
+                                <option value="4">Abril</option>
+                                <option value="5">Maio</option>
+                                <option value="6">Junho</option>
+                                <option value="7">Julho</option>
+                                <option value="8">Agosto</option>
+                                <option value="9">Setembro</option>
+                                <option value="10">Outubro</option>
+                                <option value="11">Novembro</option>
+                                <option value="12">Dezembro</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Ano da competência</label>
+                            <input type="number" id="importYearInput" placeholder="Ex: 2026">
+                        </div>
+                    </div>
+
+                    <!-- Resumo da Análise -->
+                    <div id="importSummaryGrid" class="summary-grid" hidden></div>
+                    
+                    <div id="importIssuesList" class="issues-list" hidden></div>
+                    
+                    <div id="importLastJob" class="last-job-notice"></div>
+                </form>
+            </div>
+
+            <footer class="modal-footer">
+                <span id="importModalMeta">Aguardando arquivo...</span>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button class="btn-secondary" id="importModalCancel">Cancelar</button>
+                    <button class="btn-primary" id="importExecuteBtn" disabled>Importar Produção</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/static/productivity_import.js"></script>
 </body>
 </html>

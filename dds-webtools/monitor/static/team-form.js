@@ -173,7 +173,7 @@ function syncBodyModalState() {
 function setBusy(isBusy, message = '') {
   if (teamFormSave) {
     teamFormSave.disabled = isBusy;
-    teamFormSave.textContent = isBusy ? 'Salvando...' : (currentDirty ? 'Salvar' : 'Fechar');
+    teamFormSave.textContent = isBusy ? 'Salvando...' : 'Salvar';
   }
   if (teamFormCancel) teamFormCancel.disabled = isBusy;
   if (teamFormClose) teamFormClose.disabled = isBusy;
@@ -325,36 +325,34 @@ async function renderThread(threadId, threadInfo = null) {
     
     // Lógica de Permissão de Resposta:
     // "todos os usuarios conseguem ver a mensagem, mas só a equipe destinada pode responder"
-    
-    // Se não houver threadInfo, assumimos que é uma nova thread (pode responder)
-    // Se houver threadInfo, verificamos se o destinatário da thread é o setor atual
-    // OU se a thread foi iniciada pelo setor atual.
-    
-    const lastMsg = messages[messages.length - 1];
-    
-    // Regra: Pode responder se:
-    // 1. É o destinatário da última mensagem (lastMsg.toSetor === currentSector)
-    // 2. OU se a thread está vazia (iniciando agora)
-    // 3. OU se o monitor quer iniciar uma conversa mesmo que a última mensagem tenha sido dele (flexibilidade do monitor)
-    
-    // No entanto, o usuário foi específico: "só a equipe destinada pode responder".
-    // No contexto do monitor, se a equipe enviou para ROTALOG, só ROTALOG responde.
-    
-    const intendedSector = threadInfo ? threadInfo.toSetor : null;
+    const intendedSector = threadInfo ? threadInfo.toSetor : (messages.length > 0 ? messages[0].toSetor : null);
     const canIRespond = !intendedSector || intendedSector === currentSector;
 
     if (!canIRespond) {
       teamChatMessageInput.disabled = true;
       teamChatSendBtn.disabled = true;
-      teamChatMessageInput.placeholder = `Somente o setor ${intendedSector} pode responder.`;
+      teamChatConcludeBtn.disabled = true; // Trava o botão de concluir também
+      teamChatMessageInput.placeholder = `Somente o setor ${intendedSector} pode tratar esta mensagem.`;
       
       // Adiciona banner de aviso
       const banner = document.createElement('div');
       banner.className = 'permissionBanner';
-      banner.textContent = `Visualização apenas. Resposta restrita ao setor ${intendedSector}.`;
+      banner.style.background = 'rgba(239, 68, 68, 0.1)';
+      banner.style.color = '#f87171';
+      banner.style.padding = '8px';
+      banner.style.borderRadius = '6px';
+      banner.style.fontSize = '0.75rem';
+      banner.style.marginBottom = '10px';
+      banner.style.textAlign = 'center';
+      banner.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+      banner.textContent = `⚠️ Visualização apenas. Resposta restrita ao setor ${intendedSector}.`;
+      
+      const existingBanner = teamChatHistory.querySelector('.permissionBanner');
+      if (existingBanner) existingBanner.remove();
       teamChatHistory.prepend(banner);
     } else {
-      // Verifica a regra de "vez de falar" (opcional, mas implementada antes)
+      teamChatConcludeBtn.disabled = false;
+      const lastMsg = messages[messages.length - 1];
       const isAwaitingThem = lastMsg && lastMsg.fromEquipe === currentSector;
       if (isAwaitingThem) {
         teamChatMessageInput.disabled = true;
@@ -558,7 +556,17 @@ function fillForm(data) {
   formHoraSaida.value = turno.horaSaida || '';
   formObservacoes.value = turno.observacoes || '';
   teamFormMeta.textContent = `Cadastro base: ${meta.teamDocExists ? 'existente' : 'novo'} · Turno atual: ${meta.turnoDocExists ? 'existente' : 'novo'}`;
-  if (teamFormDeleteIcon) teamFormDeleteIcon.hidden = !meta.teamDocExists;
+  if (teamFormDeleteIcon) {
+    // Só permite mover para a lixeira se a equipe estiver INATIVA
+    teamFormDeleteIcon.hidden = !meta.teamDocExists || isActive;
+    
+    // Opcional: adiciona um title explicativo se estiver ativa
+    if (isActive) {
+      teamFormDeleteIcon.title = "Desative a equipe primeiro para poder movê-la para a lixeira.";
+    } else {
+      teamFormDeleteIcon.title = "Mover para Lixeira";
+    }
+  }
   savedFormSignature = createFormSignature(collectPayload());
   suspendDirtyTracking = false;
   updateDirtyState();
@@ -598,7 +606,7 @@ function createFormSignature(payload) {
 
 function updatePrimaryActionState() {
   if (teamFormSave && !saveInFlight) {
-    teamFormSave.textContent = currentDirty ? 'Salvar' : 'Fechar';
+    teamFormSave.textContent = 'Salvar';
   }
   if (teamFormCancel && !saveInFlight) {
     teamFormCancel.hidden = !currentDirty;
@@ -809,6 +817,12 @@ async function saveTeamForm() {
     teamFormMeta.textContent = `Equipe ${payload.team.teamKey} salva com sucesso`;
     updateHeader(refreshed, payload.team.teamKey);
     updateLiveSummary(refreshed);
+
+    // "o bt SALVAR, salva e fecha"
+    setTimeout(() => {
+      closeTeamForm();
+    }, 500);
+
   } catch (error) {
     setNotice(error?.message || 'Não foi possível salvar a equipe.', 'error');
     teamFormMeta.textContent = 'Falha ao salvar';
@@ -851,13 +865,7 @@ function refreshOpenTeam(item) {
 
 equipmentChangeReason?.addEventListener('change', updateEquipmentDirtyState);
 
-teamFormSave?.addEventListener('click', () => {
-  if (currentDirty) {
-    saveTeamForm();
-    return;
-  }
-  closeTeamForm();
-});
+teamFormSave?.addEventListener('click', saveTeamForm);
 
 teamFormDeleteIcon?.addEventListener('click', () => {
   if (openTeamKey) {

@@ -15,15 +15,17 @@ from google.cloud import firestore
 from services.firestore_client import db
 
 
-CONFIG_COLLECTION = "app_config"
-CONFIG_DOC_ID = "monitor_turnos"
+CONFIG_COLLECTION = "monitor"
+CONFIG_DOC_ID = "config"
 CONFIG_CACHE_TTL_SEC = int(os.getenv("DDS_CONFIG_CACHE_TTL_SEC", "30"))
 
 DEFAULT_MONITOR_RULES = {
     "alertaAmareloMin": int(os.getenv("DDS_ALERTA_AMARELO", "15")),
     "alertaVermelhoMin": int(os.getenv("DDS_ALERTA_VERMELHO", "30")),
     "alertaPiscoMin": int(os.getenv("DDS_ALERTA_PISCO", "60")),
-    "fechadoViraDesatualizadoHoras": int(os.getenv("DDS_FECHADO_DESATUALIZA", "8")),
+    "autoCloseOpenHours": int(os.getenv("DDS_AUTO_CLOSE_OPEN", "24")),
+    "autoDesatualizaFechadoHours": int(os.getenv("DDS_FECHADO_DESATUALIZA", "8")),
+    "autoDesatualizaIntervaloHours": int(os.getenv("DDS_INTERVALO_DESATUALIZA", "4")),
     "desatualizadoCriticoHoras": int(os.getenv("DDS_CRITICO_DESATUALIZA", "16")),
 }
 DEFAULT_POLLING_SECONDS = int(os.getenv("DDS_POLLING_SEGUNDOS", "600"))
@@ -83,7 +85,12 @@ def _merge_with_defaults(stored: dict[str, Any]) -> dict[str, Any]:
         "alertaAmareloMin": _coerce_int(raw_rules.get("alertaAmareloMin"), DEFAULT_MONITOR_RULES["alertaAmareloMin"]),
         "alertaVermelhoMin": _coerce_int(raw_rules.get("alertaVermelhoMin"), DEFAULT_MONITOR_RULES["alertaVermelhoMin"]),
         "alertaPiscoMin": _coerce_int(raw_rules.get("alertaPiscoMin"), DEFAULT_MONITOR_RULES["alertaPiscoMin"]),
-        "fechadoViraDesatualizadoHoras": _coerce_int(raw_rules.get("fechadoViraDesatualizadoHoras"), DEFAULT_MONITOR_RULES["fechadoViraDesatualizadoHoras"]),
+        "autoCloseOpenHours": _coerce_int(raw_rules.get("autoCloseOpenHours"), DEFAULT_MONITOR_RULES["autoCloseOpenHours"]),
+        "autoDesatualizaFechadoHours": _coerce_int(
+            raw_rules.get("autoDesatualizaFechadoHours") or raw_rules.get("fechadoViraDesatualizadoHoras"), 
+            DEFAULT_MONITOR_RULES["autoDesatualizaFechadoHours"]
+        ),
+        "autoDesatualizaIntervaloHours": _coerce_int(raw_rules.get("autoDesatualizaIntervaloHours"), DEFAULT_MONITOR_RULES["autoDesatualizaIntervaloHours"]),
         "desatualizadoCriticoHoras": _coerce_int(raw_rules.get("desatualizadoCriticoHoras"), DEFAULT_MONITOR_RULES["desatualizadoCriticoHoras"]),
     }
     return {
@@ -100,8 +107,10 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     alerta_amarelo = max(1, _coerce_int(rules.get("alertaAmareloMin"), DEFAULT_MONITOR_RULES["alertaAmareloMin"]))
     alerta_vermelho = max(alerta_amarelo, _coerce_int(rules.get("alertaVermelhoMin"), DEFAULT_MONITOR_RULES["alertaVermelhoMin"]))
     alerta_pisco = max(alerta_vermelho, _coerce_int(rules.get("alertaPiscoMin"), DEFAULT_MONITOR_RULES["alertaPiscoMin"]))
-    fechado_desat = max(1, _coerce_int(rules.get("fechadoViraDesatualizadoHoras"), DEFAULT_MONITOR_RULES["fechadoViraDesatualizadoHoras"]))
-    desat_critico = max(fechado_desat, _coerce_int(rules.get("desatualizadoCriticoHoras"), DEFAULT_MONITOR_RULES["desatualizadoCriticoHoras"]))
+    auto_close = max(1, _coerce_int(rules.get("autoCloseOpenHours"), DEFAULT_MONITOR_RULES["autoCloseOpenHours"]))
+    auto_desat_fechado = max(1, _coerce_int(rules.get("autoDesatualizaFechadoHours"), DEFAULT_MONITOR_RULES["autoDesatualizaFechadoHours"]))
+    auto_desat_intervalo = max(1, _coerce_int(rules.get("autoDesatualizaIntervaloHours"), DEFAULT_MONITOR_RULES["autoDesatualizaIntervaloHours"]))
+    desat_critico = max(auto_desat_fechado, _coerce_int(rules.get("desatualizadoCriticoHoras"), DEFAULT_MONITOR_RULES["desatualizadoCriticoHoras"]))
 
     return {
         "pollingSeconds": polling_seconds,
@@ -109,7 +118,9 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "alertaAmareloMin": alerta_amarelo,
             "alertaVermelhoMin": alerta_vermelho,
             "alertaPiscoMin": alerta_pisco,
-            "fechadoViraDesatualizadoHoras": fechado_desat,
+            "autoCloseOpenHours": auto_close,
+            "autoDesatualizaFechadoHours": auto_desat_fechado,
+            "autoDesatualizaIntervaloHours": auto_desat_intervalo,
             "desatualizadoCriticoHoras": desat_critico,
         },
     }

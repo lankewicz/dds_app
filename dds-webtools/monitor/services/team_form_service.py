@@ -11,7 +11,7 @@ from google.cloud import firestore
 from services.firestore_client import db
 from services.teams_service import get_team, list_equipment_history, save_team
 from services.turno_equipes_service import get_turno_equipe, save_turno_equipe
-from services.turnos_service import normalize_estado, string_list, to_utc_dt
+from services.turnos_service import normalize_estado, string_list, to_utc_dt, update_realtime_view
 
 def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
     team_doc = get_team(team_key) or {}
@@ -75,14 +75,41 @@ def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
     saved_team = save_team(team_key, team_payload)
     is_active = bool(saved_team.get("active", True))
 
+    original_turno = get_turno_equipe(empresa, team_key) or {}
+
+    # Determina se houve mudança em campos operacionais para decidir se atualiza o 
+    # timestamp de atividade (touch_activity). Alterações puras de cadastro ou 
+    # equipamentos não devem atualizar o serverUpdatedAt operacional.
+    touch = False
+    if not original_turno:
+        touch = True
+    else:
+        # Compara campos operacionais (estado, nocSs, motivo, horários, observações)
+        if normalize_estado(turno_payload.get("estado")) != original_turno.get("estado"):
+            touch = True
+        elif _first_text(turno_payload.get("nocSs"), default=None) != original_turno.get("nocSs"):
+            touch = True
+        elif _first_text(turno_payload.get("motivo"), default=None) != original_turno.get("lastMotivo"):
+            touch = True
+        elif _first_text(turno_payload.get("horaEntrada"), default=None) != original_turno.get("horaEntradaMonitor"):
+            touch = True
+        elif _first_text(turno_payload.get("horaSaida"), default=None) != original_turno.get("horaSaidaMonitor"):
+            touch = True
+        elif _first_text(turno_payload.get("observacoes"), default=None) != original_turno.get("observacoesMonitor"):
+            touch = True
+
     saved_turno = save_turno_equipe(
         empresa,
         team_key,
         turno_payload,
         members_snapshot=saved_team.get("members") or [],
+        touch_activity=touch,
     )
 
     _sync_manual_active_state(team_key, is_active, was_active)
+
+    # Força atualização do realtime para que a equipe suma/apareça na hora
+    update_realtime_view(empresa=empresa)
 
     return {
         "ok": True,
