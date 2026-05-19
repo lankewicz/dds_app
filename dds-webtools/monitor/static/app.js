@@ -12,6 +12,14 @@ const nextRefresh = document.getElementById("nextRefresh");
 const teamCount = document.getElementById("teamCount");
 const skeletonGrid = document.getElementById("skeletonGrid");
 
+function showSkeleton() {
+  if (skeletonGrid) skeletonGrid.classList.remove('hidden');
+  if (grid) {
+    grid.classList.add('hidden');
+    grid.innerHTML = '';
+  }
+}
+
 const empresaInput = document.getElementById("empresaInput");
 const searchInput = document.getElementById("searchInput");
 const teamSelect = document.getElementById("teamSelect");
@@ -72,6 +80,16 @@ function fmtDateTime(iso) {
 function fmtTimeOnly(iso) {
   if (!iso) return "-"; const d = new Date(iso); if (Number.isNaN(d.getTime())) return "-"; return d.toLocaleTimeString("pt-BR");
 }
+function fmtLastContact(iso, source) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const time = d.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
+  const srcSuffix = source ? ` (${source})` : "";
+  return `${day}/${month} - ${time}${srcSuffix}`;
+}
 
 function addHours(dateLike, hours) {
   if (!dateLike) return null;
@@ -83,7 +101,8 @@ function addHours(dateLike, hours) {
 
 function getArt66EndAt(item, shown) {
   if (normalizedState(shown) !== "FECHADO" || !item?.updatedAt) return null;
-  return addHours(item.updatedAt, 11);
+  const hours = item.lastWasDescansoSemanal ? 24 : 11;
+  return addHours(item.updatedAt, hours);
 }
 
 function isArt66Active(item, shown) {
@@ -326,6 +345,7 @@ function ddsStatusLabel(status) {
 }
 
 function ddsSequenceHtml(item, options = {}) {
+  return ""; // Temporariamente desabilitado para ocultar bolinhas/marcadores
   const {
     maxItems = 5,
     showDayLabels = false,
@@ -374,11 +394,11 @@ function ddsSequenceHtml(item, options = {}) {
     `;
   }).join("");
 
-  const rowClass = ["ddsRow", containerClass, showDayLabels ? "ddsRowExpanded" : ""]
+  const rowClass = ["ddsRow", containerClass, showDayLabels ? "ddsRowExpanded" : "", showMeta ? "" : "ddsRowCompact"]
     .filter(Boolean)
     .join(" ");
 
-  const trackClass = ["ddsTrack", showDayLabels ? "ddsTrackExpanded" : ""]
+  const trackClass = ["ddsTrack", showDayLabels ? "ddsTrackExpanded" : "", showMeta ? "" : "ddsTrackCompact"]
     .filter(Boolean)
     .join(" ");
 
@@ -391,7 +411,6 @@ function ddsSequenceHtml(item, options = {}) {
         </div>
       ` : ""}
       <div class="${trackClass}" role="list" aria-label="Histórico DDS últimos ${maxItems} dias">
-
         ${dots}
       </div>
     </div>
@@ -420,8 +439,9 @@ function tile(item) {
     ? `${closedAtLabel} → ${art66EndLabel}`
     : closedAtLabel;
 
+  const badgeLabel = item.lastWasDescansoSemanal ? "ART 67" : "ART 66";
   const badgeHtml = art66Active
-    ? `<div class="critical art66Badge"><div class="art66Line1">ART 66</div>${isBeforeSeven ? '' : `<div class="art66Line2">até ${escapeHtml(art66EndLabel)}</div>`}</div>`
+    ? `<div class="critical art66Badge"><div class="art66Line1">${badgeLabel}</div>${isBeforeSeven ? '' : `<div class="art66Line2">até ${escapeHtml(art66EndLabel)}</div>`}</div>`
     : (crit ? `<div class="critical">CRÍTICO</div>` : ``);
   
   // Lógica de Mensagens Global por Setor (Estratégia 4)
@@ -454,8 +474,9 @@ function tile(item) {
       </div>`;
   }
 
-  const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: true, label: "DDS", hintText: "Últimas 5" });
+  const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
  
+  const lastContactLabel = fmtLastContact(item.lastContact, item.lastContactSource);
   const isTrash = getViewMode() === 'trash';
   const trashActions = isTrash ? `
     <div class="tileTrashActions">
@@ -485,7 +506,13 @@ function tile(item) {
           </div>
         </div>
       </div>
-      ${isTrash ? trashActions : ddsRow}
+      ${isTrash ? trashActions : `
+        <div class="tileContactRow">
+           <span class="contactLabel">Último Contato:</span>
+           <span class="contactValue">${escapeHtml(lastContactLabel)}</span>
+        </div>
+        ${ddsRow}
+      `}
     </div>
     ${isTrash ? '' : `
     <div class="tileHoverPanel" aria-hidden="true">
@@ -499,10 +526,12 @@ function tile(item) {
       </div>
       <div class="tileHoverBody">
         <div class="hoverRows">${details}</div>
+        <!-- Temporariamente ocultado a pedido do usuario
         <div class="hoverSection">
           <div class="hoverSectionTitle">Presenças no DDS (Últimos 10 dias)</div>
           ${ddsSequenceHtml(item, { maxItems: 10, showDayLabels: true, showMeta: false, containerClass: "ddsRowHover" })}
         </div>
+        -->
         <div class="hoverSection">
           <div class="hoverSectionTitle">Participantes</div>
           ${participantes}
@@ -574,32 +603,27 @@ function renderTeamCount(items) {
 function findItem(teamKey) { return currentItems.find((item) => detailValue(item.teamKey || item.equipe) === teamKey) || null; }
 function getEmpresaValue() { return (empresaInput.value || cfg?.defaultEmpresa || '').trim(); }
 
-function syncHoverPlacement() {
-  if (!grid) return;
+function syncHoverPlacement(tileEl) {
+  if (!grid || !tileEl) return;
 
   const gridRect = grid.getBoundingClientRect();
   const viewportLeft = Math.max(12, gridRect.left);
   const viewportRight = Math.min(window.innerWidth - 12, gridRect.right);
 
-  grid.querySelectorAll('.tile').forEach((tileEl) => {
-    tileEl.classList.remove('tileHoverShiftLeft');
-    tileEl.classList.remove('tileHoverShiftRight');
+  tileEl.classList.remove('tileHoverShiftLeft');
+  tileEl.classList.remove('tileHoverShiftRight');
 
-    const tileRect = tileEl.getBoundingClientRect();
-    const hoverWidth = Math.min((tileRect.width * 2) + 12, 420);
+  const tileRect = tileEl.getBoundingClientRect();
+  const hoverWidth = Math.min((tileRect.width * 2) + 12, 420);
 
-    const defaultLeft = tileRect.left - (hoverWidth * 0.25);
-    const defaultRight = defaultLeft + hoverWidth;
+  const defaultLeft = tileRect.left - (hoverWidth * 0.25);
+  const defaultRight = defaultLeft + hoverWidth;
 
-    if (defaultRight > viewportRight) {
-      tileEl.classList.add('tileHoverShiftLeft');
-      return;
-    }
-
-    if (defaultLeft < viewportLeft) {
-      tileEl.classList.add('tileHoverShiftRight');
-    }
-  });
+  if (defaultRight > viewportRight) {
+    tileEl.classList.add('tileHoverShiftLeft');
+  } else if (defaultLeft < viewportLeft) {
+    tileEl.classList.add('tileHoverShiftRight');
+  }
 }
 
 window.monitorUtils = {
@@ -668,14 +692,18 @@ function syncRealtimeData() {
 function startPolling() {
   if (pollingTimer) clearInterval(pollingTimer);
   if (countdownTimer) clearInterval(countdownTimer);
-  if (unsubMonitor) {
-    unsubMonitor();
+  
+  if (typeof unsubMonitor === 'function') {
+    try { unsubMonitor(); } catch(e) { console.warn("Erro ao desinscrever:", e); }
     unsubMonitor = null;
   }
+
+  // Verifica se o dia virou para resetar o cache (Lógica 00:00)
+  triggerFullDailyReset();
   
   const mode = getViewMode();
-  if (mode === 'trash' || mode === 'inactive') {
-    // Para lixeira ou inativas, continua usando fetch manual
+  if (mode === 'trash') {
+    // A lixeira ainda usa fetch normal
     load();
     return;
   }
@@ -684,14 +712,36 @@ function startPolling() {
   // ESTRATÉGIA 3: ONSNAPSHOT REALTIME
   // ==========================================
   nextRefresh.textContent = "Real-time Ativo ⚡";
-  
-  unsubMonitor = db.collection("monitor").document("realtime").collection("equipes")
+  let initialSnapshot = true;
+
+  unsubMonitor = db.collection("turno").doc(empresa).collection("realtime")
     .onSnapshot((snapshot) => {
-      allRealtimeItems = [];
-      snapshot.forEach((doc) => {
-        allRealtimeItems.push(doc.data());
+      // Usamos docChanges para identificar exatamente o que mudou e avisar o servidor (patch incremental)
+      snapshot.docChanges().forEach((change) => {
+        const item = change.doc.data();
+        const teamKey = item.teamKey || item.equipe;
+
+        if (change.type === "added" || change.type === "modified") {
+          // Atualiza nosso cache local em memória
+          const idx = allRealtimeItems.findIndex(it => (it.teamKey || it.equipe) === teamKey);
+          if (idx !== -1) {
+            allRealtimeItems[idx] = item;
+          } else {
+            allRealtimeItems.push(item);
+          }
+        } else if (change.type === "removed") {
+          allRealtimeItems = allRealtimeItems.filter(it => (it.teamKey || it.equipe) !== teamKey);
+        }
       });
-      syncRealtimeData();
+
+      // Amortecedor (Throttle): Na primeira carga, renderiza IMEDIATO. 
+      // Depois, segura a interface a cada 10 segundos para economizar CPU.
+      if (initialSnapshot) {
+        syncRealtimeData();
+        initialSnapshot = false;
+      } else {
+        requestUiSync();
+      }
     }, (error) => {
       console.error("Erro no onSnapshot do Firebase:", error);
       lastSync.textContent = "Atualizado: ERRO DE PERMISSÃO";
@@ -702,6 +752,16 @@ function startPolling() {
   pollingTimer = setInterval(() => {
     recalculateLocalAlerts();
   }, 30000);
+}
+
+let uiSyncTimeout = null;
+function requestUiSync() {
+  if (uiSyncTimeout) return; // J\u00e1 existe uma atualiza\u00e7\u00e3o agendada
+  
+  uiSyncTimeout = setTimeout(() => {
+    syncRealtimeData();
+    uiSyncTimeout = null;
+  }, 10000); // 10 segundos de espera
 }
 
 function recalculateLocalAlerts() {
@@ -741,7 +801,14 @@ async function loadConfig() {
 }
 
 async function load(options = {}) {
-  const { forceRefresh = false } = options || {};
+  const forceRefresh = options.forceRefresh || false;
+  const refreshSpinner = document.getElementById('refreshSpinner');
+  
+  if (forceRefresh) {
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (refreshSpinner) refreshSpinner.hidden = false;
+  }
+
   const empresa = getEmpresaValue();
   const qs = new URLSearchParams();
   if (empresa) qs.set('empresa', empresa);
@@ -759,6 +826,10 @@ async function load(options = {}) {
     url = `/api/teams/trash`;
   }
 
+  if (!forceRefresh) {
+     showSkeleton();
+  }
+
   try {
     const r = await fetch(url, { cache: 'no-store' });
     const data = await r.json();
@@ -772,10 +843,7 @@ async function load(options = {}) {
       return;
     }
 
-    if (mode === 'inactive') {
-      renderData(data.items || [], data);
-      return;
-    }
+
 
     // Atualiza o cache local com os dados frescos do servidor
     allRealtimeItems = data.items || [];
@@ -788,6 +856,9 @@ async function load(options = {}) {
     if (kpis) kpis.innerHTML = `<div class="kpi">⚠ erro ao carregar</div>`;
     renderTeamCount([]);
   } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+    if (refreshSpinner) refreshSpinner.hidden = true;
+
     const safeSeconds = Math.max(15, pollingSeconds);
     nextTickAtMs = Date.now() + safeSeconds * 1000;
     setRefreshInfo();
@@ -813,8 +884,64 @@ function renderData(items, meta) {
     }
     
     renderTeamCount(currentItems);
-    grid.innerHTML = currentItems.length ? currentItems.map(tile).join('') : `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
-    requestAnimationFrame(syncHoverPlacement);
+
+    if (!currentItems.length) {
+      grid.innerHTML = `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
+      return;
+    }
+
+    // RENDERIZAÇÃO INCREMENTAL:
+    // Em vez de limpar o grid, vamos atualizar apenas os cards que mudaram.
+    const container = grid;
+    const existingIds = new Set();
+
+    currentItems.forEach((item, index) => {
+        const teamKey = item.teamKey || item.equipe;
+        const cardId = `card-${teamKey.replace(/[^\w]/g, '_')}`;
+        existingIds.add(cardId);
+
+        let card = document.getElementById(cardId);
+        const html = tile(item);
+
+        // Dados vitais para decidir se deve 'piscar' (ignora relógio)
+        const coreData = JSON.stringify({
+            st: item.estado,
+            al: item.alerta,
+            cr: item.critico,
+            ss: item.ss,
+            msg: item.unreadMap,
+            dds: (item.ddsHistory || []).slice(-1)[0]
+        });
+
+        if (!card) {
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            card = temp.firstElementChild;
+            card.id = cardId;
+            card.dataset.core = coreData;
+            card.style.order = index;
+            card.addEventListener('mouseenter', () => syncHoverPlacement(card));
+            container.appendChild(card);
+        } else {
+            const oldCore = card.dataset.core;
+            const hasChanged = oldCore !== coreData;
+            
+            // Sempre atualiza o HTML para manter o relógio fresco, 
+            // mas só aplica o 'flash-update' se o dado vital mudou
+            const flashClass = hasChanged ? ' flash-update' : '';
+            card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${index}" data-core='${coreData}' class="tile${flashClass}`);
+            
+            const newCard = document.getElementById(cardId);
+            if (newCard) newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+        }
+    });
+
+    // Remove cards que não estão mais na lista filtrada
+    Array.from(container.children).forEach(child => {
+        if (child.id && child.id.startsWith('card-') && !existingIds.has(child.id)) {
+            container.removeChild(child);
+        }
+    });
     
     if (window.teamForm?.refreshOpenTeam) {
       const openTeamKey = window.teamForm.getOpenTeamKey?.();
@@ -983,7 +1110,16 @@ kpis.addEventListener('click', (event) => {
   }
 
   syncKpiSelection();
-  syncRealtimeData(); // Troca instantânea em memória
+  
+  // O usuário solicitou que ao trocar o status (mesmo em memória), mostre o skeleton
+  showSkeleton();
+  
+  // Pequeno delay apenas para o skeleton ser visível e dar sensação de "processamento"
+  // e satisfazer o requisito visual do usuário.
+  setTimeout(() => {
+    syncRealtimeData();
+  }, 150);
+  
   event.stopPropagation();
 });
 
@@ -1013,29 +1149,46 @@ function initNavigation() {
     if (tab.id === 'requestsTab') return;
 
     tab.addEventListener('click', async (e) => {
-      const url = new URL(tab.href);
-      const mode = url.pathname.includes('inativas') ? 'inactive' : 
-                   url.pathname.includes('lixeira') ? 'trash' : 'active';
-      
-      e.preventDefault();
-      
-      // 1. Atualiza a URL sem recarregar
-      history.pushState({ mode }, '', tab.href);
-      
-      // 2. Atualiza o estado visual
-      document.body.dataset.teamView = mode;
-      document.querySelectorAll('.viewTab').forEach(t => t.classList.remove('isActive'));
-      tab.classList.add('isActive');
-      
-      // 3. Atualiza o título da página
-      const pageTitle = document.querySelector('.h1');
-      if (pageTitle) {
-          pageTitle.textContent = mode === 'inactive' ? 'Equipes Inativas' : 
-                                 mode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
-      }
+      try {
+        const href = tab.getAttribute('href') || '';
+        const newMode = href.includes('inativas') ? 'inactive' : 
+                        href.includes('lixeira') ? 'trash' : 'active';
+        const oldMode = getViewMode();
+        
+        if (newMode === oldMode) return;
 
-      // 4. Reinicia o monitoramento/polling para o novo modo
-      startPolling();
+        e.preventDefault();
+        
+        // 1. Atualiza a URL sem recarregar
+        history.pushState({ mode: newMode }, '', tab.href);
+        
+        // 2. Atualiza o estado visual
+        document.body.setAttribute('data-team-view', newMode);
+        document.querySelectorAll('.viewTab').forEach(t => t.classList.remove('isActive'));
+        tab.classList.add('isActive');
+        
+        // 3. Atualiza o título da página
+        const pageTitle = document.querySelector('.h1');
+        if (pageTitle) {
+            pageTitle.textContent = newMode === 'inactive' ? 'Equipes Inativas' : 
+                                   newMode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
+        }
+
+        // 4. Limpa a lista atual imediatamente (mostra skeleton) para feedback instantâneo
+        showSkeleton();
+
+        // 5. Reinicia o monitoramento/polling para o novo modo
+        // Se for apenas troca entre Ativas/Inativas, e já temos o listener e dados, basta filtrar em memória.
+        // Se allRealtimeItems estiver vazio, forçamos o reinício para garantir a carga.
+        if (newMode !== 'trash' && oldMode !== 'trash' && typeof unsubMonitor === 'function' && allRealtimeItems.length > 0) {
+            syncRealtimeData();
+        } else {
+            startPolling();
+        }
+      } catch (err) {
+        console.error("Erro na navegação dinâmica:", err);
+        window.location.href = tab.href; // Fallback para navegação real
+      }
     });
   });
 
@@ -1045,6 +1198,20 @@ function initNavigation() {
     document.body.dataset.teamView = mode;
     syncRealtimeData();
   });
+}
+
+
+
+// Lógica de Reset Diário (00:00)
+function triggerFullDailyReset() {
+  const lastReset = localStorage.getItem('dds_monitor_last_reset_day');
+  const today = new Date().toISOString().split('T')[0];
+  
+  if (lastReset && lastReset !== today) {
+    console.log("[DailyReset] Virada de dia detectada. Forçando recriação do cache.");
+    load({ forceRefresh: true });
+  }
+  localStorage.setItem('dds_monitor_last_reset_day', today);
 }
 
 (async () => {

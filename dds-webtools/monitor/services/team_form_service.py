@@ -72,7 +72,7 @@ def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
     team_doc = get_team(team_key)
     was_active = bool(team_doc.get("active", True)) if team_doc else True
 
-    saved_team = save_team(team_key, team_payload)
+    saved_team = save_team(team_key, team_payload, consolidate=False)
     is_active = bool(saved_team.get("active", True))
 
     original_turno = get_turno_equipe(empresa, team_key) or {}
@@ -106,10 +106,12 @@ def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
         touch_activity=touch,
     )
 
-    _sync_manual_active_state(team_key, is_active, was_active)
-
-    # Força atualização do realtime para que a equipe suma/apareça na hora
-    update_realtime_view(empresa=empresa)
+    if is_active != was_active:
+        from services.teams_service import set_team_active_state
+        set_team_active_state(team_key, is_active, empresa=empresa)
+    else:
+        from services.turnos_service import consolidate_single_team
+        consolidate_single_team(empresa, team_key)
 
     return {
         "ok": True,
@@ -136,29 +138,3 @@ def _first_text(*values: Any, default: str = "") -> str:
         if text:
             return text
     return default
-
-def _sync_manual_active_state(team_key: str, active: bool, was_active: bool = True) -> None:
-    if active == was_active:
-        return
-
-    team_ref = db.collection("dds_teams").document(team_key)
-    if active:
-        team_ref.set(
-            {
-                "autoInactiveReason": firestore.DELETE_FIELD,
-                "autoInactiveAt": firestore.DELETE_FIELD,
-                "autoInactiveLastSeenUpdatedAt": firestore.DELETE_FIELD,
-                "autoInactiveLastSeenDdsDay": firestore.DELETE_FIELD,
-            },
-            merge=True,
-        )
-        return
-
-    team_ref.set(
-        {
-            "autoInactiveReason": "MANUAL",
-            "autoInactiveAt": firestore.SERVER_TIMESTAMP,
-            "autoInactiveLastSeenUpdatedAt": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )

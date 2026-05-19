@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from services.firestore_client import db
@@ -41,6 +41,31 @@ def get_all_unread_counts_map() -> dict[str, dict[str, int]]:
             global_counts[from_equipe][to_setor] = global_counts[from_equipe].get(to_setor, 0) + 1
             
     return global_counts
+
+
+def get_last_messages_map() -> dict[str, datetime]:
+    """
+    Retorna um mapa de equipe (nome ou key) -> timestamp da última mensagem enviada por ela.
+    Limitamos aos últimos 10 dias para performance.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=10)
+    query = (
+        db.collection(COLLECTION_MENSAGENS)
+        .where(filter=FieldFilter("serverUpdatedAt", ">=", cutoff))
+    )
+    
+    # Como não podemos fazer order_by facilmente sem índices complexos cruzados,
+    # fazemos o max localmente por equipe.
+    last_msgs = {}
+    for snap in query.stream():
+        data = snap.to_dict()
+        from_equipe = data.get("fromEquipe")
+        ts = data.get("serverUpdatedAt")
+        if from_equipe and ts:
+            if from_equipe not in last_msgs or ts > last_msgs[from_equipe]:
+                last_msgs[from_equipe] = ts
+                
+    return last_msgs
 
 
 def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:

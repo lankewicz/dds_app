@@ -4,11 +4,24 @@ from monitor.services.firestore_client import db
 
 TARGET_COLLECTION = "dds_producao_mensal"
 
-def get_latest_competence():
+def get_latest_competence(empresa: str = "ChicoEletro", force_scan: bool = False):
     """
-    Busca no Firestore qual é a competência (ano/mês) mais recente com dados.
-    Ordenação feita em memória para evitar a necessidade de índice composto imediato.
+    Busca no Firestore qual \u00e9 a compet\u00eancia (ano/m\u00eas) mais recente com dados.
+    Tenta primeiro ler do documento de metadados para evitar stream().
     """
+    if not force_scan:
+        try:
+            meta_doc = db.collection("productivity").document(empresa).get()
+            if meta_doc.exists:
+                data = meta_doc.to_dict()
+                year = data.get("lastYear")
+                month = data.get("lastMonth")
+                if year and month:
+                    return int(year), int(month)
+        except Exception as e:
+            print(f"[get_latest_competence] Erro ao ler meta: {e}")
+
+    # Fallback ou Force Scan: Varredura total (lento)
     docs = db.collection(TARGET_COLLECTION).stream()
     latest_year = 0
     latest_month = 0

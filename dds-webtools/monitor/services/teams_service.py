@@ -14,7 +14,8 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.firestore_client import db
-import services.turnos_service as turnos_service
+# NOTE: turnos_service imports teams_service, so we use local imports inside
+# functions below to avoid a circular import at module load time.
 
 
 COLLECTION_NAME = "dds_teams"
@@ -25,6 +26,12 @@ MENSAGENS_TRASH_COLLECTION_NAME = "monitor/trash/mensagens_comunicacao"
 REQUESTS_COLLECTION_NAME = "monitor/requests/prefix_changes"
 EQUIPMENT_HISTORY_SUBCOLLECTION = "equipment_history"
 EQUIPMENT_TYPES = ("tablet", "cameraCopel", "cameraVeicular")
+
+_TEAMS_CACHE: dict[str, Any] = {
+    "data": None,
+    "updatedAt": None
+}
+TEAMS_CACHE_TTL_SEC = 300 # 5 minutos
 
 
 EQUIPMENT_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -51,6 +58,13 @@ EQUIPMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "supportsEmail": False,
     },
 }
+
+
+def clear_teams_cache():
+    """Limpa o cache em memória das equipes."""
+    global _TEAMS_CACHE
+    _TEAMS_CACHE["data"] = None
+    _TEAMS_CACHE["updatedAt"] = None
 
 
 def get_team(team_key: str) -> dict[str, Any] | None:
@@ -89,6 +103,19 @@ def list_trash_teams_map() -> dict[str, dict[str, Any]]:
 
 
 def _list_collection_teams_map(collection_name: str, active: bool | None = None) -> dict[str, dict[str, Any]]:
+    global _TEAMS_CACHE
+    
+    # Cache apenas para a coleção principal e sem filtro de active (para permitir filtros posteriores em memória)
+    if collection_name == COLLECTION_NAME:
+        now = datetime.now(timezone.utc)
+        if _TEAMS_CACHE["data"] is not None and _TEAMS_CACHE["updatedAt"] is not None:
+            age = (now - _TEAMS_CACHE["updatedAt"]).total_seconds()
+            if age < TEAMS_CACHE_TTL_SEC:
+                # Filtra o cache se necessário
+                if active is None:
+                    return _TEAMS_CACHE["data"]
+                return {k: v for k, v in _TEAMS_CACHE["data"].items() if v.get("active") == active}
+
     out: dict[str, dict[str, Any]] = {}
     for snap in db.collection(collection_name).stream():
         data = snap.to_dict() or {}
@@ -106,6 +133,14 @@ def _list_collection_teams_map(collection_name: str, active: bool | None = None)
             "cameraVeicular": equipment["cameraVeicular"]["summary"],
             "_exists": True,
         }
+    
+    if collection_name == COLLECTION_NAME:
+        _TEAMS_CACHE["data"] = out
+        _TEAMS_CACHE["updatedAt"] = datetime.now(timezone.utc)
+        
+    if active is not None:
+        return {k: v for k, v in out.items() if v.get("active") == active}
+        
     return out
 
 
@@ -162,18 +197,23 @@ def move_to_trash(team_key: str) -> None:
 
 def _cleanup_team_runtime_and_realtime(team_key: str) -> None:
     """Limpa a equipe de todas as coleções de estado imediato."""
-    # Remove do monitor realtime (tenta o ID exato e o ID em caixa alta/baixa)
-    realtime_col = db.collection("monitor").document("realtime").collection("equipes")
-    realtime_col.document(team_key).delete()
+    # Remove do monitor realtime legado (para compatibilidade durante migração)
+    legacy_realtime_col = db.collection("monitor").document("realtime").collection("equipes")
+    legacy_realtime_col.document(team_key).delete()
     
-    # Faxina agressiva no realtime (caso o ID lá seja diferente do ID no dds_teams)
-    for doc in realtime_col.stream():
-        if doc.id.upper() == team_key.upper():
-            doc.reference.delete()
-
-    # Remove de todas as empresas no 'turno'
+    # Remove de todas as empresas no 'turno' (tanto o estado bruto quanto a visão realtime)
     for empresa_snap in db.collection("turno").stream():
-        equipes_col = empresa_snap.reference.collection("equipes")
+        empresa_ref = empresa_snap.reference
+        
+        # 1. Remove da visão realtime consolidada
+        realtime_col = empresa_ref.collection("realtime")
+        realtime_col.document(team_key).delete()
+        for doc in realtime_col.stream():
+            if doc.id.upper() == team_key.upper():
+                doc.reference.delete()
+
+        # 2. Remove do estado bruto (coleção 'equipes')
+        equipes_col = empresa_ref.collection("equipes")
         equipes_col.document(team_key).delete()
         for doc in equipes_col.stream():
             if doc.id.upper() == team_key.upper():
@@ -446,12 +486,75 @@ def list_equipment_history(team_key: str, limit: int = 20) -> list[dict[str, Any
     return items
 
 
+def set_team_active_state(
+    team_key: str,
+    active: bool,
+    *,
+    reason: str = "MANUAL",
+    empresa: str | None = None,
+) -> dict[str, Any]:
+    """
+    Ativa ou desativa uma equipe, gravando os metadados de controle manual
+    para evitar reativação automática indevida.
+    Recebe `empresa` para consolidar apenas aquela empresa no realtime, evitando
+    uma varredura desnecessária em todas as empresas.
+    """
+    team = get_team(team_key)
+    if not team:
+        raise ValueError(f"Equipe '{team_key}' não encontrada.")
+
+    actual_team_key = team.get("teamKey") or team_key
+    team_ref = db.collection(COLLECTION_NAME).document(actual_team_key)
+
+    if active:
+        # Ativação: Limpa metadados de inatividade
+        payload = {
+            "active": True,
+            "autoInactiveReason": firestore.DELETE_FIELD,
+            "autoInactiveAt": firestore.DELETE_FIELD,
+            "autoInactiveLastSeenUpdatedAt": firestore.DELETE_FIELD,
+            "autoInactiveLastSeenDdsDay": firestore.DELETE_FIELD,
+            "autoReactivatedAt": firestore.SERVER_TIMESTAMP,
+        }
+    else:
+        # Desativação: Grava o motivo e o checkpoint
+        payload = {
+            "active": False,
+            "autoInactiveReason": reason,
+            "autoInactiveAt": firestore.SERVER_TIMESTAMP,
+            "autoInactiveLastSeenUpdatedAt": firestore.SERVER_TIMESTAMP,
+        }
+
+    team_ref.set(payload, merge=True)
+    clear_teams_cache()
+
+    # Atualiza o realtime para refletir a mudança imediatamente
+    try:
+        if empresa:
+            from services.turnos_service import consolidate_single_team
+            consolidate_single_team(empresa, actual_team_key)
+        else:
+            from services.turnos_service import consolidate_team_across_all_companies
+            consolidate_team_across_all_companies(actual_team_key)
+    except Exception as exc:
+        # Não engolir: a equipe foi alterada no Firestore, mas o realtime pode
+        # estar desatualizado. Logamos para diagnóstico.
+        import logging
+        logging.getLogger(__name__).warning(
+            "[set_team_active_state] Falha ao consolidar equipe %s: %s",
+            actual_team_key, exc
+        )
+
+    return get_team(actual_team_key) or {**team, **payload, "active": active}
+
+
 def save_team(
     team_key: str,
     payload: dict[str, Any],
     *,
     changed_by_name: str = "MONITOR WEB",
     changed_by_device_model: str = "DDS_TURNOS_MONITOR",
+    consolidate: bool = True,
 ) -> dict[str, Any]:
     team_ref = db.collection(COLLECTION_NAME).document(team_key)
     previous_snap = team_ref.get()
@@ -483,6 +586,15 @@ def save_team(
         changed_by_name=changed_by_name,
         changed_by_device_model=changed_by_device_model,
     )
+    
+    # Notifica o monitor sobre a mudança de forma granular (rápido)
+    if consolidate:
+        try:
+            from services.turnos_service import consolidate_team_across_all_companies
+            consolidate_team_across_all_companies(team_key)
+        except Exception:
+            pass
+        
     return get_team(team_key) or {**clean_payload, "_exists": True}
 
 

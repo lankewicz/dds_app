@@ -212,6 +212,7 @@ object TurnoFirestoreUploader {
         "lastMotivo" to lastMotivo,
         "lastMotivoOutro" to lastMotivoOutro,
 
+        "lastWasDescansoSemanal" to lastWasDescansoSemanal,
         "deviceIdLastWriter" to deviceIdLastWriter
     )
 }

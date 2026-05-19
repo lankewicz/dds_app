@@ -38,7 +38,7 @@ class TeamChangeRequestRepository(private val db: FirebaseFirestore = FirebaseFi
         deviceId: String,
         appVersion: String
     ): String {
-        val docRef = db.collection("prefix_change_requests").document()
+        val docRef = db.collection("monitor/requests/prefix_changes").document()
         val request = TeamChangeRequest(
             id = docRef.id,
             oldPrefix = oldPrefix.trim().uppercase(),
@@ -54,7 +54,7 @@ class TeamChangeRequestRepository(private val db: FirebaseFirestore = FirebaseFi
     }
 
     fun observeRequest(requestId: String): Flow<TeamChangeRequest?> = callbackFlow {
-        val docRef = db.collection("prefix_change_requests").document(requestId)
+        val docRef = db.collection("monitor/requests/prefix_changes").document(requestId)
         val listener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 close(error)
@@ -67,6 +67,6 @@ class TeamChangeRequestRepository(private val db: FirebaseFirestore = FirebaseFi
     }
 
     suspend fun deleteRequest(requestId: String) {
-        db.collection("prefix_change_requests").document(requestId).delete()
+        db.collection("monitor/requests/prefix_changes").document(requestId).delete()
     }
 }

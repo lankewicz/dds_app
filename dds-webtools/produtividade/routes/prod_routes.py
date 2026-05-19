@@ -19,7 +19,11 @@ def format_number(value):
 templates.env.filters['format_number'] = format_number
 
 
-from produtividade.services.productivity_service import get_productivity_matrix, get_latest_competence
+from produtividade.services.productivity_service import (
+    get_productivity_matrix, 
+    get_latest_competence,
+    list_productivity_data
+)
 from produtividade.services.cache_service import get_filters_cache
 
 router = APIRouter(prefix="/produtividade", tags=["Produtividade"])
@@ -37,7 +41,6 @@ async def productivity_home(request: Request, ano: int = None, cidade: str = Non
     agencia = request.query_params.get("agencia")
     contrato = request.query_params.get("contrato")
     tipo = request.query_params.get("tipo")
-    selected_team_key = request.query_params.get("equipe")
     
     filters = get_filters_cache()
 
@@ -45,19 +48,13 @@ async def productivity_home(request: Request, ano: int = None, cidade: str = Non
     if agencia:
         agency_cities = filters.get("agency_to_cities", {}).get(agencia, [])
         if agency_cities:
+            # Se a cidade selecionada não pertence a essa agência, ignoramos ela na busca
             if cidade and cidade not in agency_cities:
                 cidade = None
+            # No template, mostraremos apenas as cidades dessa agência
             filters["cidades"] = agency_cities
 
     data = get_productivity_matrix(year=ano, region=regiao, city=cidade, agency=agencia, contract=contrato, tipo=tipo)
-    
-    # Se uma equipe específica for selecionada, buscamos os detalhes dela
-    selected_team_data = None
-    if selected_team_key:
-        for t in data["teams"]:
-            if t["teamKey"] == selected_team_key:
-                selected_team_data = t
-                break
     
     return templates.TemplateResponse("index_prod.html", {
         "request": request,
@@ -69,9 +66,7 @@ async def productivity_home(request: Request, ano: int = None, cidade: str = Non
         "selected_cidade": cidade,
         "selected_agencia": agencia,
         "selected_contrato": contrato,
-        "selected_tipo": tipo,
-        "selected_team_key": selected_team_key,
-        "selected_team_data": selected_team_data
+        "selected_tipo": tipo
     })
 
 @router.get("/api/data")

@@ -101,6 +101,7 @@ data class TurnoStateRemote(
     val lastMotivo: String? = null,
     val lastMotivoOutro: String? = null,
 
+    val lastWasDescansoSemanal: Boolean = false,
     val deviceIdLastWriter: String
 )
 

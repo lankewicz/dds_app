@@ -67,7 +67,10 @@
           </select>
         </div>
 
-        <button id="refreshBtn">Atualizar</button>
+        <button id="refreshBtn">
+          <span class="btnSpinner" id="refreshSpinner" hidden></span>
+          <span class="btnText">Atualizar</span>
+        </button>
         <button id="configBtn" type="button" aria-label="Configurações" title="Configurações">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M10.325 4.317a1.724 1.724 0 0 1 3.35 0l.18.826a1.724 1.724 0 0 0 2.573 1.07l.734-.42a1.724 1.724 0 0 1 2.37.632l.326.565a1.724 1.724 0 0 1-.632 2.37l-.734.42a1.724 1.724 0 0 0-.84 2.296c.1.24.1.51 0 .75a1.724 1.724 0 0 0 .84 2.296l.734.42a1.724 1.724 0 0 1 .632 2.37l-.326.565a1.724 1.724 0 0 1-2.37.632l-.734-.42a1.724 1.724 0 0 0-2.573 1.07l-.18.826a1.724 1.724 0 0 1-3.35 0l-.18-.826a1.724 1.724 0 0 0-2.573-1.07l-.734.42a1.724 1.724 0 0 1-2.37-.632l-.326-.565a1.724 1.724 0 0 1 .632-2.37l.734-.42a1.724 1.724 0 0 0 .84-2.296 1.724 1.724 0 0 1 0-.75 1.724 1.724 0 0 0-.84-2.296l-.734-.42a1.724 1.724 0 0 1-.632-2.37l.326-.565a1.724 1.724 0 0 1 2.37-.632l.734.42a1.724 1.724 0 0 0 2.573-1.07l.18-.826Z" />
@@ -268,8 +271,8 @@
                 <div class="liveSummaryItem"><span>Há</span><strong id="teamLiveAgo">-</strong></div>
               </div>
 
-              <div class="modalSectionTitle" style="margin-top: 1.5rem;">Presenças no DDS (Últimos 20 dias)</div>
-              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem;">
+              <div class="modalSectionTitle" style="margin-top: 1.5rem; display: none !important;">Presenças no DDS (Últimos 20 dias)</div>
+              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem; display: none !important;">
                 <div class="popoverEmpty">Nenhum DDS registrado</div>
               </div>
 

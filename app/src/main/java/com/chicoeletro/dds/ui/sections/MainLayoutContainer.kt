@@ -982,6 +982,7 @@ fun MainLayoutContainer() {
                                 eventosKmCounter = after.eventosKmCounter,
                                 lastMotivo = after.lastMotivo?.name,
                                 lastMotivoOutro = after.lastMotivoOutro,
+                                lastWasDescansoSemanal = after.lastWasDescansoSemanal,
                                 deviceIdLastWriter = deviceId
                             )
 
@@ -1140,6 +1141,7 @@ fun MainLayoutContainer() {
                             lastMotivo = after.lastMotivo?.name,
                             lastMotivoOutro = after.lastMotivoOutro,
 
+                            lastWasDescansoSemanal = after.lastWasDescansoSemanal,
                             deviceIdLastWriter = deviceId
                         )
 

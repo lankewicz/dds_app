@@ -44,6 +44,27 @@ from produtividade.routes.prod_routes import router as produtividade_router
 
 app = FastAPI(title=APP_TITLE)
 
+listener_manager = None
+
+@app.on_event("startup")
+def startup_event():
+    global listener_manager
+    try:
+        from monitor.services.turnos_service import FirestoreListenerManager
+        listener_manager = FirestoreListenerManager()
+        listener_manager.start()
+    except Exception as e:
+        print(f"Error starting background listener: {e}")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    global listener_manager
+    if listener_manager:
+        try:
+            listener_manager.stop()
+        except Exception as e:
+            print(f"Error stopping background listener: {e}")
+
 # Static files for Monitor
 app.mount("/static", StaticFiles(directory=os.path.join(base_dir, "monitor", "static")), name="static_monitor")
 # Static files for Admin (Flask handles its own static files inside WSGI, but if it fails we could mount them too)

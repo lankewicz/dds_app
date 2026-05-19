@@ -5,11 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }}</title>
     <link rel="stylesheet" href="/static/styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --primary: #2563eb;
-            --primary-color: #2563eb;
             --primary-dark: #1e40af;
             --success: #10b981;
             --bg: #f8fafc;
@@ -213,7 +211,7 @@
         /* Scoreboard Panel (Details Bar) */
         .details-scoreboard {
             background: #1e1e2e;
-            margin: 0.5rem 35px 0.5rem 35px; /* Alinhado com a margem do filtro */
+            margin: 0 0 1rem 0; /* Alinhado agora sem margem lateral interna pois o container já tem padding */
             border-radius: 8px;
             padding: 0.5rem 1rem;
             display: flex;
@@ -303,30 +301,110 @@
 
         /* Sticky Table Styles */
         .matrix-container {
-            max-height: calc(100vh - 200px); /* Ajustado para o novo placar */
+            max-height: calc(100vh - 320px); /* Aumentado o offset para garantir que o rodapé apareça */
             overflow: auto;
             position: relative;
+            border-bottom: 1px solid #e2e8f0;
         }
+        .matrix-table {
+            width: 100%;
+            border-collapse: separate; /* Necessário para sticky funcionar perfeitamente com bordas */
+            border-spacing: 0;
+            min-width: 800px;
+        }
+        /* Cabeçalho Fixo (Top) */
         .matrix-table thead th {
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            background: #f8fafc;
-            box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 100 !important; /* Prioridade máxima total */
+            background: #f1f5f9 !important;
+            padding: 0.75rem;
+            font-weight: 700;
+            color: #475569;
+            font-size: 0.75rem;
+            border-bottom: 2px solid #cbd5e1;
+            border-right: 1px solid #e2e8f0;
         }
-        .matrix-table tbody td:first-child {
+
+        /* Coluna 1: Mês/Ano (Única fixa na esquerda) */
+        .matrix-table th:nth-child(1),
+        .matrix-table td:nth-child(1) {
             position: sticky;
             left: 0;
-            z-index: 15;
-            background: white;
-            box-shadow: 2px 0 2px -1px rgba(0,0,0,0.1);
-        }
-        .matrix-table thead th:first-child {
-            position: sticky;
-            left: 0;
-            top: 0;
             z-index: 30;
-            background: #f1f5f9;
+            min-width: 120px;
+            max-width: 120px;
+            background: white !important;
+            border-right: 2px solid #e2e8f0;
+        }
+
+        /* Coluna 2: EQS (Agora móvel horizontalmente, mas fixa verticalmente no header) */
+        .matrix-table td:nth-child(2) {
+            position: static;
+            min-width: 80px;
+            max-width: 80px;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+        }
+        .matrix-table th:nth-child(2) {
+            min-width: 80px;
+            max-width: 80px;
+        }
+
+        /* Interseção Canto Superior Esquerdo */
+        .matrix-table thead th:nth-child(1) {
+            z-index: 100;
+            background: #f1f5f9 !important;
+        }
+
+        /* Removido o travamento à direita conforme pedido */
+        .matrix-table thead th:last-child,
+        .matrix-table tbody td:last-child {
+            position: static;
+            box-shadow: none;
+        }
+
+        /* Rodapé Normal (Não fixo conforme pedido) */
+        .matrix-table tfoot td {
+            background: white;
+            border-top: 2px solid #e2e8f0;
+            font-weight: 700;
+        }
+
+        /* Reduzir largura das colunas em 10% */
+        .matrix-table th:not(:first-child) {
+            min-width: 100px; 
+            max-width: 100px;
+        }
+
+        /* Estilização das Colunas de Total e Média (sem travamento horizontal) */
+        .sticky-total-col, .sticky-avg-col {
+            background: #f1f5f9 !important;
+            border-left: 1px solid #cbd5e1 !important;
+            text-align: right !important;
+            min-width: 100px !important;
+            max-width: 100px !important;
+            font-weight: 700;
+        }
+        .matrix-table thead th.sticky-total-col,
+        .matrix-table thead th.sticky-avg-col {
+            z-index: 95 !important;
+            background: #f1f5f9 !important;
+            font-size: 0.75rem;
+            font-weight: 800;
+        }
+
+        .matrix-table tbody td.sticky-total-col {
+            background: #f8fafc !important;
+            font-weight: 800;
+            color: var(--primary-color);
+        }
+
+        .matrix-table tfoot td.sticky-total-col,
+        .matrix-table tfoot td.sticky-avg-col {
+            z-index: 45 !important; /* Maior z-index para a interseção de rodapé e colunas fixas */
+            background: #f1f5f9 !important;
+            font-weight: 800;
         }
 
         /* Filter Toggle */
@@ -342,32 +420,36 @@
             opacity: 0;
         }
         .toggle-filters-btn {
-            background: var(--primary-color);
+            background: var(--primary);
             border: none;
             color: white;
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
             position: absolute;
-            left: 5px;
-            top: 35px;
+            left: -16px;
+            top: 10px;
             z-index: 110;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .toggle-filters-btn:hover {
             transform: scale(1.1);
             filter: brightness(1.2);
         }
         .filter-section.card {
-            padding: 0.25rem 0.75rem !important;
-            margin-left: 35px;
-            min-height: 40px;
+            padding: 0.5rem 1rem !important;
+            margin-bottom: 0.5rem;
             display: flex;
             align-items: center;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
         /* Modal Styles */
         .modal-shell {
@@ -460,18 +542,18 @@
         }
         
         .btn-import {
-            background: var(--primary-color);
+            background: var(--primary);
             color: white;
             border: none;
-            width: 42px;
-            height: 42px;
+            width: 40px;
+            height: 40px;
             border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .btn-import:hover {
             filter: brightness(1.1);
@@ -489,8 +571,33 @@
         .summary-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 1rem;
+            gap: 1.5rem;
             margin-top: 1.5rem;
+            text-align: center;
+        }
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .summary-item strong {
+            font-size: 1.5rem;
+            color: var(--primary);
+        }
+        .summary-item span {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .modal-body select, .modal-body input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-weight: 600;
         }
         
         .issues-list {
@@ -537,104 +644,48 @@
             font-size: 0.8rem;
         }
 
-        /* Detailed Team View Styles */
-        .detailed-view {
-            margin-top: 1rem;
-            animation: fadeIn 0.4s ease-out;
+        /* Melhorar visibilidade das barras de rolagem */
+        .matrix-container::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .team-info-card {
-            background: white;
-            padding: 1.5rem 2rem;
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            margin-bottom: 1.5rem;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 2rem;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        .matrix-container::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 5px;
         }
-
-        .info-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
+        .matrix-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 5px;
+            border: 2px solid #f1f5f9;
         }
-
-        .info-label {
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            font-weight: 800;
-            color: var(--text-muted);
-            letter-spacing: 0.05em;
-        }
-
-        .info-value {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: var(--text-main);
-        }
-
-        .chart-box {
-            background: white;
-            padding: 2rem;
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            margin-bottom: 1.5rem;
-            height: 400px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        }
-
-        .stats-table-container {
-            background: white;
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        }
-
-        .stats-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .stats-table th {
-            background: #f8fafc;
-            padding: 1rem;
-            text-align: right;
-            font-size: 0.7rem;
-            font-weight: 800;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            border-bottom: 2px solid #f1f5f9;
-        }
-
-        .stats-table th:first-child { text-align: left; }
-
-        .stats-table td {
-            padding: 1rem;
-            text-align: right;
-            border-bottom: 1px solid #f1f5f9;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
-        }
-
-        .stats-table td:first-child {
-            text-align: left;
-            font-family: inherit;
-            font-weight: 700;
-            color: var(--text-main);
-        }
-
-        .stats-table tr:last-child {
-            background: #f0f9ff;
-            font-weight: 900;
-            color: var(--primary);
+        .matrix-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
     </style>
 </head>
 <body>
+    {# PRE-CALCULO: Contar equipes visíveis e métricas globais #}
+    {% set visible_teams_count = namespace(value=0) %}
+    {% set global_us = namespace(value=0) %}
+    {% set global_servicos = namespace(value=0) %}
+    {% set global_emergenciais = namespace(value=0) %}
+    {% set global_comerciais = namespace(value=0) %}
+    {% set global_km = namespace(value=0) %}
+    {% set global_sa = namespace(value=0) %}
+    
+    {% for t in data.teams %}
+        {% if t.agency or t.members %}
+            {% set visible_teams_count.value = visible_teams_count.value + 1 %}
+            {% set global_us.value = global_us.value + t.total_sum %}
+            {% set global_servicos.value = global_servicos.value + t.total_servicos %}
+            {% set global_emergenciais.value = global_emergenciais.value + t.total_emergenciais %}
+            {% set global_comerciais.value = global_comerciais.value + t.total_comerciais %}
+            {% set global_km.value = global_km.value + t.total_km %}
+            {% set global_sa.value = global_sa.value + t.total_sa %}
+        {% endif %}
+    {% endfor %}
+    {% set v_count = visible_teams_count.value if visible_teams_count.value > 0 else 1 %}
+
     <header class="header">
         <div style="display: flex; align-items: center; gap: 1.5rem;">
             <a href="/" class="back-btn">
@@ -646,7 +697,7 @@
             <h1>{{ page_title }}</h1>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
-            <button id="openImportModalBtn" class="btn-import" title="Importar Planilha de Produção BMG">
+            <button id="openImportModalBtn" class="btn-import" title="Importar Produção">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
                 </svg>
@@ -657,14 +708,14 @@
         </div>
     </header>
 
-    <div class="container" style="position: relative; margin-top: 1rem;">
+    <div class="container" style="position: relative; margin-top: 1rem; padding-left: 40px; padding-right: 20px;">
         <button class="toggle-filters-btn" onclick="toggleFilters()" title="Alternar Filtros">
-            <svg id="toggleIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
+            <svg id="toggleIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3">
                 <path d="M4 6h16M4 12h16M4 18h7"></path>
             </svg>
         </button>
 
-        <form id="filterForm" method="GET" action="/produtividade" class="filter-section card" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; padding: 0.5rem 1rem; margin-top: 0;">
+        <form id="filterForm" method="GET" action="/produtividade" class="filter-section card" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin-top: 0;">
             <div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; margin-right: 1rem; align-self: center;">FILTROS:</div>
             <div class="filter-group">
                 <label>Ano Base</label>
@@ -702,20 +753,11 @@
                 </select>
             </div>
             <div class="filter-group">
-                <label>Tipo</label>
+                <label>Tipo de Equipe</label>
                 <select name="tipo" onchange="this.form.submit()">
-                    <option value="">Todos</option>
-                    <option value="CESTO" {% if selected_tipo == 'CESTO' %}selected{% endif %}>STC Cesto</option>
-                    <option value="ESCADA" {% if selected_tipo == 'ESCADA' %}selected{% endif %}>STC Escada</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>Análise por Equipe</label>
-                <select name="equipe" onchange="this.form.submit()" style="background: #eef2ff; border-color: var(--primary); font-weight: 700;">
-                    <option value="">Visão Geral (Matriz)</option>
-                    {% for team in data.teams %}
-                    <option value="{{ team.teamKey }}" {% if selected_team_key == team.teamKey %}selected{% endif %}>{{ team.displayName }}</option>
-                    {% endfor %}
+                    <option value="">Todas</option>
+                    <option value="CESTO" {% if selected_tipo == 'CESTO' %}selected{% endif %}>STC CESTO</option>
+                    <option value="ESCADA" {% if selected_tipo == 'ESCADA' %}selected{% endif %}>STC ESCADA</option>
                 </select>
             </div>
             <div class="filter-group" style="display: flex; gap: 0.5rem; align-items: flex-end;">
@@ -723,174 +765,84 @@
             </div>
         </form>
 
-        <!-- Detalhes fixos (Placar) -->
-        <div id="detailsScoreboard" class="details-scoreboard">
-            <div id="scoreboardEmpty" class="scoreboard-placeholder">
-                Passe o mouse sobre um valor na tabela para ver os detalhes da equipe aqui...
+        <!-- Skeleton Loading para Produção -->
+        <div id="skeletonProd" class="skeletonContainer" style="margin-top: 1rem;">
+            <div class="stats-grid">
+                <div class="skeletonTile" style="height: 120px;"></div>
+                <div class="skeletonTile" style="height: 120px;"></div>
+                <div class="skeletonTile" style="height: 120px;"></div>
             </div>
-            <div id="scoreboardContent" style="display: none; width: 100%; justify-content: space-between; align-items: center;">
-                <div style="display: flex; gap: 2rem; align-items: center;">
-                    <div class="scoreboard-item">
-                        <span class="scoreboard-label">Equipe</span>
-                        <span class="scoreboard-value" id="sb-name">-</span>
+            <div class="skeletonTile" style="height: 400px; margin-top: 1.5rem; border-radius: 1rem;"></div>
+        </div>
+
+        <div id="prodContent" class="hidden">
+            <div id="detailsScoreboard" class="details-scoreboard">
+                <div id="scoreboardEmpty" class="scoreboard-placeholder">
+                    Passe o mouse sobre um valor na tabela para ver os detalhes da equipe aqui...
+                </div>
+                <div id="scoreboardContent" style="display: none; width: 100%; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; gap: 2rem; align-items: center;">
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">Equipe</span>
+                            <span class="scoreboard-value" id="sb-name">-</span>
+                        </div>
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">Mês/Ref</span>
+                            <span class="scoreboard-value" id="sb-month">-</span>
+                        </div>
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">Placa</span>
+                            <span class="scoreboard-value" id="sb-plate">-</span>
+                        </div>
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">Agência</span>
+                            <span class="scoreboard-value" id="sb-agency">-</span>
+                        </div>
                     </div>
-                    <div class="scoreboard-item">
-                        <span class="scoreboard-label">Mês/Ref</span>
-                        <span class="scoreboard-value" id="sb-month">-</span>
-                    </div>
-                    <div class="scoreboard-item">
-                        <span class="scoreboard-label">Placa</span>
-                        <span class="scoreboard-value" id="sb-plate">-</span>
-                    </div>
-                    <div class="scoreboard-item">
-                        <span class="scoreboard-label">Agência</span>
-                        <span class="scoreboard-value" id="sb-agency">-</span>
-                    </div>
+                    
                     <div class="scoreboard-item">
                         <span class="scoreboard-label" style="display: block; margin-bottom: 2px;">Membros</span>
                         <span class="scoreboard-value" id="sb-members" style="max-width: 400px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; color: #cbd5e1;">-</span>
                     </div>
-                </div>
-                <div class="scoreboard-item" style="text-align: right;">
-                    <span class="scoreboard-label">Produção Total</span>
-                    <span class="scoreboard-value highlight"><span id="sb-value">0,00</span> US</span>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <main class="content">
-        {% if selected_team_data %}
-        <!-- DETAILED VIEW -->
-        <div class="detailed-view">
-            <div class="team-info-card">
-                <div class="info-group">
-                    <div class="info-label">Equipe</div>
-                    <div class="info-value" style="font-size: 1.5rem; color: var(--primary);">{{ selected_team_data.displayName }}</div>
-                    <div style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
-                        {{ selected_team_data.cityBase }} | {{ selected_team_data.contract }}
-                    </div>
-                </div>
-                <div class="info-group">
-                    <div class="info-label">Integrantes</div>
-                    <div class="info-value" style="font-size: 0.9rem; line-height: 1.4;">
-                        {% if selected_team_data.members %}
-                            {{ selected_team_data.members | join(' | ') }}
-                        {% else %}
-                            <span style="color: var(--text-muted); font-weight: 400;">Não informados</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="info-group" style="text-align: right;">
-                    <div class="info-label">Meta Mensal</div>
-                    <div class="info-value" style="color: #f59e0b;">{{ selected_team_data.goal.targetUs }} US</div>
-                </div>
-            </div>
-
-            <div class="chart-box">
-                <canvas id="performanceChart"></canvas>
-            </div>
-
-            <div class="stats-table-container">
-                <table class="stats-table">
-                    <thead>
-                        <tr>
-                            <th>Mês Referência</th>
-                            <th>Produção (US)</th>
-                            <th>Dias Trab.</th>
-                            <th>KM Rodado</th>
-                            <th>Comerciais</th>
-                            <th>Emergência</th>
-                            <th>Serviços</th>
-                            <th>Média Serv/Dia</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% set total_us = 0 %}
-                        {% set total_days = 0 %}
-                        {% set total_km = 0 %}
-                        {% set total_com = 0 %}
-                        {% set total_emerg = 0 %}
-                        {% set total_serv = 0 %}
-                        {% set count_months = 0 %}
+                    <div style="display: flex; gap: 1.5rem; align-items: center;">
+                        <div style="display: flex; flex-direction: column; gap: 4px; padding-right: 1.5rem; border-right: 1px solid rgba(255,255,255,0.1);">
+                            <span class="scoreboard-label" style="margin-bottom: 0;">Serviços Totais</span>
+                            <span class="scoreboard-value" id="sb-servicos" style="color: #6366f1; font-size: 1.1rem;">{{ global_servicos.value | int }}</span>
+                            <div style="display: flex; gap: 10px; font-size: 0.65rem; color: #94a3b8; font-weight: 600;">
+                                <span>COM: <b id="sb-com" style="color: #94a3b8;">{{ global_comerciais.value | int }}</b></span>
+                                <span>EMERG: <b id="sb-emerg" style="color: #94a3b8;">{{ global_emergenciais.value | int }}</b></span>
+                            </div>
+                        </div>
                         
-                        {% for month_key in data.months %}
-                            {% set cell = data.matrix[month_key][selected_team_key] if data.matrix[month_key] and selected_team_key in data.matrix[month_key] else None %}
-                            {% set m_metrics = cell.metrics if cell and cell is mapping and cell.metrics else {} %}
-                            <tr>
-                                <td>{{ month_key | replace('_', '/') }}</td>
-                                {% if cell %}
-                                    <td>{{ cell.val | format_number }}</td>
-                                    <td>{{ m_metrics.workDays | default(0) | int }}</td>
-                                    <td>{{ cell.km | format_number }}</td>
-                                    <td>{{ cell.comerciais }}</td>
-                                    <td>{{ cell.emergenciais }}</td>
-                                    <td>{{ cell.servicos }}</td>
-                                    <td>{{ (cell.servicos / m_metrics.workDays if m_metrics.workDays > 0 else 0) | format_number }}</td>
-                                    
-                                    {% set total_us = total_us + cell.val %}
-                                    {% set total_days = total_days + (m_metrics.workDays | default(0)) %}
-                                    {% set total_km = total_km + cell.km %}
-                                    {% set total_com = total_com + cell.comerciais %}
-                                    {% set total_emerg = total_emerg + cell.emergenciais %}
-                                    {% set total_serv = total_serv + cell.servicos %}
-                                    {% set count_months = count_months + 1 %}
-                                {% else %}
-                                    <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-                                {% endif %}
-                            </tr>
-                        {% endfor %}
-                        <tr>
-                            <td>CONSOLIDADO / MÉDIA</td>
-                            <td>{{ (total_us / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_days / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_km / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_com / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_emerg / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_serv / count_months if count_months > 0 else 0) | format_number }}</td>
-                            <td>{{ (total_serv / total_days if total_days > 0 else 0) | format_number }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">KM Total</span>
+                            <span class="scoreboard-value" id="sb-km" style="color: #f59e0b;">{{ global_km.value | int }} km</span>
+                        </div>
+                        <div class="scoreboard-item">
+                            <span class="scoreboard-label">Sobreaviso (SA)</span>
+                            <span class="scoreboard-value" id="sb-sa" style="color: #ec4899;">{{ global_sa.value | int }}h</span>
+                        </div>
+                        <div class="scoreboard-item" style="text-align: right; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 1.5rem;">
+                            <span class="scoreboard-label">Produção Total</span>
+                            <span class="scoreboard-value highlight" id="sb-value">{{ global_us.value | format_number }} US</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    const ctx = document.getElementById('performanceChart').getContext('2d');
-                    const months = [{% for mk in data.months %}"{{ mk | replace('_', '/') }}",{% endfor %}];
-                    const production = [{% for mk in data.months %}{% set cell = data.matrix[mk][selected_team_key] if data.matrix[mk] and selected_team_key in data.matrix[mk] else None %}{{ cell.val if cell else 0 }},{% endfor %}];
-                    const targetVal = {{ selected_team_data.goal.targetUs }};
-                    const targets = months.map(() => targetVal);
-
-                    new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: months,
-                            datasets: [
-                                { label: 'Produção (US)', data: production, backgroundColor: '#2563eb', borderRadius: 8, order: 2 },
-                                { label: 'Meta (US)', data: targets, type: 'line', borderColor: '#f97316', borderWidth: 4, pointRadius: 0, fill: false, order: 1 }
-                            ]
-                        },
-                        options: {
-                            responsive: true, maintainAspectRatio: false,
-                            plugins: { legend: { position: 'top' } },
-                            scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
-                        }
-                    });
-                });
-            </script>
-        </div>
-        {% else %}
-        <!-- ORIGINAL MATRIX VIEW -->
-        <div class="matrix-container" style="background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); overflow: hidden; border: 1px solid #e2e8f0;">
-            <div style="overflow-x: auto;">
-<table class="matrix-table" style="width: 100%; border-collapse: collapse; min-width: 800px;">
-                    <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+            <main class="content">
+        <div class="matrix-container" style="background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0;">
+            <table class="matrix-table">
+                <thead>
                         <tr>
-                            <th style="padding: 1rem; text-align: left; position: sticky; left: 0; background: #f8fafc; z-index: 10; border-right: 2px solid #e2e8f0;">Mês/Ano</th>
+                            <th style="padding: 1rem; text-align: left;">Mês/Ano</th>
+                            <th style="padding: 1rem; text-align: center; color: #64748b; font-size: 0.75rem; font-weight: 800;">EQS</th>
                             {% for team in data.teams %}
+                            {# FILTRO: Só mostra equipes que tenham agência ou membros #}
+                            {% if team.agency or team.members %}
                             {% set overall_rank = loop.index %}
-                            <th style="padding: 0.5rem; text-align: center; min-width: 130px; border-right: 1px solid #e2e8f0; background: white; position: relative; padding-top: 1.2rem;">
+                            <th style="padding: 0.5rem; text-align: center; min-width: 100px; border-right: 1px solid #e2e8f0; background: white; position: relative; padding-top: 1.2rem;">
                                 {% set target_us = (team.goal.targetUs if team.goal and team.goal.targetUs else 859) %}
                                 {% set is_cesto = target_us == 811 or "(CESTO)" in (team.displayName or "")|upper or team.teamKey in ['E3K91', 'E3K81'] %}
                                 
@@ -918,13 +870,15 @@
                                         <div class="team-badge" style="font-size: 1.1rem; font-weight: 800; padding: 2px 10px;">{{ team.teamKey }}</div>
                                     </div>
                                     
-                                    <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 700; line-height: 1.1; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ team.displayName }}">
+                                    <div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; line-height: 1.2; max-width: 100px; word-break: break-word; text-align: center;" title="{{ team.displayName }}">
                                         {{ team.cityBase }}
                                     </div>
                                 </div>
                             </th>
+                            {% endif %}
                             {% endfor %}
-                            <th style="padding: 1rem; text-align: right; font-weight: 700; background: #f1f5f9; position: sticky; right: 0; z-index: 5; border-left: 2px solid #e2e8f0; font-size: 0.8rem;">TOTAL</th>
+                            <th class="sticky-total-col">TOTAL</th>
+                            <th class="sticky-avg-col">MÉDIA</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -934,17 +888,56 @@
                             '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
                         } %}
                         {% for month in data.months %}
+                        {% set m_num = month.split('_')[1] if '_' in month else '00' %}
+                        
+                        {# PRE-CALCULO MENSAL COMPLETO #}
+                        {% set m_stats = namespace(active=0, us=0, servicos=0, com=0, emerg=0, km=0, sa=0) %}
+                        {% for t in data.teams %}
+                            {% if t.agency or t.members %}
+                                {% set c = data.matrix[month][t.teamKey] %}
+                                {% set v = c.val if c and c is mapping else (c if c is number else 0) %}
+                                {% if v > 0 %}
+                                    {% set m_stats.active = m_stats.active + 1 %}
+                                    {% set m_stats.us = m_stats.us + v %}
+                                    {% if c is mapping %}
+                                        {% set m_stats.servicos = m_stats.servicos + (c.servicos | int) %}
+                                        {% set m_stats.com = m_stats.com + (c.comerciais | int) %}
+                                        {% set m_stats.emerg = m_stats.emerg + (c.emergenciais | int) %}
+                                        {% set m_stats.km = m_stats.km + (c.km | int) %}
+                                        {% set m_stats.sa = m_stats.sa + (c.sa | int) %}
+                                    {% endif %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                        {% set m_count = m_stats.active if m_stats.active > 0 else 1 %}
+
                         <tr>
-                            {% set m_num = month.split('_')[1] if '_' in month else '00' %}
-                            <td style="padding: 1rem; font-weight: 600; color: var(--text-main); border-right: 2px solid #e2e8f0;">
+                            <td onmouseenter="showTooltip(this)" 
+                                onmouseleave="hideTooltip()"
+                                data-name="Total Mensal"
+                                data-month="{{ month_names.get(m_num, month) }}"
+                                data-plate="-"
+                                data-agency="Todas as Agências"
+                                data-members="{{ m_stats.active }} Equipes Ativas"
+                                data-value="{{ m_stats.us | format_number }}"
+                                data-servicos="{{ m_stats.servicos | int }}"
+                                data-com="{{ m_stats.com | int }}"
+                                data-emerg="{{ m_stats.emerg | int }}"
+                                data-km="{{ m_stats.km | int }}"
+                                data-sa="{{ m_stats.sa | int }}"
+                                style="padding: 1rem; font-weight: 600; color: var(--text-main); border-right: 2px solid #e2e8f0; position: sticky; left: 0; z-index: 10; background: white; cursor: help;">
                                 {{ month_names.get(m_num, month) }}
                             </td>
                             
-                            {% set row_total = namespace(value=0) %}
+                            <td style="padding: 1rem; text-align: center; color: #94a3b8; font-weight: 600; border-right: 1px solid #f1f5f9; font-size: 0.8rem;">
+                                {{ m_stats.active }}
+                            </td>
+                            
                             {% for team in data.teams %}
+                                {# FILTRO: Deve bater com o cabeçalho #}
+                                {% if team.agency or team.members %}
                                 {% set cell = data.matrix[month][team.teamKey] %}
                                 {% set val = cell.val if cell and cell is mapping else (cell if cell is number else 0) %}
-                                {% set row_total.value = row_total.value + val %}
                                 <td class="team-cell medal-cell" 
                                     onmouseenter="showTooltip(this)" 
                                     onmouseleave="hideTooltip()"
@@ -955,6 +948,11 @@
                                     data-agency="{% if cell is mapping %}{{ cell.agency or '-' }}{% else %}-{% endif %}"
                                     data-members="{% if cell is mapping and cell.members %}{{ cell.members|join(', ') }}{% else %}Nenhum membro listado{% endif %}"
                                     data-value="{{ val | format_number }}"
+                                    data-servicos="{% if cell is mapping %}{{ cell.servicos | int }}{% else %}0{% endif %}"
+                                    data-com="{% if cell is mapping %}{{ cell.comerciais | int }}{% else %}0{% endif %}"
+                                    data-emerg="{% if cell is mapping %}{{ cell.emergenciais | int }}{% else %}0{% endif %}"
+                                    data-km="{% if cell is mapping %}{{ cell.km | int }}{% else %}0{% endif %}"
+                                    data-sa="{% if cell is mapping %}{{ cell.sa | int }}{% else %}0{% endif %}"
                                     style="padding: 0.75rem 1rem; text-align: center; border-right: 1px solid #f1f5f9; color: {% if val > 0 %}#1e293b{% else %}#cbd5e1{% endif %}; font-size: 0.85rem; cursor: help;">
                                     {% set ranking = data.rankings[month] %}
                                     {% if ranking %}
@@ -964,10 +962,14 @@
                                     {% endif %}
                                     {{ val | format_number if val > 0 else '-' }}
                                 </td>
+                                {% endif %}
                             {% endfor %}
                             
-                             <td style="padding: 1rem; text-align: right; font-weight: 700; color: var(--primary-color); background: #f8fafc; position: sticky; right: 0; z-index: 5; border-left: 2px solid #e2e8f0; font-size: 0.9rem;">
-                                {{ row_total.value | format_number }}
+                             <td class="sticky-total-col">
+                                {{ m_stats.us | format_number }}
+                            </td>
+                            <td class="sticky-avg-col" style="font-weight: 700; color: #64748b; font-size: 0.8rem;">
+                                Ø {{ (m_stats.us / m_count) | format_number }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -975,34 +977,52 @@
                     <tfoot style="border-top: 2px solid #cbd5e1; font-weight: 700;">
                         <!-- Linha de TOTAL -->
                         <tr style="background: #f8fafc;">
-                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569; position: sticky; left: 0; z-index: 10; background: #f8fafc;">TOTAL ACUMULADO</td>
+                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569;">TOTAL ACUMULADO</td>
+                            <td style="background: #f8fafc; border-right: 1px solid #e2e8f0;"></td>
                             {% set grand_total = namespace(value=0) %}
                             {% for team in data.teams %}
+                                {% if team.agency or team.members %}
                                 {% set grand_total.value = grand_total.value + team.total_sum %}
-                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #e2e8f0; color: var(--text-main); font-size: 0.9rem;">
+                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #f1f5f9; color: var(--text-main); font-size: 0.9rem;">
                                     {{ team.total_sum | format_number }}
                                 </td>
+                                {% endif %}
                             {% endfor %}
-                            <td style="padding: 0.8rem 1rem; text-align: right; background: #f1f5f9; position: sticky; right: 0; border-left: 2px solid #cbd5e1; color: var(--primary); font-size: 1rem; z-index: 5;">
+                            <td class="sticky-total-col">
                                 {{ grand_total.value | format_number }}
+                            </td>
+                            <td class="sticky-avg-col" style="font-size: 0.85rem;">
+                                Ø {{ (grand_total.value / v_count) | format_number }}
                             </td>
                         </tr>
                         <!-- Linha de MÉDIA -->
                         <tr style="background: #ffffff;">
-                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569; position: sticky; left: 0; z-index: 10; background: #ffffff;">MÉDIA MENSAL</td>
+                            <td style="padding: 0.8rem 1rem; border-right: 2px solid #e2e8f0; color: #475569;">MÉDIA MENSAL</td>
+                            <td style="border-right: 1px solid #e2e8f0; text-align: center; color: #cbd5e1; font-size: 0.7rem;">Ø {{ (visible_teams_count.value) }}</td>
                             {% set grand_avg_sum = namespace(value=0) %}
+                            {% set count_teams = namespace(value=0) %}
                             {% for team in data.teams %}
+                                {% if team.agency or team.members %}
+                                {% set count_teams.value = count_teams.value + 1 %}
                                 {% set target = (team.goal.targetUs if team.goal and team.goal.targetUs else 859) %}
                                 {% set is_above = team.average >= target %}
                                 {% set grand_avg_sum.value = grand_avg_sum.value + team.average %}
-                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #e2e8f0;">
+                                <td style="padding: 0.8rem 1rem; text-align: center; border-right: 1px solid #f1f5f9;">
                                     <span style="color: {% if is_above %}#10b981{% else %}#ef4444{% endif %}; background: {% if is_above %}#ecfdf5{% else %}#fef2f2{% endif %}; padding: 2px 8px; border-radius: 6px; border: 1px solid {% if is_above %}#a7f3d0{% else %}#fecaca{% endif %}; font-size: 0.85rem;">
                                         {{ team.average | format_number }}
                                     </span>
                                 </td>
+                                {% endif %}
                             {% endfor %}
-                            <td style="padding: 0.8rem 1rem; text-align: right; background: #f8fafc; position: sticky; right: 0; border-left: 2px solid #cbd5e1; color: #64748b; font-size: 0.85rem; z-index: 5;">
-                                Ø {{ (grand_avg_sum.value / data.teams|length) | format_number if data.teams|length > 0 else '0' }}
+                            <td class="sticky-total-col">
+                                <span style="font-weight: 800; color: #64748b;">
+                                    Ø {{ (grand_total.value / (data.months|length if data.months|length > 0 else 1)) | format_number }}
+                                </span>
+                            </td>
+                            <td class="sticky-avg-col">
+                                <span style="font-weight: 800; color: #94a3b8; font-size: 0.7rem;">
+                                    Ø/eq {{ ((grand_total.value / (data.months|length if data.months|length > 0 else 1)) / v_count) | format_number }}
+                                </span>
                             </td>
                         </tr>
                     </tfoot>
@@ -1015,14 +1035,14 @@
                 Nenhum dado encontrado para os filtros selecionados.
             </div>
             {% endif %}
-        </div>
         
         <div style="margin-top: 1.5rem; color: var(--text-muted); font-size: 0.75rem; display: flex; gap: 2rem;">
             <span>💡 <b>Dica:</b> Use o scroll horizontal para ver todas as equipes.</span>
             <span>📍 <b>Legenda:</b> Valores representam o Total de US produzido no mês.</span>
         </div>
-        {% endif %}
-    </main>
+            </main>
+        </div> <!-- Fim do #prodContent -->
+    </div> <!-- Fim do .container -->
 
     <!-- Modal de Importação -->
     <div class="modal-shell" id="importModal" hidden>
@@ -1098,6 +1118,16 @@
 
     <script src="/static/productivity_import.js"></script>
     <script>
+        // Revelar conteúdo e esconder skeleton após o carregamento (SSR)
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const skeleton = document.getElementById('skeletonProd');
+                const content = document.getElementById('prodContent');
+                if (skeleton) skeleton.classList.add('hidden');
+                if (content) content.classList.remove('hidden');
+            }, 500);
+        });
+
         function toggleFilters() {
             const section = document.querySelector('.filter-section');
             section.classList.toggle('collapsed');
@@ -1107,105 +1137,63 @@
         const scoreboardEmpty = document.getElementById('scoreboardEmpty');
         const scoreboardContent = document.getElementById('scoreboardContent');
 
+        // Valores Globais (Iniciais)
+        const globalStats = {
+            name: "Total Empresa",
+            month: "Ano {{ selected_ano }}",
+            plate: "-",
+            agency: "Todas",
+            members: "{{ visible_teams_count.value }} Equipes Ativas",
+            value: "{{ global_us.value | format_number }}",
+            servicos: "{{ global_servicos.value | int }}",
+            com: "{{ global_comerciais.value | int }}",
+            emerg: "{{ global_emergenciais.value | int }}",
+            km: "{{ global_km.value | int }} km",
+            sa: "{{ global_sa.value | int }}h"
+        };
+
+        function updateScoreboard(stats) {
+            document.getElementById('sb-name').textContent = stats.name;
+            document.getElementById('sb-month').textContent = stats.month;
+            document.getElementById('sb-plate').textContent = stats.plate;
+            document.getElementById('sb-agency').textContent = stats.agency;
+            document.getElementById('sb-members').textContent = stats.members;
+            document.getElementById('sb-members').title = stats.members;
+            document.getElementById('sb-value').textContent = stats.value + " US";
+            document.getElementById('sb-servicos').textContent = stats.servicos;
+            document.getElementById('sb-com').textContent = stats.com;
+            document.getElementById('sb-emerg').textContent = stats.emerg;
+            document.getElementById('sb-km').textContent = stats.km;
+            document.getElementById('sb-sa').textContent = stats.sa;
+        }
+
         function showTooltip(cell) {
             const name = cell.getAttribute('data-name');
             if (!name) return;
 
-            // Preenche placar
-            document.getElementById('sb-name').textContent = name;
-            document.getElementById('sb-month').textContent = cell.getAttribute('data-month');
-            document.getElementById('sb-plate').textContent = cell.getAttribute('data-plate');
-            document.getElementById('sb-agency').textContent = cell.getAttribute('data-agency');
-            document.getElementById('sb-members').textContent = cell.getAttribute('data-members');
-            document.getElementById('sb-members').title = cell.getAttribute('data-members'); // Tooltip nativo para nomes longos
-            document.getElementById('sb-value').textContent = cell.getAttribute('data-value');
+            const stats = {
+                name: name,
+                month: cell.getAttribute('data-month'),
+                plate: cell.getAttribute('data-plate'),
+                agency: cell.getAttribute('data-agency'),
+                members: cell.getAttribute('data-members'),
+                value: cell.getAttribute('data-value'),
+                servicos: cell.getAttribute('data-servicos'),
+                com: cell.getAttribute('data-com'),
+                emerg: cell.getAttribute('data-emerg'),
+                km: cell.getAttribute('data-km') + " km",
+                sa: cell.getAttribute('data-sa') + "h"
+            };
 
+            updateScoreboard(stats);
             scoreboardEmpty.style.display = 'none';
             scoreboardContent.style.display = 'flex';
         }
 
         function hideTooltip() {
-            // Podemos optar por não limpar o placar para manter o último visto, 
-            // ou voltar ao placeholder. Vou voltar ao placeholder para ficar claro.
-            // scoreboardEmpty.style.display = 'block';
-            // scoreboardContent.style.display = 'none';
+            // Volta para os totais globais ao sair da célula
+            updateScoreboard(globalStats);
         }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const isCollapsed = localStorage.getItem('prod_filters_collapsed') === 'true';
-            if (isCollapsed) document.querySelector('.filter-section').classList.add('collapsed');
-        });
     </script>
-    <!-- Modal de Importação -->
-    <div class="modal-shell" id="importModal" hidden>
-        <div class="modal-backdrop" id="importModalBackdrop"></div>
-        <div class="modal-dialog">
-            <header class="modal-header">
-                <div class="modal-title-wrap">
-                    <span style="font-size: 1.5rem;">📊</span>
-                    <div>
-                        <div class="modal-title" id="importModalTitle">Importação de Produção BMG</div>
-                        <div class="modal-subtitle">Envie a planilha-base mensal para atualizar o histórico</div>
-                    </div>
-                </div>
-                <button class="modal-close" id="importModalClose">×</button>
-            </header>
-
-            <div class="modal-body">
-                <div class="form-notice" id="importNotice" hidden></div>
-                <form id="importForm">
-                    <div class="form-group">
-                        <label>Arquivo Excel</label>
-                        <input id="importFileInput" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" class="file-input" />
-                        <div class="file-help">O arquivo será analisado automaticamente ao ser selecionado.</div>
-                    </div>
-
-                    <div id="importDetectedSummary" style="margin: 1.5rem 0; font-weight: 600; color: var(--primary);"></div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Mês da competência</label>
-                            <select id="importMonthSelect">
-                                <option value="">Auto-detectar</option>
-                                <option value="1">Janeiro</option>
-                                <option value="2">Fevereiro</option>
-                                <option value="3">Março</option>
-                                <option value="4">Abril</option>
-                                <option value="5">Maio</option>
-                                <option value="6">Junho</option>
-                                <option value="7">Julho</option>
-                                <option value="8">Agosto</option>
-                                <option value="9">Setembro</option>
-                                <option value="10">Outubro</option>
-                                <option value="11">Novembro</option>
-                                <option value="12">Dezembro</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Ano da competência</label>
-                            <input type="number" id="importYearInput" placeholder="Ex: 2026">
-                        </div>
-                    </div>
-
-                    <!-- Resumo da Análise -->
-                    <div id="importSummaryGrid" class="summary-grid" hidden></div>
-                    
-                    <div id="importIssuesList" class="issues-list" hidden></div>
-                    
-                    <div id="importLastJob" class="last-job-notice"></div>
-                </form>
-            </div>
-
-            <footer class="modal-footer">
-                <span id="importModalMeta">Aguardando arquivo...</span>
-                <div style="display: flex; gap: 0.75rem;">
-                    <button class="btn-secondary" id="importModalCancel">Cancelar</button>
-                    <button class="btn-primary" id="importExecuteBtn" disabled>Importar Produção</button>
-                </div>
-            </footer>
-        </div>
-    </div>
-
-    <script src="/static/productivity_import.js"></script>
 </body>
 </html>

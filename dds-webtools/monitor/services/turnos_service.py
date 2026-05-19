@@ -20,7 +20,11 @@ from google.cloud import firestore, storage
 from services.firestore_client import db
 from services.teams_service import list_teams_map
 from services.monitor_config_service import get_monitor_polling_seconds, get_monitor_rules
-from services.messaging_service import get_unread_counts, CURRENT_SETOR
+from services.messaging_service import get_unread_counts, get_all_unread_counts_map, get_last_messages_map, CURRENT_SETOR
+from concurrent.futures import ThreadPoolExecutor
+import threading
+
+_pending_lock = threading.Lock()
 
 APP_TITLE = "DDS - Monitor de Turnos"
 DEFAULT_EMPRESA = os.getenv("DDS_EMPRESA_PADRAO", "ChicoEletro")
@@ -35,6 +39,8 @@ DDS_BUCKET_NAME = os.getenv("DDS_BUCKET_NAME", "dds-treinamentos.firebasestorage
 DDS_CALENDAR_SOURCE_BLOB = os.getenv("DDS_CALENDAR_SOURCE_BLOB", "DDSv2/lista.json")
 DDS_CALENDAR_CACHE_BLOB = os.getenv("DDS_CALENDAR_CACHE_BLOB", "_cache/dds_calendar_history.json")
 DDS_DAY_CACHE_PREFIX = os.getenv("DDS_DAY_CACHE_PREFIX", "_cache/days")
+MONITOR_VIEW_CACHE_PREFIX = os.getenv("MONITOR_VIEW_CACHE_PREFIX", "_cache/monitor")
+MONITOR_VIEW_CACHE_TTL_SEC = int(os.getenv("MONITOR_VIEW_CACHE_TTL_SEC", "60"))
 AUTO_CLOSE_OPEN_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_CLOSE_OPEN_HOURS", "16"))
 AUTO_DESATUALIZA_FECHADO_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_DESATUALIZA_FECHADO_HOURS", "48"))
 AUTO_DESATUALIZA_INTERVALO_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_DESATUALIZA_INTERVALO_HOURS", "8"))
@@ -48,6 +54,9 @@ AUTO_REASON_INACTIVE_UNKNOWN = "AUTO_INACTIVE_DESCONHECIDO"
 _DDS_DAY_CACHE: dict[str, dict[str, Any]] = {}
 _DDS_CALENDAR_CACHE: dict[str, Any] = {}
 _STORAGE_CLIENT = None
+# In-process cache da visão completa do monitor (por empresa)
+_MONITOR_VIEW_CACHE: dict[str, dict[str, Any]] = {}
+_cache_lock = threading.Lock()
 
 
 def get_monitor_config() -> dict[str, Any]:
@@ -58,6 +67,62 @@ def get_monitor_config() -> dict[str, Any]:
         "pollingSeconds": polling_seconds or POLLING_DEFAULT_SEC,
         "rules": rules,
     }
+
+
+def clear_all_monitor_caches():
+    """Limpa todos os caches em memória do monitor."""
+    global _DDS_DAY_CACHE, _DDS_CALENDAR_CACHE, _MONITOR_VIEW_CACHE
+    with _cache_lock:
+        _DDS_DAY_CACHE.clear()
+        _DDS_CALENDAR_CACHE.clear()
+        _MONITOR_VIEW_CACHE.clear()
+
+    # Limpa cache do Storage (DDS Calendar)
+    _DDS_CALENDAR_CACHE.pop("payload", None)
+
+    # Também limpa o cache de equipes se existir no outro serviço
+    try:
+        from services.teams_service import clear_teams_cache
+        clear_teams_cache()
+    except ImportError:
+        pass
+
+
+def update_productivity_metadata(empresa: str = DEFAULT_EMPRESA):
+    """
+    Atualiza o documento de metadados da produtividade com a \u00faltima compet\u00eancia 
+    e listas de filtros dispon\u00edveis (cidades, bases, etc).
+    """
+    try:
+        from produtividade.services.productivity_service import get_latest_competence, list_productivity_data
+        
+        # 1. Busca a \u00faltima compet\u00eancia usando o m\u00e9todo de varredura (por enquanto)
+        year, month = get_latest_competence()
+        if not year or not month:
+            return
+
+        competencia = f"{year}-{month:02d}"
+        
+        # 2. Busca todos os dados apenas daquela compet\u00eancia para extrair metadados geogr\u00e1ficos
+        data_latest = list_productivity_data(year=year, month=month)
+        
+        cities = sorted(list(set(d.get("cityBase") for d in data_latest if d.get("cityBase"))))
+        bases = sorted(list(set(d.get("base") for d in data_latest if d.get("base"))))
+        agencies = sorted(list(set(d.get("agency") for d in data_latest if d.get("agency"))))
+
+        # 3. Salva no documento 'meta' da produtividade
+        db.collection("productivity").document(empresa).set({
+            "lastCompetencia": competencia,
+            "lastYear": year,
+            "lastMonth": month,
+            "availableCities": cities,
+            "availableBases": bases,
+            "availableAgencies": agencies,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        
+    except Exception as e:
+        print(f"[update_productivity_metadata] Erro: {e}")
 
 
 def to_utc_dt(ts: Any):
@@ -75,6 +140,13 @@ def to_utc_dt(ts: Any):
         dt = dt.astimezone(timezone.utc)
 
     return dt
+
+def _get_now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo(DDS_TIMEZONE))
+    except Exception:
+        # Fallback manual para UTC-3 se ZoneInfo falhar
+        return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
 
 
 def normalize_estado(value: str | None) -> str:
@@ -166,6 +238,148 @@ def _storage_write_json(blob_name: str, payload: dict[str, Any]) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# Cache da visão completa do monitor (_cache/monitor/{empresa}/current_view.json)
+# ---------------------------------------------------------------------------
+
+def _monitor_view_cache_blob(empresa: str) -> str:
+    safe = re.sub(r"[^\w\-]", "_", empresa)
+    return _storage_blob_name(MONITOR_VIEW_CACHE_PREFIX, safe, "current_view.json")
+
+
+class _DatetimeEncoder(json.JSONEncoder):
+    """Serializa datetime/set que o json padrão não suporta."""
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, set):
+            return sorted(obj)
+        return super().default(obj)
+
+
+def _read_monitor_view_cache(empresa: str) -> dict[str, Any] | None:
+    """
+    Lê o cache da visão completa do monitor. Retorna None se:
+    - Não encontrado
+    - Expirado (MONITOR_VIEW_CACHE_TTL_SEC)
+    """
+    # 1. Cache em memória (mais rápido — evita round-trip ao Storage)
+    with _cache_lock:
+        mem = _MONITOR_VIEW_CACHE.get(empresa)
+    if mem:
+        cached_at_str = mem.get("_cachedAt")
+        if cached_at_str:
+            try:
+                cached_at = datetime.fromisoformat(cached_at_str)
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                age = (_utc_now() - cached_at).total_seconds()
+                if age < MONITOR_VIEW_CACHE_TTL_SEC:
+                    return mem
+            except Exception:
+                pass
+
+    # 2. Storage (Cloud Run reiniciado ou outra instância)
+    blob_name = _monitor_view_cache_blob(empresa)
+    raw = _storage_read_json(blob_name)
+    if not raw:
+        return None
+
+    cached_at_str = raw.get("_cachedAt")
+    if not cached_at_str:
+        return None
+    try:
+        cached_at = datetime.fromisoformat(cached_at_str)
+        if cached_at.tzinfo is None:
+            cached_at = cached_at.replace(tzinfo=timezone.utc)
+        age = (_utc_now() - cached_at).total_seconds()
+        if age >= MONITOR_VIEW_CACHE_TTL_SEC:
+            return None
+    except Exception:
+        return None
+
+    with _cache_lock:
+        _MONITOR_VIEW_CACHE[empresa] = raw
+    return raw
+
+
+def _write_monitor_view_cache(empresa: str, payload: dict[str, Any]) -> None:
+    """Persiste a visão completa no cache em memória e no Storage."""
+    stamped = {**payload, "_cachedAt": _utc_now_iso()}
+    with _cache_lock:
+        _MONITOR_VIEW_CACHE[empresa] = stamped
+    try:
+        blob_name = _monitor_view_cache_blob(empresa)
+        blob = _storage_bucket().blob(blob_name)
+        blob.upload_from_string(
+            json.dumps(stamped, ensure_ascii=False, cls=_DatetimeEncoder),
+            content_type="application/json; charset=utf-8",
+        )
+    except Exception:
+        pass  # Falha no Storage não impede a resposta; o cache em memória ainda funciona
+
+
+def _invalidate_monitor_view_cache(empresa: str) -> None:
+    """Invalida o cache — chamado antes de um recálculo forçado."""
+    with _cache_lock:
+        _MONITOR_VIEW_CACHE.pop(empresa, None)
+    try:
+        blob_name = _monitor_view_cache_blob(empresa)
+        _storage_bucket().blob(blob_name).delete()
+    except Exception:
+        pass
+
+
+def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
+    """
+    Atualiza apenas UMA equipe dentro do cache existente, evitando um recálculo total.
+    Se o cache não existir, não faz nada (o próximo GET criará o cache completo).
+    """
+    cache = _read_monitor_view_cache(empresa)
+    if not cache:
+        return
+
+    items = cache.get("items") or []
+    team_key = team_item.get("teamKey")
+    
+    # Substitui ou adiciona o item
+    found = False
+    new_items = []
+    for it in items:
+        if it.get("teamKey") == team_key:
+            new_items.append(team_item)
+            found = True
+        else:
+            new_items.append(it)
+    
+    if not found:
+        new_items.append(team_item)
+        # Mantém a ordenação por nome da equipe
+        new_items.sort(key=lambda x: (str(x.get("equipe") or ""), str(x.get("teamKey") or "")))
+
+    # Atualiza o timestamp do cache para não expirar imediatamente por idade
+    # (damos uma sobrevida ao cache pois ele acabou de ser 'refrescado' com um dado novo)
+    updated_cache = {
+        **cache,
+        "items": new_items,
+        "serverTime": _utc_now_iso(),
+        "_cachedAt": _utc_now_iso(),
+        "manualRefresh": False
+    }
+    
+    with _cache_lock:
+        _MONITOR_VIEW_CACHE[empresa] = updated_cache
+    try:
+        blob_name = _monitor_view_cache_blob(empresa)
+        blob = _storage_bucket().blob(blob_name)
+        blob.upload_from_string(
+            json.dumps(updated_cache, ensure_ascii=False, cls=_DatetimeEncoder),
+            content_type="application/json; charset=utf-8",
+        )
+    except Exception:
+        pass
+
+
 def _parse_iso_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -178,12 +392,9 @@ def _parse_iso_datetime(value: Any) -> datetime | None:
         return None
     return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
+
 def _local_today() -> datetime.date:
-    try:
-        tz = ZoneInfo(DDS_TIMEZONE)
-    except Exception:
-        tz = timezone.utc
-    return datetime.now(tz).date()
+    return _get_now().date()
 
 
 def _recent_history_days(days: int = DDS_HISTORY_DAYS) -> list[str]:
@@ -209,13 +420,15 @@ def _mutable_dds_days(recent_days: list[str]) -> set[str]:
 
 
 def _prune_dds_day_cache(valid_days: set[str]) -> None:
-    stale_days = [day for day in _DDS_DAY_CACHE.keys() if day not in valid_days]
-    for day in stale_days:
-        _DDS_DAY_CACHE.pop(day, None)
+    with _cache_lock:
+        stale_days = [day for day in _DDS_DAY_CACHE.keys() if day not in valid_days]
+        for day in stale_days:
+            _DDS_DAY_CACHE.pop(day, None)
 
 
 def _should_refresh_dds_day(day: str, mutable_days: set[str]) -> bool:
-    entry = _DDS_DAY_CACHE.get(day)
+    with _cache_lock:
+        entry = _DDS_DAY_CACHE.get(day)
     if entry is None:
         return True
 
@@ -229,7 +442,7 @@ def _should_refresh_dds_day(day: str, mutable_days: set[str]) -> bool:
     if not isinstance(fetched_at, datetime):
         return True
 
-    age_sec = (datetime.now(timezone.utc) - fetched_at).total_seconds()
+    age_sec = (_get_now() - fetched_at).total_seconds()
     return age_sec >= DDS_MUTABLE_REFRESH_SEC
 
 def _normalize_text(value: Any) -> str:
@@ -360,6 +573,7 @@ def _serialize_day_cache(day: str, entry: dict[str, Any]) -> dict[str, Any]:
         "frozen": bool(entry.get("frozen")),
         "has_any": bool(entry.get("has_any")),
         "teams_executed": sorted(str(team).strip() for team in (entry.get("present") or set()) if str(team).strip()),
+        "team_timestamps": {k: (v.isoformat() if hasattr(v, "isoformat") else str(v)) for k, v in (entry.get("team_timestamps") or {}).items()},
     }
 
 
@@ -370,9 +584,11 @@ def _deserialize_day_cache(payload: dict[str, Any]) -> dict[str, Any] | None:
     if not day:
         return None
     teams_executed = {str(team).strip() for team in (payload.get("teams_executed") or []) if str(team).strip()}
+    team_timestamps = {k: _parse_iso_datetime(v) for k, v in (payload.get("team_timestamps") or {}).items()}
     return {
         "date": day,
         "present": teams_executed,
+        "team_timestamps": team_timestamps,
         "has_any": bool(payload.get("has_any")) or bool(teams_executed),
         "fetched_at": _parse_iso_datetime(payload.get("updated_at")),
         "frozen": bool(payload.get("frozen")),
@@ -385,7 +601,8 @@ def _load_storage_day_cache(day: str) -> dict[str, Any] | None:
     entry = _deserialize_day_cache(payload)
     if not entry:
         return None
-    _DDS_DAY_CACHE[day] = entry
+    with _cache_lock:
+        _DDS_DAY_CACHE[day] = entry
     return entry
 
 
@@ -423,12 +640,14 @@ def _build_day_cache_entry(
     day: str,
     *,
     present: set[str],
+    team_timestamps: dict[str, Any],
     has_any: bool,
     frozen: bool,
 ) -> dict[str, Any]:
     return {
         "date": day,
         "present": set(present or set()),
+        "team_timestamps": dict(team_timestamps or {}),
         "has_any": bool(has_any),
         "fetched_at": _utc_now(),
         "frozen": bool(frozen),
@@ -443,7 +662,8 @@ def _load_day_presence_with_cache(
     calendar_days: set[str] | None,
     manual_refresh: bool = False,
 ) -> dict[str, Any]:
-    entry = _DDS_DAY_CACHE.get(day)
+    with _cache_lock:
+        entry = _DDS_DAY_CACHE.get(day)
     if entry is None:
         entry = _load_storage_day_cache(day)
 
@@ -453,8 +673,9 @@ def _load_day_presence_with_cache(
 
     if calendar_known and not day_in_calendar:
         if entry is None or entry.get("has_any") or entry.get("present"):
-            entry = _build_day_cache_entry(day, present=set(), has_any=False, frozen=True)
-            _DDS_DAY_CACHE[day] = entry
+            entry = _build_day_cache_entry(day, present=set(), team_timestamps={}, has_any=False, frozen=True)
+            with _cache_lock:
+                _DDS_DAY_CACHE[day] = entry
             _save_storage_day_cache(day, entry)
         else:
             entry["frozen"] = True
@@ -465,20 +686,23 @@ def _load_day_presence_with_cache(
         return entry
 
     carry_present = set(entry.get("present") or set()) if entry else set()
-    present, has_any_dds = _load_dds_presence_for_day(day, carry_present)
+    present, has_any_dds, team_timestamps = _load_dds_presence_for_day(day, carry_present)
     frozen = day not in mutable_days
-    entry = _build_day_cache_entry(day, present=present, has_any=has_any_dds or bool(carry_present), frozen=frozen)
-    _DDS_DAY_CACHE[day] = entry
+    entry = _build_day_cache_entry(day, present=present, team_timestamps=team_timestamps, has_any=has_any_dds or bool(carry_present), frozen=frozen)
+    with _cache_lock:
+        _DDS_DAY_CACHE[day] = entry
     _save_storage_day_cache(day, entry)
     return entry
 
 
 def _force_refresh_days(days: set[str]) -> None:
     for day in days:
-        entry = _DDS_DAY_CACHE.get(day)
+        with _cache_lock:
+            entry = _DDS_DAY_CACHE.get(day)
         if not entry:
             entry = _load_storage_day_cache(day) or {"date": day, "pending_team_keys": set()}
-            _DDS_DAY_CACHE[day] = entry
+            with _cache_lock:
+                _DDS_DAY_CACHE[day] = entry
         entry["fetched_at"] = None
 
 
@@ -497,20 +721,25 @@ def _build_team_aliases(team_key: str, team_data: dict[str, Any], turno_data: di
     return {a for a in aliases if a}
 
 
-def _latest_dds_day_for_aliases(
+def _latest_dds_ts_for_aliases(
     recent_dds_days: list[str],
-    dds_present_by_day: dict[str, set[str]],
+    dds_timestamps_by_day: dict[str, dict[str, Any]],
     aliases: set[str],
-) -> str | None:
+) -> datetime | None:
+    latest_ts = None
     for day in reversed(recent_dds_days):
-        presentes_no_dia = dds_present_by_day.get(day) or set()
-        if any(alias in presentes_no_dia for alias in aliases):
-            return day
-    return None
+        day_ts_map = dds_timestamps_by_day.get(day) or {}
+        for alias in aliases:
+            ts = day_ts_map.get(alias)
+            if ts:
+                if not latest_ts or ts > latest_ts:
+                    latest_ts = ts
+    return latest_ts
 
 
-def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) -> tuple[set[str], bool]:
+def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) -> tuple[set[str], bool, dict[str, Any]]:
     present = set(carry_present or set())
+    team_timestamps: dict[str, Any] = {}
     has_any_dds = False
     end_key = f"{day}\uf8ff"
 
@@ -528,17 +757,21 @@ def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) 
 
         has_any_dds = True
         equipe = _normalize_text(data.get("equipe"))
+        ts = data.get("serverUpdatedAt")
         if equipe:
             present.add(equipe)
+            if ts:
+                if equipe not in team_timestamps or ts > team_timestamps[equipe]:
+                    team_timestamps[equipe] = ts
 
-    return present, has_any_dds
+    return present, has_any_dds, team_timestamps
 
 
 def _load_recent_dds_presence(
     days: int = DDS_HISTORY_DAYS,
     *,
     manual_refresh: bool = False,
-) -> tuple[list[str], dict[str, set[str]], set[str], set[str], set[str] | None]:
+) -> tuple[list[str], dict[str, set[str]], set[str], set[str], set[str] | None, dict[str, dict[str, Any]]]:
 
     """
     Retorna:
@@ -547,30 +780,16 @@ def _load_recent_dds_presence(
       - days_with_any_dds: conjunto dos dias que tiveram pelo menos um DDS
       - mutable_days: dias que ainda podem ser atualizados (hoje e último dia útil)
       - calendar_days: conjunto de dias válidos vindos do calendário persistente, quando disponível
+      - dds_timestamps_by_day: mapa de dia -> {equipe -> timestamp}
     """
     recent_days = _recent_history_days(days)
     mutable_days = _mutable_dds_days(recent_days)
-    _prune_dds_day_cache(set(recent_days))
-
-    if manual_refresh:
-        _force_refresh_days(_build_manual_refresh_days(recent_days))
-
-    calendar_days = _load_dds_calendar_days(force_refresh=False)
     present_by_day: dict[str, set[str]] = {day: set() for day in recent_days}
+    dds_timestamps_by_day: dict[str, dict[str, Any]] = {day: {} for day in recent_days}
     days_with_any_dds: set[str] = set()
 
-    for day in recent_days:
-        entry = _load_day_presence_with_cache(
-            day,
-            mutable_days=mutable_days,
-            calendar_days=calendar_days,
-            manual_refresh=manual_refresh,
-        )
-        present_by_day[day] = set(entry.get("present") or set())
-        if entry.get("has_any"):
-            days_with_any_dds.add(day)
-
-    return recent_days, present_by_day, days_with_any_dds, mutable_days, calendar_days
+    # Temporariamente desabilitado para reduzir acessos ao Firebase a pedido do usuario
+    return recent_days, present_by_day, days_with_any_dds, mutable_days, set(), dds_timestamps_by_day
 
 
 def _turno_doc_ref(empresa: str, team_key: str):
@@ -698,15 +917,135 @@ def _persist_team_inactive_checkpoint(
         payload["autoInactiveLastSeenDdsDay"] = source_dds_day
     _safe_merge(_team_doc_ref(team_key), payload)
 
-def list_turnos(empresa: str, active: bool | None = True, *, manual_refresh: bool = False, setor: str = CURRENT_SETOR) -> dict[str, Any]:
+def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: bool = False, setor: str = CURRENT_SETOR) -> dict[str, Any]:
+    # ------------------------------------------------------------------
+    # Cache de vis\u00e3o completa: serve do cache quando n\u00e3o \u00e9 refresh manual.
+    # O cache guarda TODAS as equipes; o filtro active/setor \u00e9 aplicado
+    # em mem\u00f3ria aqui mesmo, sem custo extra de Firestore.
+    # ------------------------------------------------------------------
+    if not manual_refresh:
+        cached = _read_monitor_view_cache(empresa)
+        # L\u00f3gica de Reset Di\u00e1rio (00:00): se mudou o dia, ignora cache
+        if cached:
+            cached_at_str = cached.get("_cachedAt")
+            if cached_at_str:
+                cached_day = cached_at_str.split('T')[0]
+                today_day = _utc_now_iso().split('T')[0]
+                if cached_day != today_day:
+                    cached = None # For\u00e7a rec\u00e1lculo
+        
+        if cached:
+            # Remove chave interna antes de retornar
+            cached = {k: v for k, v in cached.items() if k != "_cachedAt"}
+            # Aplica filtro de active em mem\u00f3ria (se solicitado)
+            if active is not None:
+                cached = {
+                    **cached,
+                    "items": [it for it in (cached.get("items") or []) if bool(it.get("active")) is active],
+                    "activeFilter": active,
+                    "currentSector": setor,
+                    "cachedView": True,
+                }
+            else:
+                cached = {**cached, "activeFilter": active, "currentSector": setor, "cachedView": True}
+            return cached
+
     col_ref = db.collection("turno").document(empresa).collection("equipes")
     turno_docs = {doc.id: (doc.to_dict() or {}) for doc in col_ref.stream()}
     teams_map = list_teams_map(active=None)
-    recent_dds_days, dds_present_by_day, dds_days_with_any, mutable_dds_days, calendar_days = _load_recent_dds_presence(manual_refresh=manual_refresh)
-    
+    recent_dds_days, dds_present_by_day, dds_days_with_any, mutable_dds_days, calendar_days, dds_timestamps_by_day = _load_recent_dds_presence(manual_refresh=manual_refresh)
+
     unread_counts = get_unread_counts(setor=setor)
+    unread_map_global = get_all_unread_counts_map()
+    last_messages_map = get_last_messages_map()
 
     rules = get_monitor_rules()
+    now = _get_now()
+    pending_by_day: dict[str, set[str]] = {day: set() for day in mutable_dds_days}
+
+    all_keys = set(turno_docs.keys()) | set(teams_map.keys())
+
+    def process_task(team_key):
+        return _process_single_team(
+            team_key=team_key,
+            empresa=empresa,
+            team_data=teams_map.get(team_key) or {},
+            data=turno_docs.get(team_key) or {},
+            recent_dds_days=recent_dds_days,
+            dds_present_by_day=dds_present_by_day,
+            dds_days_with_any=dds_days_with_any,
+            mutable_dds_days=mutable_dds_days,
+            calendar_days=calendar_days,
+            dds_timestamps_by_day=dds_timestamps_by_day,
+            unread_counts=unread_counts,
+            unread_map_global=unread_map_global,
+            last_messages_map=last_messages_map,
+            now=now,
+            rules=rules,
+            pending_by_day=pending_by_day,
+            active_filter=None,  # cache sempre cont\u00e9m TODAS as equipes
+        )
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(process_task, all_keys))
+
+    all_items = [it for it in results if it]
+
+    for day in recent_dds_days:
+        entry = _DDS_DAY_CACHE.get(day)
+        if not entry:
+            continue
+        if day not in mutable_dds_days:
+            entry["frozen"] = True
+            entry["pending_team_keys"] = set()
+            continue
+        pending = pending_by_day.get(day, set())
+        entry["pending_team_keys"] = pending
+        if not pending:
+            entry["frozen"] = True
+
+    all_items.sort(key=lambda x: (str(x.get("equipe") or ""), str(x.get("teamKey") or "")))
+
+    full_result = {
+        "empresa": empresa,
+        "serverTime": now.isoformat(),
+        "manualRefresh": manual_refresh,
+        "items": all_items,
+    }
+
+    # Grava no cache para pr\u00f3ximas requisi\u00e7\u00f5es n\u00e3o-for\u00e7adas
+    _write_monitor_view_cache(empresa, full_result)
+
+    # Aplica filtros de active/setor antes de retornar
+    items = all_items if active is None else [it for it in all_items if bool(it.get("active")) is active]
+    return {
+        **full_result,
+        "items": items,
+        "activeFilter": active,
+        "currentSector": setor,
+    }
+
+
+def _process_single_team(
+    *,
+    team_key: str,
+    empresa: str,
+    team_data: dict[str, Any],
+    data: dict[str, Any],
+    recent_dds_days: list[str],
+    dds_present_by_day: dict[str, set[str]],
+    dds_days_with_any: set[str],
+    mutable_dds_days: set[str],
+    calendar_days: set[str] | None,
+    dds_timestamps_by_day: dict[str, dict[str, Any]],
+    unread_counts: dict[str, int],
+    unread_map_global: dict[str, dict[str, int]],
+    last_messages_map: dict[str, datetime],
+    now: datetime,
+    rules: dict[str, Any],
+    pending_by_day: dict[str, set[str]],
+    active_filter: bool | None = None
+) -> dict[str, Any] | None:
     alerta_amarelo_min = int(rules.get("alertaAmareloMin") or 15)
     alerta_vermelho_min = int(rules.get("alertaVermelhoMin") or 30)
     alerta_pisco_min = int(rules.get("alertaPiscoMin") or 60)
@@ -719,61 +1058,109 @@ def list_turnos(empresa: str, active: bool | None = True, *, manual_refresh: boo
     )
     critico_desat_h = int(rules.get("desatualizadoCriticoHoras") or 16)
 
-    now = datetime.now(timezone.utc)
-    items = []
-    pending_by_day: dict[str, set[str]] = {day: set() for day in mutable_dds_days}
+    team_active = bool(team_data.get("active", True)) if team_data else True
+    has_turno_doc = bool(data)
+    equipe = team_data.get("displayName") or data.get("equipe") or team_key
+    estado_original = normalize_estado(data.get("estado") or "DESCONHECIDO")
+    ss = data.get("nocSs")
+    motivo = data.get("lastMotivoOutro") or data.get("lastMotivo")
+    participantes = string_list(team_data.get("members")) or extract_participantes(data)
+    aliases = _build_team_aliases(team_key, team_data, data, equipe)
+    latest_dds_ts = _latest_dds_ts_for_aliases(recent_dds_days, dds_timestamps_by_day, aliases)
+    latest_dds_day = latest_dds_ts.strftime("%Y-%m-%d") if latest_dds_ts else None
 
-    all_keys = set(turno_docs.keys()) | set(teams_map.keys())
+    ts = data.get("serverUpdatedAt")
+    dt = to_utc_dt(ts)
     
-    for team_key in all_keys:
-        team_data = teams_map.get(team_key) or {}
-        data = turno_docs.get(team_key) or {}
-        team_active = bool(team_data.get("active", True)) if team_data else True
-        has_turno_doc = bool(data)
-        equipe = team_data.get("displayName") or data.get("equipe") or team_key
-        estado_original = normalize_estado(data.get("estado") or "DESCONHECIDO")
-        ss = data.get("nocSs")
-        motivo = data.get("lastMotivoOutro") or data.get("lastMotivo")
-        participantes = string_list(team_data.get("members")) or extract_participantes(data)
-        aliases = _build_team_aliases(team_key, team_data, data, equipe)
-        latest_dds_day = _latest_dds_day_for_aliases(recent_dds_days, dds_present_by_day, aliases)
+    # ÚLTIMO CONTATO: Max entre sinal do Turno, DDS e Mensagens
+    last_contact_dt = dt
+    last_contact_src = "T" if dt else None
 
-        ts = data.get("serverUpdatedAt")
-        dt = to_utc_dt(ts)
+    if latest_dds_ts:
+        if not last_contact_dt or latest_dds_ts > last_contact_dt:
+            last_contact_dt = latest_dds_ts
+            last_contact_src = "D"
+            
+    # Mensagens enviadas pelos aliases
+    for alias in aliases:
+        msg_ts = last_messages_map.get(alias)
+        if msg_ts:
+            if not last_contact_dt or msg_ts > last_contact_dt:
+                last_contact_dt = msg_ts
+                last_contact_src = "M"
 
-        minutos = None
-        horas = None
-        if dt:
-            minutos = int((now - dt).total_seconds() // 60)
-            horas = minutos // 60
-        elif has_turno_doc:
-            minutos = 10**9
-            horas = 10**9
+    minutos = None
+    horas = None
+    if dt:
+        minutos = int((now - dt).total_seconds() // 60)
+        horas = minutos // 60
+    elif has_turno_doc:
+        minutos = 10**9
+        horas = 10**9
 
-        last_seen_auto_inactive_dt = to_utc_dt(team_data.get("autoInactiveLastSeenUpdatedAt"))
-        last_seen_auto_inactive_dds_day = str(team_data.get("autoInactiveLastSeenDdsDay") or "").strip() or None
+    # 3. Checkpoints de inativação manual
+    last_seen_auto_inactive_dt = to_utc_dt(team_data.get("autoInactiveLastSeenUpdatedAt"))
+    last_seen_auto_inactive_dds_day = team_data.get("autoInactiveLastSeenDdsDay")
+    inactive_at = to_utc_dt(team_data.get("autoInactiveAt"))
 
-        has_inactive_checkpoint = bool(last_seen_auto_inactive_dt or last_seen_auto_inactive_dds_day)
-        fallback_dds_day = None
-        if last_seen_auto_inactive_dt:
-            fallback_dds_day = last_seen_auto_inactive_dt.strftime("%Y-%m-%d")
-        effective_inactive_dds_day = last_seen_auto_inactive_dds_day or fallback_dds_day
+    has_inactive_checkpoint = bool(last_seen_auto_inactive_dt or last_seen_auto_inactive_dds_day)
+    manual_inactive = team_data.get("autoInactiveReason") == "MANUAL"
 
-        new_turno_communication = bool(
-            dt and last_seen_auto_inactive_dt and dt > last_seen_auto_inactive_dt
-        )
-        new_dds_communication = bool(
-            latest_dds_day
-            and effective_inactive_dds_day
-            and latest_dds_day > effective_inactive_dds_day
-        )
+    # Nova comunicação de turno: sinal mais novo que o checkpoint de inativação
+    new_turno_communication = bool(
+        dt and last_seen_auto_inactive_dt and dt > last_seen_auto_inactive_dt
+    )
 
-        if not team_active:
-            if not has_inactive_checkpoint and (dt or latest_dds_day):
+    # Nova comunicação de DDS: usa TIMESTAMP, não apenas dia, para detectar DDS no mesmo dia
+    new_dds_communication = bool(
+        latest_dds_ts
+        and inactive_at
+        and latest_dds_ts > inactive_at
+    )
+
+    # Nova mensagem enviada após a inativação
+    latest_message_dt = None
+    for alias in aliases:
+        msg_ts = last_messages_map.get(alias)
+        if msg_ts and (not latest_message_dt or msg_ts > latest_message_dt):
+            latest_message_dt = msg_ts
+    new_message_communication = bool(
+        latest_message_dt
+        and inactive_at
+        and latest_message_dt > inactive_at
+    )
+
+    if not team_active:
+        # Equipes com active=False mas sem checkpoint são tratadas como manual_inactive.
+        # Isso evita que equipes desativadas antes do sistema de checkpoints sejam
+        # reativadas automaticamente na próxima consolidação.
+        if not has_inactive_checkpoint:
+            if not dt and not latest_dds_day:
+                # Sem nenhum dado: não reativar
+                pass
+            elif manual_inactive:
+                # Manual sem checkpoint: grava checkpoint e mantém inativa
+                _persist_team_inactive_checkpoint(
+                    team_key,
+                    source_dt=dt,
+                    source_dds_day=latest_dds_day,
+                )
+            else:
+                # Sem checkpoint e sem inativação manual: assume nova comunicação
                 new_turno_communication = bool(dt)
                 new_dds_communication = bool(latest_dds_day)
 
-            if new_turno_communication or new_dds_communication:
+        if new_turno_communication or new_dds_communication or new_message_communication:
+            _persist_team_active_state(
+                team_key,
+                active=True,
+                source_dt=dt,
+                source_dds_day=latest_dds_day,
+            )
+            team_active = True
+        elif has_inactive_checkpoint:
+            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < 96 * 3600
+            if recent_contact and not manual_inactive:
                 _persist_team_active_state(
                     team_key,
                     active=True,
@@ -781,194 +1168,179 @@ def list_turnos(empresa: str, active: bool | None = True, *, manual_refresh: boo
                     source_dds_day=latest_dds_day,
                 )
                 team_active = True
-            elif not has_inactive_checkpoint:
-                _persist_team_inactive_checkpoint(
+
+    # Inativação automática: equipes ATIVAS em status passivo sem contato recente
+    if estado_original in ["DESCONHECIDO", "FECHADO", "DESATUALIZADO"]:
+        if team_active:
+            reactivated_at = to_utc_dt(team_data.get("autoReactivatedAt"))
+            is_grace_period = reactivated_at and (now - reactivated_at).total_seconds() < 96 * 3600
+            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < 96 * 3600
+
+            if last_contact_dt and not recent_contact and not is_grace_period:
+                _persist_team_active_state(
                     team_key,
+                    active=False,
+                    reason=AUTO_REASON_INACTIVE_UNKNOWN,
                     source_dt=dt,
                     source_dds_day=latest_dds_day,
                 )
+                team_active = False
 
-        if estado_original == "DESCONHECIDO":
-            if team_active:
-                recent_turno = dt and (now - dt).total_seconds() < 48 * 3600
-                recent_dds = False
-                if latest_dds_day:
-                    try:
-                        dds_date = datetime.strptime(latest_dds_day, "%Y-%m-%d").date()
-                        if (_local_today() - dds_date).days <= 2:
-                            recent_dds = True
-                    except Exception:
-                        pass
-                
-                # Se temos algum sinal mas nenhum deles é recente, inativamos os DESCONHECIDO
-                if (dt or latest_dds_day) and not recent_turno and not recent_dds:
-                    _persist_team_active_state(
-                        team_key,
-                        active=False,
-                        reason=AUTO_REASON_INACTIVE_UNKNOWN,
-                        source_dt=dt,
-                        source_dds_day=latest_dds_day,
-                    )
-                    team_active = False
+    # Equipe DESCONHECIDO sem nenhum contato nunca registrado -> inativa automaticamente
+    if estado_original == "DESCONHECIDO" and not last_contact_dt and team_active:
+        _persist_team_active_state(
+            team_key,
+            active=False,
+            reason=AUTO_REASON_INACTIVE_UNKNOWN,
+            source_dt=None,
+            source_dds_day=None,
+        )
+        team_active = False
 
-        if active is not None and team_active is not active:
+    if active_filter is not None and team_active is not active_filter:
+        return None
+
+    estado = estado_original
+    auto_state_reason = data.get("autoStateReason")
+    auto_state_source_dt = to_utc_dt(data.get("autoStateSourceUpdatedAt"))
+
+    if (
+        estado_original == "FECHADO"
+        and auto_state_reason == AUTO_REASON_CLOSE_OPEN
+        and dt
+        and auto_state_source_dt
+        and dt > auto_state_source_dt
+    ):
+        estado = "ABERTO"
+        _persist_reopen_after_activity(
+            empresa,
+            team_key,
+            current_estado=estado_original,
+            current_reason=auto_state_reason,
+        )
+    elif estado_original == "ABERTO" and dt and horas is not None and horas >= auto_close_open_h:
+        estado = "FECHADO"
+        _persist_auto_turno_state(
+            empresa,
+            team_key,
+            current_estado=estado_original,
+            current_reason=auto_state_reason,
+            current_source_dt=auto_state_source_dt,
+            new_estado="FECHADO",
+            reason=AUTO_REASON_CLOSE_OPEN,
+            source_dt=dt,
+        )
+    elif estado_original == "FECHADO" and dt and horas is not None and horas >= auto_desat_fechado_h:
+        estado = "DESATUALIZADO"
+        _persist_auto_turno_state(
+            empresa,
+            team_key,
+            current_estado=estado_original,
+            current_reason=auto_state_reason,
+            current_source_dt=auto_state_source_dt,
+            new_estado="DESATUALIZADO",
+            reason=AUTO_REASON_DESAT_FECHADO,
+            source_dt=dt,
+        )
+    elif (
+        estado_original == "DESLOCAMENTO_ESPECIAL"
+        and dt
+        and horas is not None
+        and horas >= auto_desat_fechado_h
+    ):
+        estado = "DESATUALIZADO"
+        _persist_auto_turno_state(
+            empresa,
+            team_key,
+            current_estado=estado_original,
+            current_reason=auto_state_reason,
+            current_source_dt=auto_state_source_dt,
+            new_estado="DESATUALIZADO",
+            reason=AUTO_REASON_DESAT_DESLOCAMENTO,
+            source_dt=dt,
+        )
+    elif estado_original == "INTERVALO" and dt and horas is not None and horas >= auto_desat_intervalo_h:
+        estado = "DESATUALIZADO"
+        _persist_auto_turno_state(
+            empresa,
+            team_key,
+            current_estado=estado_original,
+            current_reason=auto_state_reason,
+            current_source_dt=auto_state_source_dt,
+            new_estado="DESATUALIZADO",
+            reason=AUTO_REASON_DESAT_INTERVALO,
+            source_dt=dt,
+        )
+
+    critico = bool(estado == "DESATUALIZADO" and horas is not None and horas >= critico_desat_h)
+
+    alerta = None
+    if minutos is not None:
+        if minutos >= alerta_pisco_min:
+            alerta = "PULSE"
+        elif minutos >= alerta_vermelho_min:
+            alerta = "RED"
+        elif minutos >= alerta_amarelo_min:
+            alerta = "YELLOW"
+
+    dds_history: list[str] = []
+    for day in recent_dds_days:
+        day_known_by_calendar = calendar_days is None or day in calendar_days
+        if not day_known_by_calendar:
+            dds_history.append("neutral")
             continue
 
-        estado = estado_original
-        auto_state_reason = data.get("autoStateReason")
-        auto_state_source_dt = to_utc_dt(data.get("autoStateSourceUpdatedAt"))
-
-        if (
-            estado_original == "FECHADO"
-            and auto_state_reason == AUTO_REASON_CLOSE_OPEN
-            and dt
-            and auto_state_source_dt
-            and dt > auto_state_source_dt
-        ):
-            estado = "ABERTO"
-            _persist_reopen_after_activity(
-                empresa,
-                team_key,
-                current_estado=estado_original,
-                current_reason=auto_state_reason,
-            )
-        elif estado_original == "ABERTO" and dt and horas is not None and horas >= auto_close_open_h:
-            estado = "FECHADO"
-            _persist_auto_turno_state(
-                empresa,
-                team_key,
-                current_estado=estado_original,
-                current_reason=auto_state_reason,
-                current_source_dt=auto_state_source_dt,
-                new_estado="FECHADO",
-                reason=AUTO_REASON_CLOSE_OPEN,
-                source_dt=dt,
-            )
-        elif estado_original == "FECHADO" and dt and horas is not None and horas >= auto_desat_fechado_h:
-            estado = "DESATUALIZADO"
-            _persist_auto_turno_state(
-                empresa,
-                team_key,
-                current_estado=estado_original,
-                current_reason=auto_state_reason,
-                current_source_dt=auto_state_source_dt,
-                new_estado="DESATUALIZADO",
-                reason=AUTO_REASON_DESAT_FECHADO,
-                source_dt=dt,
-            )
-        elif (
-            estado_original == "DESLOCAMENTO_ESPECIAL"
-            and dt
-            and horas is not None
-            and horas >= auto_desat_fechado_h
-        ):
-            estado = "DESATUALIZADO"
-            _persist_auto_turno_state(
-                empresa,
-                team_key,
-                current_estado=estado_original,
-                current_reason=auto_state_reason,
-                current_source_dt=auto_state_source_dt,
-                new_estado="DESATUALIZADO",
-                reason=AUTO_REASON_DESAT_DESLOCAMENTO,
-                source_dt=dt,
-            )
-        elif estado_original == "INTERVALO" and dt and horas is not None and horas >= auto_desat_intervalo_h:
-            estado = "DESATUALIZADO"
-            _persist_auto_turno_state(
-                empresa,
-                team_key,
-                current_estado=estado_original,
-                current_reason=auto_state_reason,
-                current_source_dt=auto_state_source_dt,
-                new_estado="DESATUALIZADO",
-                reason=AUTO_REASON_DESAT_INTERVALO,
-                source_dt=dt,
-            )
-
-        critico = bool(estado == "DESATUALIZADO" and horas is not None and horas >= critico_desat_h)
-
-        alerta = None
-        if minutos is not None:
-            if minutos >= alerta_pisco_min:
-                alerta = "PULSE"
-            elif minutos >= alerta_vermelho_min:
-                alerta = "RED"
-            elif minutos >= alerta_amarelo_min:
-                alerta = "YELLOW"
-
-        dds_history: list[str] = []
-        for day in recent_dds_days:
-            day_known_by_calendar = calendar_days is None or day in calendar_days
-            if not day_known_by_calendar:
-                dds_history.append("neutral")
-                continue
-
-            if day not in dds_days_with_any:
-                dds_history.append("neutral")
-                if day in pending_by_day:
+        if day not in dds_days_with_any:
+            dds_history.append("neutral")
+            if day in pending_by_day:
+                with _pending_lock:
                     pending_by_day[day].add(team_key)
-                continue
+            continue
 
-            presentes_no_dia = dds_present_by_day.get(day) or set()
-            encontrou_dds = any(alias in presentes_no_dia for alias in aliases)
-            dds_history.append("ok" if encontrou_dds else "fail")
-            if day in pending_by_day and not encontrou_dds:
+        presentes_no_dia = dds_present_by_day.get(day) or set()
+        encontrou_dds = any(alias in presentes_no_dia for alias in aliases)
+        dds_history.append("ok" if encontrou_dds else "fail")
+        if day in pending_by_day and not encontrou_dds:
+            with _pending_lock:
                 pending_by_day[day].add(team_key)
 
-        dds_today = dds_history[-1] if dds_history else "neutral"
-        items.append(
-            {
-                "teamKey": team_key,
-                "equipe": equipe,
-                "estado": estado,
-                "estadoOriginal": estado_original,
-                "ss": ss or "-",
-                "motivo": motivo or "-",
-                "updatedAt": dt.isoformat() if dt else None,
-                "minutosDesdeAtualizacao": minutos,
-                "critico": critico,
-                "alerta": alerta,
-                "participantes": participantes,
-                "active": team_active,
-                "ddsHistory": dds_history,
-                "ddsToday": dds_today,
-                "ddsDays": recent_dds_days,
-                "unreadMessages": unread_counts.get(equipe, 0) or unread_counts.get(team_key, 0),
-            }
-        )
-    for day in recent_dds_days:
-        entry = _DDS_DAY_CACHE.get(day)
-        if not entry:
-            continue
-
-        if day not in mutable_dds_days:
-            entry["frozen"] = True
-            entry["pending_team_keys"] = set()
-            continue
-
-        pending = pending_by_day.get(day, set())
-        entry["pending_team_keys"] = pending
-        if not pending:
-            entry["frozen"] = True
-
-    items.sort(key=lambda x: (str(x.get("equipe") or ""), str(x.get("teamKey") or "")))
+    dds_today = dds_history[-1] if dds_history else "neutral"
+    unread_map = unread_map_global.get(team_key) or unread_map_global.get(equipe) or {}
+    last_was_descanso_semanal = bool(data.get("lastWasDescansoSemanal", False))
+    
     return {
-        "empresa": empresa,
-        "serverTime": now.isoformat(),
-        "activeFilter": active,
-        "manualRefresh": manual_refresh,
-        "currentSector": setor,
-        "items": items,
+        "teamKey": team_key,
+        "equipe": equipe,
+        "setor": team_data.get("setor") or data.get("setor") or "TODOS",
+        "estado": estado,
+        "estadoOriginal": estado_original,
+        "ss": ss or "-",
+        "motivo": motivo or "-",
+        "updatedAt": dt.isoformat() if dt else None,
+        "minutosDesdeAtualizacao": minutos,
+        "critico": critico,
+        "alerta": alerta,
+        "participantes": participantes,
+        "active": team_active,
+        "lastContact": last_contact_dt.isoformat() if last_contact_dt else None,
+        "lastContactSource": last_contact_src,
+        "ddsHistory": dds_history,
+        "ddsToday": dds_today,
+        "ddsDays": recent_dds_days,
+        "unreadMessages": unread_counts.get(equipe, 0) or unread_counts.get(team_key, 0),
+        "unreadMap": unread_map,
+        "lastWasDescansoSemanal": last_was_descanso_semanal,
     }
 
 
-
-def update_realtime_view(empresa: str, manual_refresh: bool = False, **kwargs) -> dict[str, Any]:
+def update_realtime_view(empresa: str = DEFAULT_EMPRESA, manual_refresh: bool = False, **kwargs) -> dict[str, Any]:
     """
     Força a atualização da visão em tempo real e persiste no Firestore para consumo
-    via onSnapshot no monitor.
+    via onSnapshot no monitor. Também invalida e regrava o cache de visão completa.
     """
+    # Invalida o cache antes de recalcular para garantir dados frescos
+    _invalidate_monitor_view_cache(empresa)
+
     data = list_turnos(empresa=empresa, manual_refresh=manual_refresh, **kwargs)
     
     batch = db.batch()
@@ -990,10 +1362,241 @@ def update_realtime_view(empresa: str, manual_refresh: bool = False, **kwargs) -
         batch.commit()
         
     # Salva metadado da última atualização
-    sync_time = datetime.now(timezone.utc).isoformat()
+    sync_time = _get_now().isoformat()
     db.collection("turno").document(empresa).set({
         "lastViewUpdate": sync_time,
         "lastViewUpdateBy": "MONITOR_SYNC"
     }, merge=True)
     
+    # Atualiza metadados de produtividade
+    update_productivity_metadata(empresa)
+    
     return {**data, "lastViewUpdate": sync_time}
+
+
+_CONSOLIDATION_LOCKS = {} # { (empresa, team_key): last_consolidated_timestamp }
+_locks_mutex = threading.Lock()
+
+
+def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
+    """
+    Consolida a visão de uma ÚNICA equipe e salva no Firestore Realtime.
+    Evita buscar toda a base de dados do turno, mas utiliza o cache de DDS
+    para garantir consistência e performance.
+    """
+    import time
+    now_ts = time.time()
+    lock_key = (empresa, team_key)
+    with _locks_mutex:
+        last_sync = _CONSOLIDATION_LOCKS.get(lock_key, 0)
+        if now_ts - last_sync < 2.0:
+            return {"ok": True, "skipped": True}
+        _CONSOLIDATION_LOCKS[lock_key] = now_ts
+
+    now = _get_now()
+    rules = get_monitor_rules()
+    
+    # 1. Busca dados da equipe e do turno
+    from services.teams_service import get_team
+    from services.turno_equipes_service import get_turno_equipe
+    team_data = get_team(team_key) or {}
+    turno_doc = get_turno_equipe(empresa, team_key) or {}
+    
+    if not team_data and not turno_doc:
+        # Se não existe em lugar nenhum, remove do realtime se existir
+        db.collection("turno").document(empresa).collection("realtime").document(team_key).delete()
+        return {"ok": True, "deleted": True}
+
+    # 2. Carrega dependências de DDS e Mensagens (reutilizando caches e loaders)
+    recent_dds_days, dds_present_by_day, dds_days_with_any, mutable_dds_days, calendar_days, dds_timestamps_by_day = _load_recent_dds_presence(
+        manual_refresh=False
+    )
+    
+    from services.messaging_service import get_unread_counts, get_all_unread_counts_map, get_last_messages_map
+    unread_counts = get_unread_counts() # Setor padrão
+    unread_map_global = get_all_unread_counts_map()
+    last_messages_map = get_last_messages_map()
+
+    # 3. Processa a equipe individualmente
+    item = _process_single_team(
+        team_key=team_key,
+        empresa=empresa,
+        team_data=team_data,
+        data=turno_doc,
+        recent_dds_days=recent_dds_days,
+        dds_present_by_day=dds_present_by_day,
+        dds_days_with_any=dds_days_with_any,
+        mutable_dds_days=mutable_dds_days,
+        calendar_days=calendar_days,
+        dds_timestamps_by_day=dds_timestamps_by_day,
+        unread_counts=unread_counts,
+        unread_map_global=unread_map_global,
+        last_messages_map=last_messages_map,
+        now=now,
+        rules=rules,
+        pending_by_day={} # Não precisamos rastrear pendências globais na consolidação granular
+    )
+    
+    if item:
+        # 4. Salva no Firestore Realtime
+        db.collection("turno").document(empresa).collection("realtime").document(team_key).set(item)
+        
+        # 5. ATUALIZAÇÃO INCREMENTAL: Em vez de invalidar tudo, 'remenda' o cache existente
+        _patch_monitor_view_cache(empresa, item)
+
+    return {"ok": True, "item": item}
+
+
+def consolidate_team_across_all_companies(team_key: str):
+    """Consolida a visão de uma equipe em todas as empresas registradas."""
+    for empresa_doc in db.collection("turno").stream():
+        consolidate_single_team(empresa_doc.id, team_key)
+
+
+def get_team_keys_for_equipe_name(equipe_name: str) -> list[str]:
+    if not equipe_name:
+        return []
+    norm_name = _normalize_text(equipe_name)
+    teams = list_teams_map()
+    matching_keys = []
+    for team_key, team_data in teams.items():
+        aliases = {
+            _normalize_text(team_key),
+            _normalize_text(team_data.get("displayName")),
+        }
+        if norm_name in aliases:
+            matching_keys.append(team_key)
+    return matching_keys
+
+
+def invalidate_dds_day_cache(day: str):
+    with _cache_lock:
+        _DDS_DAY_CACHE.pop(day, None)
+    try:
+        blob_name = _day_cache_blob(day)
+        _storage_bucket().blob(blob_name).delete()
+    except Exception:
+        pass
+
+
+class FirestoreListenerManager:
+    def __init__(self):
+        self.watches = []
+        self.initial_equipes_done = False
+        self.initial_dds_done = False
+        self.initial_messages_done = False
+
+    def start(self):
+        print("Starting Firestore background listeners...")
+        
+        # 1. Listener para o Collection Group 'equipes' (turno/{empresa}/equipes)
+        try:
+            equipes_query = db.collection_group("equipes")
+            watch_equipes = equipes_query.on_snapshot(self._on_equipes_snapshot)
+            self.watches.append(watch_equipes)
+        except Exception as e:
+            print(f"Error starting equipes listener: {e}")
+
+        # 2. Listener para a coleção 'DDS' (Temporariamente desabilitado para reduzir leituras)
+        try:
+            print("DDS listener temporarily disabled to minimize Firebase reads.")
+            # dds_query = db.collection(DDS_COLLECTION)
+            # watch_dds = dds_query.on_snapshot(self._on_dds_snapshot)
+            # self.watches.append(watch_dds)
+        except Exception as e:
+            print(f"Error starting DDS listener: {e}")
+
+        # 3. Listener para a coleção 'mensagens_comunicacao'
+        try:
+            msg_query = db.collection("mensagens_comunicacao")
+            watch_msg = msg_query.on_snapshot(self._on_messages_snapshot)
+            self.watches.append(watch_msg)
+        except Exception as e:
+            print(f"Error starting messages listener: {e}")
+
+    def stop(self):
+        print("Stopping Firestore background listeners...")
+        for watch in self.watches:
+            try:
+                watch.unsubscribe()
+            except Exception:
+                pass
+        self.watches.clear()
+
+    def _on_equipes_snapshot(self, col_snapshot, changes, read_time):
+        if not self.initial_equipes_done:
+            self.initial_equipes_done = True
+            print(f"Equipes initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            return
+
+        print(f"Equipes change detected: {len(changes)} changes.")
+        for change in changes:
+            if change.type.name in ('ADDED', 'MODIFIED'):
+                doc = change.document
+                path = doc.reference.path
+                parts = path.split("/")
+                if len(parts) == 4 and parts[0] == "turno" and parts[2] == "equipes":
+                    empresa = parts[1]
+                    team_key = parts[3]
+                    print(f"Syncing team {team_key} for company {empresa} due to equipes update.")
+                    threading.Thread(
+                        target=consolidate_single_team,
+                        args=(empresa, team_key),
+                        daemon=True
+                    ).start()
+
+    def _on_dds_snapshot(self, col_snapshot, changes, read_time):
+        if not self.initial_dds_done:
+            self.initial_dds_done = True
+            print(f"DDS initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            return
+
+        print(f"DDS change detected: {len(changes)} changes.")
+        for change in changes:
+            if change.type.name in ('ADDED', 'MODIFIED'):
+                doc = change.document
+                data = doc.to_dict() or {}
+                equipe_name = data.get("equipe")
+                header_date = data.get("headerDate")
+                day = _extract_dds_day(header_date)
+                
+                if day:
+                    print(f"Invalidating DDS cache for day {day}")
+                    invalidate_dds_day_cache(day)
+                
+                if equipe_name:
+                    team_keys = get_team_keys_for_equipe_name(equipe_name)
+                    for team_key in team_keys:
+                        print(f"Syncing team {team_key} due to DDS update of equipe {equipe_name}.")
+                        threading.Thread(
+                            target=consolidate_team_across_all_companies,
+                            args=(team_key,),
+                            daemon=True
+                        ).start()
+
+    def _on_messages_snapshot(self, col_snapshot, changes, read_time):
+        if not self.initial_messages_done:
+            self.initial_messages_done = True
+            print(f"Messages initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            return
+
+        print(f"Messages change detected: {len(changes)} changes.")
+        teams_to_sync = set()
+        for change in changes:
+            if change.type.name in ('ADDED', 'MODIFIED'):
+                doc = change.document
+                data = doc.to_dict() or {}
+                from_equipe = data.get("fromEquipe")
+                to_equipe = data.get("toEquipe")
+                
+                for name in (from_equipe, to_equipe):
+                    if name:
+                        teams_to_sync.update(get_team_keys_for_equipe_name(name))
+        
+        for team_key in teams_to_sync:
+            print(f"Syncing team {team_key} due to message update.")
+            threading.Thread(
+                target=consolidate_team_across_all_companies,
+                args=(team_key,),
+                daemon=True
+            ).start()

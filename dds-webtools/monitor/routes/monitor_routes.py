@@ -95,7 +95,12 @@ def turnos(
     # Se for 'all' ou qualquer outra coisa, active_bool continua None (todas)
     
     manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
-    kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": manual_refresh}
+    
+    if manual_refresh:
+        # Se for manual, força a sincronização completa com o Firestore Realtime
+        return JSONResponse(jsonable_encoder(update_realtime_view(empresa=empresa, manual_refresh=True, setor=setor)))
+    
+    kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": False}
     if setor:
         kwargs["setor"] = setor
     return JSONResponse(jsonable_encoder(list_turnos(**kwargs)))
@@ -165,15 +170,42 @@ def get_trash_preview(team_key: str):
 
 @router.patch("/api/teams/{team_key}/active")
 def toggle_team_active(team_key: str, active: bool):
-    team = get_team(team_key)
-    if not team:
-        return JSONResponse({"ok": False, "message": "Equipe não encontrada"}, status_code=404)
+    from services.teams_service import set_team_active_state
+    try:
+        set_team_active_state(team_key, active)  # empresa não disponível na rota direta
+        return JSONResponse({"ok": True, "message": f"Equipe {'ativada' if active else 'ocultada'} com sucesso."})
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "message": f"Erro ao atualizar estado: {str(exc)}"}, status_code=500)
+
+
+# Trava de deduplicação para evitar que múltiplos navegadores disparem o mesmo sync
+_RECENT_SYNC_LOCKS = {} # {team_key: timestamp}
+
+@router.post("/api/internal/sync-realtime")
+async def internal_sync_realtime(empresa: str, team: str):
+    """
+    Endpoint interno chamado pelo navegador para avisar o servidor que uma equipe mudou.
+    Possui deduplicação: se houver múltiplas chamadas para a mesma equipe em curto espaço 
+    de tempo (ex: 5s), apenas a primeira processa.
+    """
+    import time
+    from services.turnos_service import consolidate_single_team
     
-    save_team(team_key, {**team, "active": active})
+    now = time.time()
+    last_sync = _RECENT_SYNC_LOCKS.get(team, 0)
     
-    # Força atualização do tempo real e limpa caches para que a equipe suma/apareça na hora
-    update_realtime_view()
-    from services.turnos_service import clear_all_monitor_caches
-    clear_all_monitor_caches()
+    # Se já sincronizou esta equipe nos últimos 5 segundos, ignora
+    if now - last_sync < 5:
+        return JSONResponse({"ok": True, "status": "skipped_deduplication"})
     
-    return JSONResponse(jsonable_encoder({"ok": True, "message": f"Equipe {'ativada' if active else 'ocultada'} com sucesso."}))
+    _RECENT_SYNC_LOCKS[team] = now
+    
+    try:
+        consolidate_single_team(empresa, team)
+        return JSONResponse({"ok": True, "status": "processed"})
+    except Exception as e:
+        # Em caso de erro, remove a trava para permitir nova tentativa
+        _RECENT_SYNC_LOCKS.pop(team, None)
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
