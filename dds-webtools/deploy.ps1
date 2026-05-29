@@ -13,7 +13,9 @@ gcloud run deploy dds-admin-site `
   --memory 1Gi `
   --timeout 900 `
   --clear-base-image `
-  --env-vars-file env.yaml
+  --env-vars-file env.yaml `
+  --set-secrets="ADMIN_PASSWORD=DDS_ADMIN_PASSWORD:latest,APP_SECRET_KEY=DDS_APP_SECRET_KEY:latest"
+
 
 # Verifica se o comando anterior foi bem sucedido
 if ($LASTEXITCODE -eq 0) {

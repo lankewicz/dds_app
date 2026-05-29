@@ -222,7 +222,16 @@ function updateLiveSummary(item) {
   teamLiveUpdatedAt.textContent = fmtDateTime(item?.updatedAt);
   teamLiveAgo.textContent = Number.isFinite(item?.minutosDesdeAtualizacao) ? fmtAgeFromMinutes(item.minutosDesdeAtualizacao) : '-';
 
+  const ddsToggle = document.getElementById('ddsToggle');
+  const isDdsChecked = ddsToggle ? ddsToggle.checked : false;
+
+  const ddsTitleEl = document.querySelector('.modalSectionTitleDds');
+  if (ddsTitleEl) {
+    ddsTitleEl.style.display = isDdsChecked ? 'block' : 'none';
+  }
+
   if (teamLiveDds) {
+    teamLiveDds.style.display = isDdsChecked ? 'block' : 'none';
     const renderer = utils().renderDdsKpiHtml;
     if (typeof renderer === 'function') {
       teamLiveDds.innerHTML = renderer(item || {}, {
@@ -718,8 +727,24 @@ async function openTeamForm(teamKey) {
   if (!teamKey) return;
   openTeamKey = teamKey;
   const currentItem = state().findItem ? state().findItem(teamKey) : null;
+
+  // Limpa campos do formulário imediatamente para não mostrar dados da equipe anterior
+  suspendDirtyTracking = true;
+  if (formDisplayName) formDisplayName.value = '';
+  if (formMembers) formMembers.value = '';
+  if (formNocSs) formNocSs.value = '';
+  if (formMotivo) formMotivo.value = '';
+  if (formHoraEntrada) formHoraEntrada.value = '';
+  if (formHoraSaida) formHoraSaida.value = '';
+  if (formObservacoes) formObservacoes.value = '';
+  if (formTeamKey) formTeamKey.value = teamKey;
+  suspendDirtyTracking = false;
+
   updateHeader(currentItem, teamKey);
-  updateLiveSummary(currentItem);
+  // Atualiza apenas o painel de situação (status, ss, atualizado). 
+  // Se currentItem já tem DDS, mostra — se não, não limpa a seção DDS (evita piscar vazio).
+  if (currentItem) updateLiveSummary(currentItem);
+
   equipmentState = buildEmptyEquipmentMap();
   equipmentHistory = [];
   savedFormSignature = '';
@@ -744,7 +769,18 @@ async function openTeamForm(teamKey) {
     if (!response.ok) throw new Error(data?.detail || 'Falha ao carregar formulário.');
     if (requestId !== loadToken) return;
     fillForm(data);
-    updateHeader(currentItem, teamKey);
+    // Monta um objeto de item enriquecido com os dados DDS vindos da API,
+    // apenas se eles não vierem vazios (já que [] e {} são truthy em JS e sobrescreveriam o currentItem)
+    const hasApiDds = Array.isArray(data.ddsHistory) && data.ddsHistory.length > 0;
+    const liveItem = {
+      ...(currentItem || {}),
+      ddsHistory: hasApiDds ? data.ddsHistory : (currentItem?.ddsHistory || []),
+      ddsDays: (Array.isArray(data.ddsDays) && data.ddsDays.length > 0) ? data.ddsDays : (currentItem?.ddsDays || []),
+      ddsTimes: (data.ddsTimes && Object.keys(data.ddsTimes).length > 0) ? data.ddsTimes : (currentItem?.ddsTimes || {}),
+      ddsToday: (data.ddsToday && data.ddsToday !== 'neutral') ? data.ddsToday : (currentItem?.ddsToday || 'neutral'),
+    };
+    updateHeader(liveItem, teamKey);
+    updateLiveSummary(liveItem);
     teamFormMeta.textContent = `Equipe ${teamKey} pronta para edição`;
   } catch (error) {
     setNotice(error?.message || 'Não foi possível carregar o formulário.', 'error');

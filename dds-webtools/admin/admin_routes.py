@@ -1752,3 +1752,245 @@ def maintenance_rebuild_index():
     except Exception as e:
         current_app.logger.exception("Erro crítico ao reconstruir índice: %s", e)
         return jsonify({"ok": False, "error": f"Erro interno: {str(e)}"}), 500
+
+
+@admin_bp.get("/api/storage-stats")
+@login_required
+def get_storage_stats():
+    """Retorna os dados estatísticos de armazenamento cacheados no Firestore."""
+    try:
+        from monitor.services.firestore_client import db
+        doc_ref = db.collection("webtools").document("monitor").collection("storage_control").document("stats")
+        snap = doc_ref.get()
+        if snap.exists:
+            return jsonify({"ok": True, "stats": snap.to_dict()})
+        return jsonify({"ok": True, "stats": None})
+    except Exception as e:
+        current_app.logger.exception("Erro ao obter estatísticas de armazenamento: %s", e)
+        return jsonify({"ok": False, "error": f"Erro interno: {str(e)}"}), 500
+
+
+@admin_bp.post("/api/storage-stats/recalculate")
+@login_required
+def recalculate_storage_stats():
+    """Recalcula as estatísticas varrendo o bucket do GCS e salvando no Firestore."""
+    from zoneinfo import ZoneInfo
+    from datetime import timezone
+    from collections import defaultdict
+    from monitor.services.firestore_client import db
+
+    bucket_name = current_app.config.get("BUCKET_NAME")
+    if not bucket_name:
+        return jsonify({"ok": False, "error": "DDS_BUCKET_NAME não configurado."}), 500
+
+    tz_name = current_app.config.get("TIMEZONE_NAME", "America/Sao_Paulo")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Sao_Paulo")
+
+    try:
+        client = _gcs_client()
+        bucket = client.bucket(bucket_name)
+
+        prefixes = ["DDS_Fotos", "ChicoEletro", "Fotos"]
+        folders_data = {}
+
+        for prefix in prefixes:
+            # Lista todos os blobs sob o prefixo
+            blobs = bucket.list_blobs(prefix=prefix + "/")
+            
+            # Agrupa por mês (YYYY-MM) no timezone correto
+            by_month = defaultdict(lambda: {"count": 0, "size_bytes": 0})
+            
+            for blob in blobs:
+                # Ignora o próprio diretório "prefix/" se vier na listagem
+                if blob.name == prefix + "/":
+                    continue
+                
+                dt = blob.time_created
+                if not dt:
+                    continue
+                
+                # Converte para timezone local
+                local_dt = dt.astimezone(tz)
+                month_key = local_dt.strftime("%Y-%m")
+                
+                by_month[month_key]["count"] += 1
+                by_month[month_key]["size_bytes"] += blob.size
+            
+            # Converte dicionário para lista ordenada decrescente por mês
+            month_list = []
+            for month in sorted(by_month.keys(), reverse=True):
+                month_list.append({
+                    "month": month,
+                    "count": by_month[month]["count"],
+                    "size_bytes": by_month[month]["size_bytes"]
+                })
+            
+            folders_data[prefix] = month_list
+
+        payload = {
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "folders": folders_data
+        }
+
+        # Salva no Firestore
+        doc_ref = db.collection("webtools").document("monitor").collection("storage_control").document("stats")
+        doc_ref.set(payload)
+
+        return jsonify({"ok": True, "stats": payload})
+    except Exception as e:
+        current_app.logger.exception("Erro ao recalcular estatísticas de armazenamento: %s", e)
+        return jsonify({"ok": False, "error": f"Erro interno ao escanear bucket: {str(e)}"}), 500
+
+
+@admin_bp.post("/api/storage-stats/cleanup")
+@login_required
+def cleanup_storage_photos():
+    """Apaga as fotos originais de um mês e atualiza as referências do Firestore para as thumbnails."""
+    from zoneinfo import ZoneInfo
+    from datetime import timezone, datetime
+    from collections import defaultdict
+    from monitor.services.firestore_client import db
+
+    # 1. Obter e validar parâmetros
+    data = request.get_json() or {}
+    folder = data.get("folder", "").strip()
+    month = data.get("month", "").strip()
+
+    if not folder or not month:
+        return jsonify({"ok": False, "error": "Parâmetros 'folder' e 'month' são obrigatórios."}), 400
+
+    if folder not in ["DDS_Fotos", "ChicoEletro", "Fotos"]:
+        return jsonify({"ok": False, "error": "Pasta inválida."}), 400
+
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        return jsonify({"ok": False, "error": "Mês deve ter o formato YYYY-MM."}), 400
+
+    bucket_name = current_app.config.get("BUCKET_NAME")
+    if not bucket_name:
+        return jsonify({"ok": False, "error": "DDS_BUCKET_NAME não configurado."}), 500
+
+    tz_name = current_app.config.get("TIMEZONE_NAME", "America/Sao_Paulo")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Sao_Paulo")
+
+    try:
+        # 2. Varrer o GCS para encontrar fotos a serem apagadas
+        client = _gcs_client()
+        bucket = client.bucket(bucket_name)
+
+        # Caminho da pasta de fotos originais: {folder}/ChicoEletro/Fotos/
+        prefix_photos = f"{folder}/ChicoEletro/Fotos/"
+        blobs = bucket.list_blobs(prefix=prefix_photos)
+
+        blobs_to_delete = []
+        for blob in blobs:
+            if blob.name == prefix_photos:
+                continue
+
+            dt = blob.time_created
+            if not dt:
+                continue
+
+            # Converter para timezone local e extrair ano-mês
+            local_dt = dt.astimezone(tz)
+            blob_month = local_dt.strftime("%Y-%m")
+
+            if blob_month == month:
+                blobs_to_delete.append(blob)
+
+        # 3. Deletar os blobs em lote (batches de 100)
+        deleted_count = 0
+        batch_size = 100
+        for i in range(0, len(blobs_to_delete), batch_size):
+            chunk = blobs_to_delete[i:i + batch_size]
+            with client.batch():
+                for blob in chunk:
+                    blob.delete()
+                    deleted_count += 1
+
+        # 4. Sincronizar referências no Firestore (DDS collection)
+        # Queremos atualizar fotoUrl = thumbUrl para os registros deste mês
+        updated_docs = 0
+        dds_ref = db.collection("DDS")
+        
+        # Filtramos por headerDate (faixa de datas do mês)
+        start_key = f"{month}-01"
+        end_key = f"{month}-31"
+        
+        docs = dds_ref.where("headerDate", ">=", start_key).where("headerDate", "<=", end_key).stream()
+        
+        fs_batch = db.batch()
+        batch_count = 0
+        
+        for doc in docs:
+            doc_data = doc.to_dict()
+            foto_url = doc_data.get("fotoUrl")
+            thumb_url = doc_data.get("thumbUrl")
+            
+            # Se a fotoUrl existe e for diferente da thumbUrl, nós a atualizamos
+            if foto_url and thumb_url and foto_url != thumb_url:
+                fs_batch.update(doc.reference, {"fotoUrl": thumb_url})
+                batch_count += 1
+                updated_docs += 1
+                
+                # Firestore permite no máximo 500 operações por lote. Vamos commitar a cada 400
+                if batch_count >= 400:
+                    fs_batch.commit()
+                    fs_batch = db.batch()
+                    batch_count = 0
+                    
+        if batch_count > 0:
+            fs_batch.commit()
+
+        # 5. Forçar o recálculo do cache das estatísticas de armazenamento para atualizar a tela
+        stats_payload = None
+        try:
+            prefixes = ["DDS_Fotos", "ChicoEletro", "Fotos"]
+            folders_data = {}
+            for pref in prefixes:
+                by_month_stats = defaultdict(lambda: {"count": 0, "size_bytes": 0})
+                pref_blobs = bucket.list_blobs(prefix=pref + "/")
+                for b in pref_blobs:
+                    if b.name == pref + "/":
+                        continue
+                    b_dt = b.time_created
+                    if not b_dt:
+                        continue
+                    b_local_dt = b_dt.astimezone(tz)
+                    b_month_key = b_local_dt.strftime("%Y-%m")
+                    by_month_stats[b_month_key]["count"] += 1
+                    by_month_stats[b_month_key]["size_bytes"] += b.size
+                
+                month_list = []
+                for m_key in sorted(by_month_stats.keys(), reverse=True):
+                    month_list.append({
+                        "month": m_key,
+                        "count": by_month_stats[m_key]["count"],
+                        "size_bytes": by_month_stats[m_key]["size_bytes"]
+                    })
+                folders_data[pref] = month_list
+
+            stats_payload = {
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "folders": folders_data
+            }
+            db.collection("webtools").document("monitor").collection("storage_control").document("stats").set(stats_payload)
+        except Exception as stats_err:
+            current_app.logger.warning("Falha ao atualizar cache após limpeza: %s", stats_err)
+
+        return jsonify({
+            "ok": True,
+            "details": {
+                "deleted_count": deleted_count,
+                "updated_docs": updated_docs
+            },
+            "stats": stats_payload
+        })
+    except Exception as e:
+        current_app.logger.exception("Erro crítico no cleanup de armazenamento: %s", e)
+        return jsonify({"ok": False, "error": f"Erro interno durante a limpeza: {str(e)}"}), 500

@@ -17,6 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from google.cloud import firestore, storage
+from google.cloud.firestore_v1.base_query import FieldFilter
 from services.firestore_client import db
 from services.teams_service import list_teams_map
 from services.monitor_config_service import get_monitor_polling_seconds, get_monitor_rules
@@ -41,6 +42,8 @@ DDS_CALENDAR_CACHE_BLOB = os.getenv("DDS_CALENDAR_CACHE_BLOB", "_cache/dds_calen
 DDS_DAY_CACHE_PREFIX = os.getenv("DDS_DAY_CACHE_PREFIX", "_cache/days")
 MONITOR_VIEW_CACHE_PREFIX = os.getenv("MONITOR_VIEW_CACHE_PREFIX", "_cache/monitor")
 MONITOR_VIEW_CACHE_TTL_SEC = int(os.getenv("MONITOR_VIEW_CACHE_TTL_SEC", "60"))
+WEBTOOLS_ROOT_COLLECTION = os.getenv("WEBTOOLS_ROOT_COLLECTION", "webtools")
+WEBTOOLS_MONITOR_DOC = os.getenv("WEBTOOLS_MONITOR_DOC", "monitor")
 AUTO_CLOSE_OPEN_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_CLOSE_OPEN_HOURS", "16"))
 AUTO_DESATUALIZA_FECHADO_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_DESATUALIZA_FECHADO_HOURS", "48"))
 AUTO_DESATUALIZA_INTERVALO_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_DESATUALIZA_INTERVALO_HOURS", "8"))
@@ -131,11 +134,44 @@ def to_utc_dt(ts: Any):
 
     if hasattr(ts, "to_datetime"):
         dt = ts.to_datetime()
-    else:
+    elif isinstance(ts, datetime):
         dt = ts
+    elif isinstance(ts, str):
+        text = ts.strip()
+        if not text:
+            return None
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            parsed_dt = None
+            for fmt in (
+                "%d-%m-%Y - %H:%M",
+                "%d-%m-%Y %H:%M:%S",
+                "%d-%m-%Y %H:%M",
+                "%d/%m/%Y - %H:%M",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y %H:%M",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+            ):
+                try:
+                    parsed_dt = datetime.strptime(text, fmt)
+                    break
+                except Exception:
+                    continue
+            if parsed_dt is not None:
+                dt = parsed_dt
+            else:
+                return None
+    else:
+        return None
 
     if getattr(dt, "tzinfo", None) is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        try:
+            tz = ZoneInfo(DDS_TIMEZONE)
+        except Exception:
+            tz = timezone(timedelta(hours=-3))
+        dt = dt.replace(tzinfo=tz).astimezone(timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
 
@@ -380,6 +416,27 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
         pass
 
 
+
+def get_team_dds_data(empresa: str, team_key: str) -> dict[str, Any]:
+    """
+    Retorna ddsHistory, ddsDays e ddsTimes para uma equipe específica,
+    buscando do cache do monitor. Usado pelo team_form_service para enriquecer
+    a resposta do /api/team-form com dados de presença no DDS.
+    """
+    cache = _read_monitor_view_cache(empresa)
+    if cache:
+        items = cache.get("items") or []
+        for it in items:
+            if it.get("teamKey") == team_key:
+                return {
+                    "ddsHistory": it.get("ddsHistory") or [],
+                    "ddsDays": it.get("ddsDays") or [],
+                    "ddsTimes": it.get("ddsTimes") or {},
+                    "ddsToday": it.get("ddsToday") or "neutral",
+                }
+    return {"ddsHistory": [], "ddsDays": [], "ddsTimes": {}, "ddsToday": "neutral"}
+
+
 def _parse_iso_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -389,7 +446,7 @@ def _parse_iso_datetime(value: Any) -> datetime | None:
     try:
         dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except Exception:
-        return None
+        return to_utc_dt(value)
     return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
@@ -462,6 +519,321 @@ def _extract_dds_day(header_date: Any) -> str | None:
         return None
     m = re.match(r"^(\d{4}-\d{2}-\d{2})", raw)
     return m.group(1) if m else None
+
+
+def _local_day_key(dt: datetime | None) -> str | None:
+    if not dt:
+        return None
+    try:
+        local_dt = dt.astimezone(ZoneInfo(DDS_TIMEZONE)) if DDS_TIMEZONE else dt
+        return local_dt.strftime("%Y-%m-%d")
+    except Exception:
+        return dt.strftime("%Y-%m-%d")
+
+
+def _webtools_monitor_ref():
+    return db.collection(WEBTOOLS_ROOT_COLLECTION).document(WEBTOOLS_MONITOR_DOC)
+
+
+def _monitor_subcollection(name: str):
+    return _webtools_monitor_ref().collection(name)
+
+
+def _parse_dds_time_value(value: Any) -> tuple[int, int] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    match = re.search(r"\b(\d{1,2})[:hH](\d{2})\b", text)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if 0 <= hour <= 23 and 0 <= minute <= 59:
+        return hour, minute
+    return None
+
+
+def _combine_dds_day_time(day: str | None, time_value: Any) -> datetime | None:
+    if not day:
+        return None
+    parsed = _parse_dds_time_value(time_value)
+    if not parsed:
+        return None
+    hour, minute = parsed
+    try:
+        local_tz = ZoneInfo(DDS_TIMEZONE)
+    except Exception:
+        local_tz = timezone(timedelta(hours=-3))
+    try:
+        local_dt = datetime.strptime(day, "%Y-%m-%d").replace(
+            hour=hour, minute=minute, second=0, microsecond=0, tzinfo=local_tz
+        )
+        return local_dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _dds_day_to_effective_contact_dt(day: str | None) -> datetime | None:
+    """Fallback quando existe DDS, mas o documento não traz timestamp aproveitável."""
+    if not day:
+        return None
+    today_key = _local_today().strftime("%Y-%m-%d")
+    if day == today_key:
+        return _get_now().astimezone(timezone.utc)
+    try:
+        local_tz = ZoneInfo(DDS_TIMEZONE)
+    except Exception:
+        local_tz = timezone(timedelta(hours=-3))
+    try:
+        local_dt = datetime.strptime(day, "%Y-%m-%d").replace(
+            hour=12, minute=0, second=0, microsecond=0, tzinfo=local_tz
+        )
+        return local_dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _extract_dds_timestamp(data: dict[str, Any], day: str | None = None) -> datetime | None:
+    """Extrai a melhor data/hora disponível do documento DDS."""
+    for key in (
+        "executedAt",
+        "submittedAt",
+        "sentAt",
+        "serverUpdatedAt",
+        "updatedAt",
+        "createdAt",
+        "timestamp",
+        "dataHora",
+        "horaConclusao",
+        "_doc_create_time",
+        "_doc_update_time",
+    ):
+        dt = to_utc_dt(data.get(key)) or _parse_iso_datetime(data.get(key))
+        if dt:
+            return dt
+
+    combined = _combine_dds_day_time(day or _extract_dds_day(data.get("headerDate")), data.get("hora"))
+    if combined:
+        return combined
+    return _dds_day_to_effective_contact_dt(day or _extract_dds_day(data.get("headerDate")))
+
+
+def _activity_event_id(team_key: str, source: str, activity_at: datetime | None = None) -> str:
+    dt = to_utc_dt(activity_at) or _utc_now()
+    safe_team = re.sub(r"[^A-Z0-9_\-]", "_", _normalize_text(team_key) or "UNKNOWN")
+    safe_source = re.sub(r"[^a-z0-9_\-]", "_", str(source or "unknown").lower())
+    return f"{dt.strftime('%Y%m%dT%H%M%S%f')}_{safe_team}_{safe_source}"
+
+
+def _activity_label(source: str, extra: dict[str, Any] | None = None) -> str:
+    extra = extra or {}
+    source_key = str(source or "").lower()
+    estado = normalize_estado(extra.get("estado")) if extra.get("estado") else ""
+    if source_key == "dds":
+        return "Execução de DDS"
+    if source_key == "mensagem":
+        return "Mensagem enviada"
+    if source_key == "team_members_changed":
+        return "Alteração de membro da equipe"
+    if source_key == "team_activated":
+        return "Equipe ativada"
+    if source_key == "team_deactivated":
+        return "Equipe inativada"
+    if source_key == "turno":
+        if estado == "ABERTO":
+            return "Abertura de turno"
+        if estado == "FECHADO":
+            return "Fechamento de turno"
+        if estado == "INTERVALO":
+            return "Início de intervalo"
+        if estado == "DESLOCAMENTO_ESPECIAL":
+            return "Deslocamento especial"
+        if estado == "DESATUALIZADO":
+            return "Status desatualizado"
+        return "Alteração de turno"
+    return str(source or "Atividade")
+
+
+def _activity_feed_item(
+    *,
+    empresa: str,
+    team_key: str,
+    equipe: str | None,
+    source: str,
+    activity_dt: datetime,
+    event_id: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    local_dt = activity_dt.astimezone(ZoneInfo(DDS_TIMEZONE)) if DDS_TIMEZONE else activity_dt
+    return {
+        "eventId": event_id,
+        "empresa": empresa,
+        "teamKey": team_key,
+        "equipe": equipe or team_key,
+        "source": source,
+        "label": _activity_label(source, extra),
+        "time": local_dt.strftime("%H:%M"),
+        "activityAt": activity_dt.isoformat(),
+    }
+
+
+def _update_activity_feed(empresa: str, feed_item: dict[str, Any], limit: int = 5) -> None:
+    """Mantém um documento pequeno com as últimas atividades para a tela."""
+    ref = _monitor_subcollection("activity_feed").document(empresa)
+    try:
+        snap = ref.get()
+        current = (snap.to_dict() or {}).get("items") if snap.exists else []
+        items = [feed_item]
+        seen = {feed_item.get("eventId")}
+        for item in current or []:
+            event_id = item.get("eventId")
+            if event_id in seen:
+                continue
+            seen.add(event_id)
+            items.append(item)
+        items.sort(key=lambda item: str(item.get("activityAt") or ""), reverse=True)
+        ref.set({"empresa": empresa, "items": items[:limit], "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+    except Exception as exc:
+        print(f"[activity_feed] Erro ao atualizar feed: {exc}")
+
+
+def _record_team_activity(
+    *,
+    empresa: str,
+    team_key: str,
+    equipe: str | None,
+    source: str,
+    activity_at: Any = None,
+    event_ref: str | None = None,
+    active_after_event: bool | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    activity_dt = to_utc_dt(activity_at) or _parse_iso_datetime(activity_at) or _utc_now()
+    day_key = _local_day_key(activity_dt) or _utc_now().strftime("%Y-%m-%d")
+    event_id = _activity_event_id(team_key, source, activity_dt)
+    extra = dict(extra or {})
+    feed_item = _activity_feed_item(
+        empresa=empresa,
+        team_key=team_key,
+        equipe=equipe,
+        source=source,
+        activity_dt=activity_dt,
+        event_id=event_id,
+        extra=extra,
+    )
+    payload = {
+        **feed_item,
+        "activityDay": day_key,
+        "eventRef": event_ref,
+        "activeAfterEvent": active_after_event,
+        "receivedAt": firestore.SERVER_TIMESTAMP,
+        **extra,
+    }
+    _monitor_subcollection("activity_events").document(day_key).collection("events").document(event_id).set(payload, merge=True)
+    _monitor_subcollection("activity_state").document(f"{empresa}_{team_key}").set(
+        {
+            "empresa": empresa,
+            "teamKey": team_key,
+            "equipe": equipe or team_key,
+            "active": active_after_event,
+            "lastActivityAt": activity_dt,
+            "lastActivitySource": source,
+            "lastEventId": event_id,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    _update_activity_feed(empresa, feed_item)
+    _safe_merge(
+        _team_doc_ref(team_key),
+        {
+            "lastActivityAt": activity_dt,
+            "lastActivitySource": source,
+            "lastActivityEventId": event_id,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            **({"active": active_after_event} if isinstance(active_after_event, bool) else {}),
+        },
+    )
+
+
+def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
+    try:
+        snap = _monitor_subcollection("activity_feed").document(empresa).get()
+        data = snap.to_dict() if snap.exists else {}
+        items = list((data or {}).get("items") or [])
+        return {"empresa": empresa, "items": items[: max(1, min(int(limit or 5), 20))], "cached": snap.exists}
+    except Exception as exc:
+        print(f"[activity_feed] Erro ao ler feed: {exc}")
+        return {"empresa": empresa, "items": [], "cached": False, "error": str(exc)}
+
+
+def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 5) -> dict[str, Any]:
+    return _read_activity_feed(empresa, limit=limit)
+
+
+def _persist_team_activity_if_newer(
+    team_key: str,
+    *,
+    current_activity_at: Any = None,
+    activity_at: datetime | None = None,
+    activity_source: str,
+    dds_day: str | None = None,
+) -> None:
+    if not activity_at:
+        return
+    current_dt = to_utc_dt(current_activity_at) or _parse_iso_datetime(current_activity_at)
+    if current_dt and activity_at <= current_dt:
+        return
+    payload: dict[str, Any] = {
+        "lastActivityAt": activity_at,
+        "lastActivitySource": activity_source,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    }
+    if dds_day:
+        payload["lastActivityDdsDay"] = dds_day
+    _safe_merge(_team_doc_ref(team_key), payload)
+
+
+def _manual_inactive_blocks_activity(team_data: dict[str, Any], activity_dt: datetime | None, activity_day: str | None) -> bool:
+    if team_data.get("autoInactiveReason") != "MANUAL":
+        return False
+    inactive_at = to_utc_dt(team_data.get("autoInactiveAt"))
+    if not inactive_at:
+        return False
+    if activity_dt:
+        return activity_dt <= inactive_at
+    inactive_day = _local_day_key(inactive_at)
+    return bool(activity_day and inactive_day and activity_day <= inactive_day)
+
+
+def _apply_dds_activity_trigger(team_key: str, data: dict[str, Any], day: str | None, *, empresa: str = DEFAULT_EMPRESA) -> None:
+    team_snap = _team_doc_ref(team_key).get()
+    team_data = team_snap.to_dict() or {}
+    if not team_data:
+        return
+    event_dt = _extract_dds_timestamp(data, day) or _dds_day_to_effective_contact_dt(day) or _utc_now()
+    _persist_team_activity_if_newer(
+        team_key,
+        current_activity_at=team_data.get("lastActivityAt"),
+        activity_at=event_dt,
+        activity_source="dds",
+        dds_day=day,
+    )
+    if not bool(team_data.get("active", True)):
+        if _manual_inactive_blocks_activity(team_data, event_dt, day):
+            print(f"DDS trigger ignored for {team_key}: manual inactive is newer than DDS activity.")
+            return
+        _persist_team_active_state(team_key, active=True, source_dt=event_dt, source_dds_day=day)
+    _record_team_activity(
+        empresa=empresa,
+        team_key=team_key,
+        equipe=data.get("equipe") or team_data.get("displayName") or team_key,
+        source="dds",
+        activity_at=event_dt,
+        event_ref=data.get("eventRef"),
+        active_after_event=True,
+        extra={"ddsDay": day, "headerDate": data.get("headerDate"), "headerTitle": data.get("headerTitle")},
+    )
 
 
 def _collect_manifest_days(value: Any, out: set[str]) -> None:
@@ -671,7 +1043,17 @@ def _load_day_presence_with_cache(
     calendar_known = calendar_days is not None
     day_in_calendar = calendar_known and day in calendar_days
 
-    if calendar_known and not day_in_calendar:
+    # Fallback para fins de semana caso o calendário não esteja disponível
+    from datetime import datetime
+    is_weekend = False
+    try:
+        is_weekend = datetime.strptime(day, "%Y-%m-%d").weekday() in (5, 6)
+    except Exception:
+        pass
+
+    is_non_business = (calendar_known and not day_in_calendar) or (not calendar_known and is_weekend)
+
+    if is_non_business:
         if entry is None or entry.get("has_any") or entry.get("present"):
             entry = _build_day_cache_entry(day, present=set(), team_timestamps={}, has_any=False, frozen=True)
             with _cache_lock:
@@ -714,12 +1096,34 @@ def _build_manual_refresh_days(recent_days: list[str]) -> set[str]:
 def _build_team_aliases(team_key: str, team_data: dict[str, Any], turno_data: dict[str, Any], equipe_label: str) -> set[str]:
     aliases = {
         _normalize_text(team_key),
+        _normalize_text(team_data.get("teamKey")),
         _normalize_text(team_data.get("displayName")),
         _normalize_text(turno_data.get("equipe")),
         _normalize_text(equipe_label),
     }
     return {a for a in aliases if a}
 
+def _normalized_alias_matches(value: str | None, alias: str | None) -> bool:
+    """Compara equipe por chave exata ou por token.
+
+    Exemplo:
+    - E3X93
+    - E3X93 - FULANO
+    - Equipe E3X93
+    """
+    norm_value = _normalize_text(value)
+    norm_alias = _normalize_text(alias)
+    if not norm_value or not norm_alias:
+        return False
+    if norm_value == norm_alias:
+        return True
+
+    token_re = rf"(?<![A-Z0-9]){re.escape(norm_alias)}(?![A-Z0-9])"
+    if re.search(token_re, norm_value):
+        return True
+
+    reverse_re = rf"(?<![A-Z0-9]){re.escape(norm_value)}(?![A-Z0-9])"
+    return bool(re.search(reverse_re, norm_alias))
 
 def _latest_dds_ts_for_aliases(
     recent_dds_days: list[str],
@@ -730,7 +1134,13 @@ def _latest_dds_ts_for_aliases(
     for day in reversed(recent_dds_days):
         day_ts_map = dds_timestamps_by_day.get(day) or {}
         for alias in aliases:
-            ts = day_ts_map.get(alias)
+            ts = to_utc_dt(day_ts_map.get(alias))
+            if not ts:
+                for present_name, raw_ts in day_ts_map.items():
+                    if _normalized_alias_matches(present_name, alias):
+                        ts = to_utc_dt(raw_ts)
+                        if ts:
+                            break
             if ts:
                 if not latest_ts or ts > latest_ts:
                     latest_ts = ts
@@ -745,23 +1155,28 @@ def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) 
 
     query = (
         db.collection(DDS_COLLECTION)
-        .where("headerDate", ">=", day)
-        .where("headerDate", "<=", end_key)
+        .where(filter=FieldFilter("headerDate", ">=", day))
+        .where(filter=FieldFilter("headerDate", "<=", end_key))
     )
 
     for snap in query.stream():
         data = snap.to_dict() or {}
+        if getattr(snap, "create_time", None):
+            data["_doc_create_time"] = snap.create_time
+        if getattr(snap, "update_time", None):
+            data["_doc_update_time"] = snap.update_time
         snap_day = _extract_dds_day(data.get("headerDate"))
         if snap_day != day:
             continue
 
         has_any_dds = True
-        equipe = _normalize_text(data.get("equipe"))
-        ts = data.get("serverUpdatedAt")
+        equipe = _normalize_text(data.get("equipe") or data.get("teamName") or data.get("teamKey"))
+        ts = _extract_dds_timestamp(data, snap_day)
         if equipe:
             present.add(equipe)
             if ts:
-                if equipe not in team_timestamps or ts > team_timestamps[equipe]:
+                current_ts = to_utc_dt(team_timestamps.get(equipe))
+                if not current_ts or ts > current_ts:
                     team_timestamps[equipe] = ts
 
     return present, has_any_dds, team_timestamps
@@ -784,12 +1199,29 @@ def _load_recent_dds_presence(
     """
     recent_days = _recent_history_days(days)
     mutable_days = _mutable_dds_days(recent_days)
+    _prune_dds_day_cache(set(recent_days))
+
+    if manual_refresh:
+        _force_refresh_days(_build_manual_refresh_days(recent_days))
+
+    calendar_days = _load_dds_calendar_days(force_refresh=False)
     present_by_day: dict[str, set[str]] = {day: set() for day in recent_days}
     dds_timestamps_by_day: dict[str, dict[str, Any]] = {day: {} for day in recent_days}
     days_with_any_dds: set[str] = set()
 
-    # Temporariamente desabilitado para reduzir acessos ao Firebase a pedido do usuario
-    return recent_days, present_by_day, days_with_any_dds, mutable_days, set(), dds_timestamps_by_day
+    for day in recent_days:
+        entry = _load_day_presence_with_cache(
+            day,
+            mutable_days=mutable_days,
+            calendar_days=calendar_days,
+            manual_refresh=manual_refresh,
+        )
+        present_by_day[day] = set(entry.get("present") or set())
+        dds_timestamps_by_day[day] = dict(entry.get("team_timestamps") or {})
+        if entry.get("has_any"):
+            days_with_any_dds.add(day)
+
+    return recent_days, present_by_day, days_with_any_dds, mutable_days, calendar_days, dds_timestamps_by_day
 
 
 def _turno_doc_ref(empresa: str, team_key: str):
@@ -870,6 +1302,7 @@ def _persist_team_active_state(
     reason: str | None = None,
     source_dt: Any = None,
     source_dds_day: str | None = None,
+    source_kind: str | None = None,
 ) -> None:
     payload: dict[str, Any] = {"active": active}
 
@@ -881,12 +1314,17 @@ def _persist_team_active_state(
                 "autoReactivatedAt": firestore.SERVER_TIMESTAMP,
             }
         )
-        if source_dt is not None:
-            payload["autoInactiveLastSeenUpdatedAt"] = source_dt
+        activity_dt = to_utc_dt(source_dt)
+        if activity_dt:
+            payload["autoInactiveLastSeenUpdatedAt"] = activity_dt
+            payload["lastActivityAt"] = activity_dt
+            payload["lastActivitySource"] = source_kind or "unknown"
+            payload["lastActivityUpdatedAt"] = firestore.SERVER_TIMESTAMP
         else:
             payload["autoInactiveLastSeenUpdatedAt"] = firestore.DELETE_FIELD
         if source_dds_day:
             payload["autoInactiveLastSeenDdsDay"] = source_dds_day
+            payload["lastActivityDdsDay"] = source_dds_day
         else:
             payload["autoInactiveLastSeenDdsDay"] = firestore.DELETE_FIELD
     else:
@@ -1013,17 +1451,60 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
         "items": all_items,
     }
 
-    # Grava no cache para pr\u00f3ximas requisi\u00e7\u00f5es n\u00e3o-for\u00e7adas
+    # Grava no cache para próximas requisições não-forçadas
     _write_monitor_view_cache(empresa, full_result)
 
     # Aplica filtros de active/setor antes de retornar
     items = all_items if active is None else [it for it in all_items if bool(it.get("active")) is active]
+    # Remove campos pesados de DDS do payload de status (serão carregados lazy via /api/turnos/dds)
+    status_items = [_strip_dds_history(it) for it in items]
     return {
         **full_result,
-        "items": items,
+        "items": status_items,
         "activeFilter": active,
         "currentSector": setor,
     }
+
+
+# Campos de histórico DDS que são carregados separadamente via /api/turnos/dds
+_DDS_HEAVY_FIELDS = {"ddsHistory", "ddsDays", "ddsTimes"}
+
+
+def _strip_dds_history(item: dict[str, Any]) -> dict[str, Any]:
+    """Remove campos pesados de DDS de um item, mantendo apenas ddsToday."""
+    return {k: v for k, v in item.items() if k not in _DDS_HEAVY_FIELDS}
+
+
+def list_turnos_dds(empresa: str, active: bool | None = None) -> dict[str, Any]:
+    """
+    Retorna apenas os campos de histórico DDS por equipe, lendo do cache.
+    Usado pelo endpoint GET /api/turnos/dds para carga lazy no frontend.
+    """
+    cache = _read_monitor_view_cache(empresa)
+    if not cache:
+        return {"empresa": empresa, "items": [], "cached": False}
+
+    all_items = cache.get("items") or []
+    if active is not None:
+        all_items = [it for it in all_items if bool(it.get("active")) is active]
+
+    dds_items = [
+        {
+            "teamKey": it.get("teamKey"),
+            "ddsHistory": it.get("ddsHistory") or [],
+            "ddsDays": it.get("ddsDays") or [],
+            "ddsTimes": it.get("ddsTimes") or {},
+            "ddsToday": it.get("ddsToday") or "neutral",
+            "lastContact": it.get("lastContact"),
+            "lastContactSource": it.get("lastContactSource"),
+            "active": it.get("active"),
+            "estado": it.get("estado"),
+            "updatedAt": it.get("updatedAt"),
+        }
+        for it in all_items
+    ]
+
+    return {"empresa": empresa, "items": dds_items, "cached": True}
 
 
 def _process_single_team(
@@ -1068,13 +1549,30 @@ def _process_single_team(
     aliases = _build_team_aliases(team_key, team_data, data, equipe)
     latest_dds_ts = _latest_dds_ts_for_aliases(recent_dds_days, dds_timestamps_by_day, aliases)
     latest_dds_day = latest_dds_ts.strftime("%Y-%m-%d") if latest_dds_ts else None
+    if not latest_dds_ts:
+        for day in reversed(recent_dds_days):
+            presentes_no_dia = dds_present_by_day.get(day) or set()
+            found_dds = any(
+                alias in presentes_no_dia
+                or any(_normalized_alias_matches(present_name, alias) for present_name in presentes_no_dia)
+                for alias in aliases
+            )
+            if found_dds:
+                latest_dds_day = day
+                latest_dds_ts = _dds_day_to_effective_contact_dt(day)
+                break
 
-    ts = data.get("serverUpdatedAt")
+    ts = data.get("serverUpdatedAt") or data.get("updatedAt")
     dt = to_utc_dt(ts)
     
-    # ÚLTIMO CONTATO: Max entre sinal do Turno, DDS e Mensagens
+    # ÚLTIMO CONTATO: Max entre sinal do Turno, DDS, Mensagens e lastActivityAt consolidado
     last_contact_dt = dt
     last_contact_src = "T" if dt else None
+
+    team_activity_dt = to_utc_dt(team_data.get("lastActivityAt"))
+    if team_activity_dt and (not last_contact_dt or team_activity_dt > last_contact_dt):
+        last_contact_dt = team_activity_dt
+        last_contact_src = str(team_data.get("lastActivitySource") or "A")[:1].upper()
 
     if latest_dds_ts:
         if not last_contact_dt or latest_dds_ts > last_contact_dt:
@@ -1142,7 +1640,7 @@ def _process_single_team(
                 # Manual sem checkpoint: grava checkpoint e mantém inativa
                 _persist_team_inactive_checkpoint(
                     team_key,
-                    source_dt=dt,
+                    source_dt=last_contact_dt,
                     source_dds_day=latest_dds_day,
                 )
             else:
@@ -1151,11 +1649,30 @@ def _process_single_team(
                 new_dds_communication = bool(latest_dds_day)
 
         if new_turno_communication or new_dds_communication or new_message_communication:
+            activity_dt = latest_dds_ts or latest_message_dt or dt
+            activity_day = latest_dds_day
+            activity_kind = "dds" if latest_dds_ts else ("mensagem" if latest_message_dt else "turno")
+            _persist_team_activity_if_newer(
+                team_key,
+                current_activity_at=team_data.get("lastActivityAt"),
+                activity_at=activity_dt,
+                activity_source=activity_kind,
+                dds_day=activity_day,
+            )
             _persist_team_active_state(
                 team_key,
                 active=True,
-                source_dt=dt,
-                source_dds_day=latest_dds_day,
+                source_dt=activity_dt,
+                source_dds_day=activity_day,
+            )
+            _record_team_activity(
+                empresa=empresa,
+                team_key=team_key,
+                equipe=equipe,
+                source="team_activated",
+                activity_at=activity_dt,
+                active_after_event=True,
+                extra={"reason": activity_kind},
             )
             team_active = True
         elif has_inactive_checkpoint:
@@ -1184,6 +1701,15 @@ def _process_single_team(
                     source_dt=dt,
                     source_dds_day=latest_dds_day,
                 )
+                _record_team_activity(
+                    empresa=empresa,
+                    team_key=team_key,
+                    equipe=equipe,
+                    source="team_deactivated",
+                    activity_at=now,
+                    active_after_event=False,
+                    extra={"reason": AUTO_REASON_INACTIVE_UNKNOWN},
+                )
                 team_active = False
 
     # Equipe DESCONHECIDO sem nenhum contato nunca registrado -> inativa automaticamente
@@ -1194,6 +1720,15 @@ def _process_single_team(
             reason=AUTO_REASON_INACTIVE_UNKNOWN,
             source_dt=None,
             source_dds_day=None,
+        )
+        _record_team_activity(
+            empresa=empresa,
+            team_key=team_key,
+            equipe=equipe,
+            source="team_deactivated",
+            activity_at=now,
+            active_after_event=False,
+            extra={"reason": AUTO_REASON_INACTIVE_UNKNOWN},
         )
         team_active = False
 
@@ -1284,9 +1819,17 @@ def _process_single_team(
             alerta = "YELLOW"
 
     dds_history: list[str] = []
+    dds_times: dict[str, str] = {}
     for day in recent_dds_days:
-        day_known_by_calendar = calendar_days is None or day in calendar_days
-        if not day_known_by_calendar:
+        from datetime import datetime
+        is_weekend = False
+        try:
+            is_weekend = datetime.strptime(day, "%Y-%m-%d").weekday() in (5, 6)
+        except Exception:
+            pass
+
+        is_non_business = (calendar_days is not None and day not in calendar_days) or (calendar_days is None and is_weekend)
+        if is_non_business:
             dds_history.append("neutral")
             continue
 
@@ -1298,11 +1841,36 @@ def _process_single_team(
             continue
 
         presentes_no_dia = dds_present_by_day.get(day) or set()
-        encontrou_dds = any(alias in presentes_no_dia for alias in aliases)
+        encontrou_dds = any(
+            alias in presentes_no_dia
+            or any(_normalized_alias_matches(present_name, alias) for present_name in presentes_no_dia)
+            for alias in aliases
+        )
         dds_history.append("ok" if encontrou_dds else "fail")
         if day in pending_by_day and not encontrou_dds:
             with _pending_lock:
                 pending_by_day[day].add(team_key)
+
+        if encontrou_dds:
+            day_ts_map = dds_timestamps_by_day.get(day) or {}
+            day_ts = None
+            for alias in aliases:
+                ts = to_utc_dt(day_ts_map.get(alias))
+                if not ts:
+                    for present_name, raw_ts in day_ts_map.items():
+                        if _normalized_alias_matches(present_name, alias):
+                            ts = to_utc_dt(raw_ts)
+                            if ts:
+                                break
+                if ts:
+                    if not day_ts or ts > day_ts:
+                        day_ts = ts
+            if day_ts:
+                try:
+                    local_ts = day_ts.astimezone(ZoneInfo(DDS_TIMEZONE)) if DDS_TIMEZONE else day_ts
+                    dds_times[day] = local_ts.strftime("%H:%M")
+                except Exception:
+                    pass
 
     dds_today = dds_history[-1] if dds_history else "neutral"
     unread_map = unread_map_global.get(team_key) or unread_map_global.get(equipe) or {}
@@ -1327,6 +1895,7 @@ def _process_single_team(
         "ddsHistory": dds_history,
         "ddsToday": dds_today,
         "ddsDays": recent_dds_days,
+        "ddsTimes": dds_times,
         "unreadMessages": unread_counts.get(equipe, 0) or unread_counts.get(team_key, 0),
         "unreadMap": unread_map,
         "lastWasDescansoSemanal": last_was_descanso_semanal,
@@ -1342,10 +1911,15 @@ def update_realtime_view(empresa: str = DEFAULT_EMPRESA, manual_refresh: bool = 
     _invalidate_monitor_view_cache(empresa)
 
     data = list_turnos(empresa=empresa, manual_refresh=manual_refresh, **kwargs)
-    
+
+    # Persiste no Firestore com itens completos (com DDS) para o listener em tempo real
+    # Lemos do cache completo (antes do strip) para persistir os campos DDS
+    full_cache = _read_monitor_view_cache(empresa)
+    full_items = (full_cache.get("items") or []) if full_cache else data["items"]
+
     batch = db.batch()
     count = 0
-    for item in data["items"]:
+    for item in full_items:
         # Persiste na coleção 'realtime'
         doc_ref = db.collection("turno").document(empresa).collection("realtime").document(item["teamKey"])
         batch.set(doc_ref, {
@@ -1371,6 +1945,7 @@ def update_realtime_view(empresa: str = DEFAULT_EMPRESA, manual_refresh: bool = 
     # Atualiza metadados de produtividade
     update_productivity_metadata(empresa)
     
+    # Retorna items sem DDS heavy (lazy loading via /api/turnos/dds)
     return {**data, "lastViewUpdate": sync_time}
 
 
@@ -1462,9 +2037,10 @@ def get_team_keys_for_equipe_name(equipe_name: str) -> list[str]:
     for team_key, team_data in teams.items():
         aliases = {
             _normalize_text(team_key),
+            _normalize_text(team_data.get("teamKey")),
             _normalize_text(team_data.get("displayName")),
         }
-        if norm_name in aliases:
+        if any(_normalized_alias_matches(norm_name, alias) for alias in aliases):
             matching_keys.append(team_key)
     return matching_keys
 
@@ -1497,12 +2073,14 @@ class FirestoreListenerManager:
         except Exception as e:
             print(f"Error starting equipes listener: {e}")
 
-        # 2. Listener para a coleção 'DDS' (Temporariamente desabilitado para reduzir leituras)
+        # 2. Listener para a coleção 'DDS' (Filtrado pelos últimos 7 dias para reduzir leituras)
         try:
-            print("DDS listener temporarily disabled to minimize Firebase reads.")
-            # dds_query = db.collection(DDS_COLLECTION)
-            # watch_dds = dds_query.on_snapshot(self._on_dds_snapshot)
-            # self.watches.append(watch_dds)
+            from datetime import datetime, timedelta
+            limite_data = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            print(f"Starting DDS listener filtered by headerDate >= {limite_data}")
+            dds_query = db.collection(DDS_COLLECTION).where(filter=FieldFilter("headerDate", ">=", limite_data))
+            watch_dds = dds_query.on_snapshot(self._on_dds_snapshot)
+            self.watches.append(watch_dds)
         except Exception as e:
             print(f"Error starting DDS listener: {e}")
 
@@ -1538,6 +2116,18 @@ class FirestoreListenerManager:
                 if len(parts) == 4 and parts[0] == "turno" and parts[2] == "equipes":
                     empresa = parts[1]
                     team_key = parts[3]
+                    data = doc.to_dict() or {}
+                    event_dt = data.get("serverUpdatedAt") or data.get("updatedAt") or _utc_now()
+                    _record_team_activity(
+                        empresa=empresa,
+                        team_key=team_key,
+                        equipe=data.get("equipe") or team_key,
+                        source="turno",
+                        activity_at=event_dt,
+                        event_ref=doc.reference.path,
+                        active_after_event=True,
+                        extra={"estado": data.get("estado"), "nocSs": data.get("nocSs")},
+                    )
                     print(f"Syncing team {team_key} for company {empresa} due to equipes update.")
                     threading.Thread(
                         target=consolidate_single_team,
@@ -1566,7 +2156,17 @@ class FirestoreListenerManager:
                 
                 if equipe_name:
                     team_keys = get_team_keys_for_equipe_name(equipe_name)
+                    print(f"DDS activity trigger: equipe={equipe_name}, day={day}, matchedTeams={team_keys}")
                     for team_key in team_keys:
+                        try:
+                            event_data = {**data, "eventRef": doc.reference.path}
+                            if getattr(doc, "create_time", None):
+                                event_data["_doc_create_time"] = doc.create_time
+                            if getattr(doc, "update_time", None):
+                                event_data["_doc_update_time"] = doc.update_time
+                            _apply_dds_activity_trigger(team_key, event_data, day, empresa=DEFAULT_EMPRESA)
+                        except Exception as exc:
+                            print(f"Error applying DDS activity trigger for {team_key}: {exc}")
                         print(f"Syncing team {team_key} due to DDS update of equipe {equipe_name}.")
                         threading.Thread(
                             target=consolidate_team_across_all_companies,
@@ -1589,9 +2189,21 @@ class FirestoreListenerManager:
                 from_equipe = data.get("fromEquipe")
                 to_equipe = data.get("toEquipe")
                 
+                event_dt = data.get("sentAt") or data.get("timestamp") or data.get("serverUpdatedAt") or _utc_now()
                 for name in (from_equipe, to_equipe):
                     if name:
-                        teams_to_sync.update(get_team_keys_for_equipe_name(name))
+                        matched = get_team_keys_for_equipe_name(name)
+                        teams_to_sync.update(matched)
+                        for team_key in matched:
+                            _record_team_activity(
+                                empresa=DEFAULT_EMPRESA,
+                                team_key=team_key,
+                                equipe=name,
+                                source="mensagem",
+                                activity_at=event_dt,
+                                event_ref=doc.reference.path,
+                                active_after_event=True,
+                            )
         
         for team_key in teams_to_sync:
             print(f"Syncing team {team_key} due to message update.")

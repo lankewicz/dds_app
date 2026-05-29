@@ -40,6 +40,8 @@ const cfgAlertaPiscoMin = document.getElementById("cfgAlertaPiscoMin");
 const cfgFechadoViraDesatualizadoHoras = document.getElementById("cfgFechadoViraDesatualizadoHoras");
 const cfgDesatualizadoCriticoHoras = document.getElementById("cfgDesatualizadoCriticoHoras");
 const cfgPollingSeconds = document.getElementById("cfgPollingSeconds");
+const activityFeedPanel = document.getElementById("activityFeedPanel");
+const activityFeedList = document.getElementById("activityFeedList");
 
 
 let cfg = null;
@@ -53,6 +55,7 @@ let activeKpiFilter = "";
 let configSaveInFlight = false;
 
 let lastData = null;
+let ddsDataLoaded = false; // Flag: DDS lazy-load já foi executado para o ciclo atual
 
 // ==========================================
 // CONFIGURAÇÃO DO FIREBASE WEB SDK
@@ -64,11 +67,18 @@ const firebaseConfig = {
   projectId: "dds-treinamentos"
 };
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+let db = null;
+if (typeof firebase !== 'undefined') {
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  db = firebase.firestore();
+  window.db = db; // Expor globalmente para outros scripts (ex: requests.js)
+} else {
+  console.warn("Firebase SDK não está carregado. Usando fallback HTTP polling.");
 }
-const db = firebase.firestore();
 let unsubMonitor = null;
+let unsubActivityFeed = null;
 // ==========================================
 
 function safeUpper(v) { return (v || "").toString().trim().toUpperCase(); }
@@ -89,6 +99,117 @@ function fmtLastContact(iso, source) {
   const time = d.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
   const srcSuffix = source ? ` (${source})` : "";
   return `${day}/${month} - ${time}${srcSuffix}`;
+}
+
+function isIsoNewer(candidateIso, currentIso) {
+  if (!candidateIso) return false;
+  const candidate = new Date(candidateIso);
+  if (Number.isNaN(candidate.getTime())) return false;
+  if (!currentIso) return true;
+  const current = new Date(currentIso);
+  if (Number.isNaN(current.getTime())) return true;
+  return candidate.getTime() > current.getTime();
+}
+
+const getLocalFeedCacheKey = (empresa) => `dds_activity_feed_local_cache_${empresa || 'default'}`;
+
+function getLocalFeedCache(empresa) {
+  try {
+    const raw = localStorage.getItem(getLocalFeedCacheKey(empresa));
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.warn("Erro ao ler cache local de atividades:", e);
+    return [];
+  }
+}
+
+function saveLocalFeedCache(empresa, items) {
+  try {
+    localStorage.setItem(getLocalFeedCacheKey(empresa), JSON.stringify(items));
+  } catch (e) {
+    console.warn("Erro ao salvar cache local de atividades:", e);
+  }
+}
+
+function mergeActivityFeedItems(localItems, newItems) {
+  const mergedMap = new Map();
+  const getUniqueKey = (item) => {
+    if (item.eventId) return item.eventId;
+    const timeKey = item.activityAt || item.time || '';
+    const team = item.teamKey || item.equipe || '';
+    const label = item.label || item.source || '';
+    return `${timeKey}_${team}_${label}`;
+  };
+
+  (localItems || []).forEach(item => {
+    const key = getUniqueKey(item);
+    if (key) mergedMap.set(key, item);
+  });
+
+  (newItems || []).forEach(item => {
+    const key = getUniqueKey(item);
+    if (key) mergedMap.set(key, item);
+  });
+
+  const mergedList = Array.from(mergedMap.values());
+  mergedList.sort((a, b) => {
+    const dateA = a.activityAt ? new Date(a.activityAt).getTime() : 0;
+    const dateB = b.activityAt ? new Date(b.activityAt).getTime() : 0;
+    if (dateA && dateB) return dateB - dateA;
+    const strA = a.activityAt || a.time || '';
+    const strB = b.activityAt || b.time || '';
+    return strB.localeCompare(strA);
+  });
+
+  return mergedList.slice(0, 30);
+}
+
+function renderActivityFeed(items = []) {
+  if (!activityFeedPanel || !activityFeedList) return;
+  const visible = items.slice(0, 30);
+  if (!visible.length) {
+    activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem atividades recentes</div>';
+    return;
+  }
+  activityFeedList.innerHTML = visible.map((item) => {
+    const time = escapeHtml(item.time || fmtHourMinute(item.activityAt));
+    const team = escapeHtml(item.teamKey || item.equipe || '-');
+    const label = escapeHtml(item.label || item.source || 'Atividade');
+    const source = escapeHtml(item.source || '');
+    return `<div class="activityFeedItem" data-source="${source}"><span class="activityFeedTime">${time}</span><span class="activityFeedTeam">${team}</span><span class="activityFeedLabel">${label}</span></div>`;
+  }).join('');
+}
+
+async function loadActivityFeed() {
+  if (!activityFeedPanel || getViewMode() === 'trash') return;
+  const empresa = getEmpresaValue();
+  
+  const initialCached = getLocalFeedCache(empresa);
+  if (initialCached.length > 0) {
+    renderActivityFeed(initialCached);
+  }
+
+  const qs = new URLSearchParams();
+  if (empresa) qs.set('empresa', empresa);
+  qs.set('limit', '5');
+  try {
+    const r = await fetch(`/api/activity-feed?${qs.toString()}`, { cache: 'no-store' });
+    const data = await r.json();
+    if (!r.ok || !Array.isArray(data.items)) {
+      if (initialCached.length === 0) {
+        renderActivityFeed([]);
+      }
+      return;
+    }
+    const updatedCache = mergeActivityFeedItems(initialCached, data.items);
+    saveLocalFeedCache(empresa, updatedCache);
+    renderActivityFeed(updatedCache);
+  } catch (error) {
+    console.warn('Erro ao carregar feed de atividades:', error);
+    if (initialCached.length === 0) {
+      renderActivityFeed([]);
+    }
+  }
 }
 
 function addHours(dateLike, hours) {
@@ -282,7 +403,9 @@ function normalizeKpiFilter(value) {
     case "FECHADO":
     case "DESATUALIZADO":
     case "ALERTA":
-      return raw;
+    case "DDS_OK":
+    case "DDS":
+      return "DDS_OK";
     case "DESLOCAMENTO":
     case "DESLOCAMENTO_ESPECIAL":
       return "DESLOCAMENTO_ESPECIAL";
@@ -345,7 +468,8 @@ function ddsStatusLabel(status) {
 }
 
 function ddsSequenceHtml(item, options = {}) {
-  return ""; // Temporariamente desabilitado para ocultar bolinhas/marcadores
+  const ddsToggle = document.getElementById("ddsToggle");
+  if (!ddsToggle || !ddsToggle.checked) return "";
   const {
     maxItems = 5,
     showDayLabels = false,
@@ -362,37 +486,85 @@ function ddsSequenceHtml(item, options = {}) {
       : [];
   const days = Array.isArray(item.ddsDays) ? item.ddsDays : [];
 
-  const recentRaw = raw.slice(-maxItems);
-  const recentDays = days.slice(-maxItems);
+  let dots = "";
 
-  const normalized = recentRaw.map(normalizeDdsEntry);
-  while (normalized.length < maxItems) normalized.unshift("neutral");
-  while (recentDays.length < maxItems) recentDays.unshift("");
+  if (showDayLabels) {
+    // Modo de Grade Calendário (Ex: Popover/Modal)
+    // Calcula o número de semanas com base em maxItems (10 -> 2 semanas, 20 -> 3 semanas)
+    const numWeeks = maxItems > 14 ? 3 : 2;
+    const totalDays = numWeeks * 7;
 
-  const dots = normalized.map((status, idx) => {
-    const isCurrent = idx === normalized.length - 1;
-    const day = recentDays[idx];
-    const statusText = ddsStatusLabel(status);
-    const tooltip = day ? `${formatDdsFullDate(day)} • ${statusText}` : statusText;
-    const dayLabel = formatDdsDayOnly(day);
+    // Encontra o "hoje" baseado no último dia de histórico enviado pelo back
+    const todayStr = days.length > 0 ? days[days.length - 1] : new Date().toISOString().split('T')[0];
+    const todayParts = todayStr.split("-");
+    const todayDate = new Date(Number(todayParts[0]), Number(todayParts[1]) - 1, Number(todayParts[2]));
 
-    if (showDayLabels) {
-      return `
+    // Encontra o domingo inicial
+    const weeksBefore = numWeeks - 1;
+    const startSunday = new Date(todayDate);
+    startSunday.setDate(todayDate.getDate() - todayDate.getDay() - (weeksBefore * 7));
+
+    const calendarDots = [];
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(startSunday);
+      d.setDate(startSunday.getDate() + i);
+
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const dayLabel = d.getDate();
+      const dayIdx = days.indexOf(dateStr);
+
+      let status = "neutral";
+      let isFuture = false;
+
+      if (dateStr > todayStr) {
+        status = "future";
+        isFuture = true;
+      } else if (dayIdx !== -1) {
+        status = normalizeDdsEntry(raw[dayIdx]);
+      }
+
+      const statusText = isFuture ? "Dia futuro" : ddsStatusLabel(status);
+      const timeStr = (status === "ok" && item.ddsTimes && item.ddsTimes[dateStr]) ? ` (${item.ddsTimes[dateStr]})` : "";
+      const tooltip = `${formatDdsFullDate(dateStr)} • ${statusText}${timeStr}`;
+      const isToday = dateStr === todayStr;
+
+      calendarDots.push(`
         <span class="ddsDayDot" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">
-          <span class="ddsDayLabel">${escapeHtml(dayLabel || "–")}</span>
-          <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}">
-            <span class="ddsDot ddsDot--${status}${isCurrent ? " ddsDot--current" : ""}"></span>
+          <span class="ddsDayLabel">${escapeHtml(dayLabel)}</span>
+          <span class="ddsDotWrap${isToday ? " isCurrent" : ""}">
+            <span class="ddsDot ddsDot--${status}${isToday ? " ddsDot--current" : ""}"></span>
           </span>
         </span>
-      `;
+      `);
     }
+    dots = calendarDots.join("");
+  } else {
+    // Modo Compacto (Ex: Card principal)
+    const recentRaw = raw.slice(-maxItems);
+    const recentDays = days.slice(-maxItems);
 
-    return `
-      <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">
-        <span class="ddsDot ddsDot--${status}${isCurrent ? " ddsDot--current" : ""}"></span>
-      </span>
-    `;
-  }).join("");
+    const normalized = recentRaw.map(normalizeDdsEntry);
+    while (normalized.length < maxItems) normalized.unshift("neutral");
+    while (recentDays.length < maxItems) recentDays.unshift("");
+
+    dots = normalized.map((status, idx) => {
+      const isCurrent = idx === normalized.length - 1;
+      const day = recentDays[idx];
+      const statusText = ddsStatusLabel(status);
+      const timeStr = (status === "ok" && day && item.ddsTimes && item.ddsTimes[day]) ? ` (${item.ddsTimes[day]})` : "";
+      const tooltip = day ? `${formatDdsFullDate(day)} • ${statusText}${timeStr}` : statusText;
+
+      return `
+        <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">
+          <span class="ddsDot ddsDot--${status}${isCurrent ? " ddsDot--current" : ""}"></span>
+        </span>
+      `;
+    }).join("");
+  }
 
   const rowClass = ["ddsRow", containerClass, showDayLabels ? "ddsRowExpanded" : "", showMeta ? "" : "ddsRowCompact"]
     .filter(Boolean)
@@ -402,15 +574,17 @@ function ddsSequenceHtml(item, options = {}) {
     .filter(Boolean)
     .join(" ");
 
+  const actualHintText = showDayLabels ? `Últimas ${maxItems > 14 ? 3 : 2} semanas` : hintText;
+
   return `
-    <div class="${rowClass}" aria-label="DDS últimos ${maxItems} dias">
+    <div class="${rowClass}" aria-label="DDS">
       ${showMeta ? `
         <div class="ddsMeta">
           <span class="ddsLabel">${escapeHtml(label)}</span>
-          <span class="ddsHint">${escapeHtml(hintText)}</span>
+          <span class="ddsHint">${escapeHtml(actualHintText)}</span>
         </div>
       ` : ""}
-      <div class="${trackClass}" role="list" aria-label="Histórico DDS últimos ${maxItems} dias">
+      <div class="${trackClass}" role="list">
         ${dots}
       </div>
     </div>
@@ -474,6 +648,16 @@ function tile(item) {
       </div>`;
   }
 
+  const ddsToggle = document.getElementById("ddsToggle");
+  const isDdsChecked = ddsToggle ? ddsToggle.checked : false;
+
+  const hoverDdsHtml = isDdsChecked ? `
+        <div class="hoverSection">
+          <div class="hoverSectionTitle">Presenças no DDS (Últimas 2 semanas)</div>
+          ${ddsSequenceHtml(item, { maxItems: 10, showDayLabels: true, showMeta: false, containerClass: "ddsRowHover" })}
+        </div>
+  ` : '';
+
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
  
   const lastContactLabel = fmtLastContact(item.lastContact, item.lastContactSource);
@@ -526,12 +710,7 @@ function tile(item) {
       </div>
       <div class="tileHoverBody">
         <div class="hoverRows">${details}</div>
-        <!-- Temporariamente ocultado a pedido do usuario
-        <div class="hoverSection">
-          <div class="hoverSectionTitle">Presenças no DDS (Últimos 10 dias)</div>
-          ${ddsSequenceHtml(item, { maxItems: 10, showDayLabels: true, showMeta: false, containerClass: "ddsRowHover" })}
-        </div>
-        -->
+        ${hoverDdsHtml}
         <div class="hoverSection">
           <div class="hoverSectionTitle">Participantes</div>
           ${participantes}
@@ -574,26 +753,50 @@ function applyFilters(items) {
     const matchesTeam = !selectedTeam || teamKey === selectedTeam;
     const matchesKpi =
       !kpiFilter ||
-      (kpiFilter === "ALERTA" ? activeAlertFilter(it) : shown === kpiFilter);
+      (kpiFilter === "ALERTA" ? activeAlertFilter(it) :
+       kpiFilter === "DDS_OK" ? it.ddsToday === "ok" :
+       shown === kpiFilter);
     return matchesText && matchesTeam && matchesKpi;
   });
 }
 
 function renderKpis(items) {
   const counts = { ABERTO: 0, INTERVALO: 0, DESLOCAMENTO_ESPECIAL: 0, FECHADO: 0, DESATUALIZADO: 0, DESCONHECIDO: 0, ALERTA: 0 };
+  let ddsOk = 0;
+  let ddsTotal = 0;
+  
   (items || []).forEach((it) => {
     const st = normalizedState(it.estado);
     if (counts[st] !== undefined) counts[st]++;
     const alerta = safeUpper(it.alerta);
     if (alerta === "YELLOW" || alerta === "RED" || alerta === "PULSE") counts.ALERTA++;
+    
+    if (it.ddsToday === "ok") {
+      ddsOk++;
+      ddsTotal++;
+    } else if (it.ddsToday === "fail") {
+      ddsTotal++;
+    }
   });
+
+  const ddsToggle = document.getElementById("ddsToggle");
+  const showDdsKpi = ddsToggle && ddsToggle.checked;
+  const ddsKpiHtml = showDdsKpi ? `
+    <button class="kpi kpiHintWrap" type="button" data-kpi="dds_ok" data-filter="DDS_OK" aria-label="Filtrar equipes com DDS concluído" aria-pressed="false">
+      <span class="kpiDot dotTeal"></span>
+      <span>${ddsOk}/${ddsTotal}</span>
+      <span class="kpiHint">DDS Realizado</span>
+    </button>
+  ` : '';
+
   kpis.innerHTML = `
     <button class="kpi kpiHintWrap" type="button" data-kpi="aberto" data-filter="ABERTO" aria-label="Filtrar equipes abertas" aria-pressed="false"><span class="kpiDot dotGreen"></span><span>${counts.ABERTO}</span><span class="kpiHint">Equipes em aberto</span></button>
     <button class="kpi kpiHintWrap" type="button" data-kpi="intervalo" data-filter="INTERVALO" aria-label="Filtrar equipes em intervalo" aria-pressed="false"><span class="kpiDot dotYellow"></span><span>${counts.INTERVALO}</span><span class="kpiHint">Equipes em intervalo</span></button>
     <button class="kpi kpiHintWrap" type="button" data-kpi="deslocamento" data-filter="DESLOCAMENTO_ESPECIAL" aria-label="Filtrar deslocamento especial" aria-pressed="false"><span class="kpiDot dotBlue"></span><span>${counts.DESLOCAMENTO_ESPECIAL}</span><span class="kpiHint">Deslocamento especial</span></button>
     <button class="kpi kpiHintWrap" type="button" data-kpi="fechado" data-filter="FECHADO" aria-label="Filtrar equipes fechadas" aria-pressed="false"><span class="kpiDot dotRed"></span><span>${counts.FECHADO}</span><span class="kpiHint">Equipes fechadas</span></button>
     <button class="kpi kpiHintWrap" type="button" data-kpi="desatualizado" data-filter="DESATUALIZADO" aria-label="Filtrar equipes desatualizadas" aria-pressed="false"><span class="kpiDot dotGray"></span><span>${counts.DESATUALIZADO}</span><span class="kpiHint">Equipes desatualizadas</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="alerta" data-filter="ALERTA" aria-label="Filtrar equipes em alerta" aria-pressed="false"><span class="kpiWarn">⚠</span><span>${counts.ALERTA}</span><span class="kpiHint">Alertas de atualização</span></button>`;
+    <button class="kpi kpiHintWrap" type="button" data-kpi="alerta" data-filter="ALERTA" aria-label="Filtrar equipes em alerta" aria-pressed="false"><span class="kpiWarn">⚠</span><span>${counts.ALERTA}</span><span class="kpiHint">Alertas de atualização</span></button>
+    ${ddsKpiHtml}`;
   syncKpiSelection();
 }
 
@@ -660,7 +863,8 @@ function syncRealtimeData() {
   // Applica os filtros em cima da memória (allRealtimeItems)
   const isInactiveMode = mode === 'inactive';
   
-  const filtered = allRealtimeItems.filter(item => {
+  // Estágio 1: Filtros de texto, equipe e ativo/inativo (usados para a contagem de KPIs)
+  const baseFiltered = allRealtimeItems.filter(item => {
       // 1. Filtro de Ativa/Inativa
       const itemActive = item.active !== false; // Padrão é true
       if (isInactiveMode && itemActive) return false;
@@ -668,25 +872,34 @@ function syncRealtimeData() {
       
       // O Filtro de Setor (TIPO) agora é apenas para mensagens e requisições.
       // As equipes aparecem globais para todos os setores conforme solicitado.
-
+      
       // 3. Filtros de Pesquisa e KPI (já existentes)
       const q = safeUpper(searchInput.value);
       const selectedTeam = safeUpper(teamSelect?.value);
-      const kpiFilter = normalizeKpiFilter(activeKpiFilter);
       
       const eq = safeUpper(item.equipe);
       const teamKey = safeUpper(item.teamKey || item.equipe);
-      const shown = normalizedState(item.estado);
       
       const matchesText = !q || eq.includes(q) || teamKey.includes(q);
       const matchesTeam = !selectedTeam || teamKey === selectedTeam;
-      const matchesKpi = !kpiFilter || (kpiFilter === "ALERTA" ? activeAlertFilter(item) : shown === kpiFilter);
       
-      return matchesText && matchesTeam && matchesKpi;
+      return matchesText && matchesTeam;
+  });
+
+  // Estágio 2: Filtro de KPI (para determinar os cards exibidos)
+  const kpiFilter = normalizeKpiFilter(activeKpiFilter);
+  const filtered = baseFiltered.filter(item => {
+      const shown = normalizedState(item.estado);
+      const matchesKpi = !kpiFilter || (
+        kpiFilter === "ALERTA" ? activeAlertFilter(item) :
+        kpiFilter === "DDS_OK" ? item.ddsToday === "ok" :
+        shown === kpiFilter
+      );
+      return matchesKpi;
   });
 
   currentItems = filtered;
-  renderData(filtered, lastData || { empresa: getEmpresaValue(), serverTime: new Date().toISOString() });
+  renderData(filtered, lastData || { empresa: getEmpresaValue(), serverTime: new Date().toISOString() }, baseFiltered);
 }
 
 function startPolling() {
@@ -697,14 +910,34 @@ function startPolling() {
     try { unsubMonitor(); } catch(e) { console.warn("Erro ao desinscrever:", e); }
     unsubMonitor = null;
   }
+  if (typeof unsubActivityFeed === 'function') {
+    try { unsubActivityFeed(); } catch(e) { console.warn("Erro ao desinscrever activity feed:", e); }
+    unsubActivityFeed = null;
+  }
 
   // Verifica se o dia virou para resetar o cache (Lógica 00:00)
   triggerFullDailyReset();
+
+  const empresa = getEmpresaValue();
   
   const mode = getViewMode();
   if (mode === 'trash') {
     // A lixeira ainda usa fetch normal
     load();
+    return;
+  }
+
+  if (!db) {
+    // Fallback: usar HTTP polling normal
+    nextRefresh.textContent = "Polling Ativo ⏳";
+    const safeSeconds = Math.max(15, pollingSeconds);
+    pollingTimer = setInterval(() => {
+      load({ forceRefresh: true });
+    }, safeSeconds * 1000);
+    
+    countdownTimer = setInterval(() => {
+      setRefreshInfo();
+    }, 1000);
     return;
   }
 
@@ -729,6 +962,9 @@ function startPolling() {
           } else {
             allRealtimeItems.push(item);
           }
+          if (!initialSnapshot && change.type === "modified") {
+            updateSingleTeamCard(item);
+          }
         } else if (change.type === "removed") {
           allRealtimeItems = allRealtimeItems.filter(it => (it.teamKey || it.equipe) !== teamKey);
         }
@@ -747,6 +983,21 @@ function startPolling() {
       lastSync.textContent = "Atualizado: ERRO DE PERMISSÃO";
     });
 
+  unsubActivityFeed = db.collection("webtools").doc("monitor").collection("activity_feed").doc(empresa)
+    .onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (data && Array.isArray(data.items)) {
+          const initialCached = getLocalFeedCache(empresa);
+          const updatedCache = mergeActivityFeedItems(initialCached, data.items);
+          saveLocalFeedCache(empresa, updatedCache);
+          renderActivityFeed(updatedCache);
+        }
+      }
+    }, (error) => {
+      console.warn("Erro ao assinar activity_feed no Firestore:", error);
+    });
+
   // Reloginho Local: Atualiza as cores (Amarelo, Vermelho) a cada 30 segundos
   // sem fazer nenhuma leitura a mais no banco de dados!
   pollingTimer = setInterval(() => {
@@ -756,12 +1007,12 @@ function startPolling() {
 
 let uiSyncTimeout = null;
 function requestUiSync() {
-  if (uiSyncTimeout) return; // J\u00e1 existe uma atualiza\u00e7\u00e3o agendada
+  if (uiSyncTimeout) return; // Já existe uma atualização agendada
   
   uiSyncTimeout = setTimeout(() => {
     syncRealtimeData();
     uiSyncTimeout = null;
-  }, 10000); // 10 segundos de espera
+  }, 3000); // 3 segundos de espera
 }
 
 function recalculateLocalAlerts() {
@@ -798,6 +1049,54 @@ async function loadConfig() {
   if (!empresaInput.value) empresaInput.value = cfg.defaultEmpresa || '';
   pollingSeconds = Number(cfg.pollingSeconds) || 600;
   fillConfigForm(cfg);
+}
+
+async function loadDdsBackground(forceRefresh = false) {
+  const empresa = getEmpresaValue();
+  const active = getActiveFilterValue();
+  const qs = new URLSearchParams();
+  if (empresa) qs.set('empresa', empresa);
+  qs.set('active', active);
+  if (forceRefresh) qs.set('refresh', 'manual');
+  const sectorSelectorEl = document.getElementById('sectorSelector');
+  const selectedSector = sectorSelectorEl ? sectorSelectorEl.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
+  if (selectedSector) qs.set('setor', selectedSector);
+
+  try {
+    const r = await fetch(`/api/turnos/dds?${qs.toString()}`, { cache: 'no-store' });
+    const data = await r.json();
+    if (!r.ok || !Array.isArray(data.items)) return;
+
+    // Merge dos campos DDS em allRealtimeItems
+    let merged = false;
+    data.items.forEach(ddsItem => {
+      const idx = allRealtimeItems.findIndex(it => it.teamKey === ddsItem.teamKey);
+      if (idx !== -1) {
+        const current = allRealtimeItems[idx];
+        const ddsContactIsNewer = isIsoNewer(ddsItem.lastContact, current.lastContact);
+        allRealtimeItems[idx] = {
+          ...current,
+          ddsHistory: ddsItem.ddsHistory,
+          ddsDays: ddsItem.ddsDays,
+          ddsTimes: ddsItem.ddsTimes,
+          ddsToday: ddsItem.ddsToday,
+          ...(ddsContactIsNewer ? {
+            lastContact: ddsItem.lastContact,
+            lastContactSource: ddsItem.lastContactSource || 'D',
+          } : {}),
+          ...(typeof ddsItem.active === 'boolean' ? { active: ddsItem.active } : {}),
+          ...(ddsItem.estado ? { estado: ddsItem.estado } : {}),
+          ...(ddsItem.updatedAt ? { updatedAt: ddsItem.updatedAt } : {}),
+        };
+        merged = true;
+      }
+    });
+
+    ddsDataLoaded = true;
+    if (merged) syncRealtimeData(); // Re-renderiza silenciosamente com DDS
+  } catch (e) {
+    console.warn('Erro ao carregar DDS lazy:', e);
+  }
 }
 
 async function load(options = {}) {
@@ -847,8 +1146,13 @@ async function load(options = {}) {
 
     // Atualiza o cache local com os dados frescos do servidor
     allRealtimeItems = data.items || [];
+    ddsDataLoaded = false; // Reseta flag: DDS precisa ser carregado novamente
     lastData = data;
     syncRealtimeData();
+
+    // Carga lazy de DDS e feed em background (sem bloquear a UI)
+    loadDdsBackground(forceRefresh);
+    loadActivityFeed();
   } catch (e) {
     console.error('Erro ao carregar monitor:', e);
     lastSync.textContent = 'Atualizado: ERRO';
@@ -865,7 +1169,39 @@ async function load(options = {}) {
   }
 }
 
-function renderData(items, meta) {
+function updateSingleTeamCard(item) {
+  const teamKey = item.teamKey || item.equipe;
+  if (!teamKey) return;
+  const cardId = `card-${teamKey.replace(/[^\w]/g, '_')}`;
+  const card = document.getElementById(cardId);
+  if (!card) return;
+
+  const coreData = JSON.stringify({
+      st: item.estado,
+      al: item.alerta,
+      cr: item.critico,
+      ss: item.ss,
+      msg: item.unreadMap,
+      dds: (item.ddsHistory || []).slice(-1)[0]
+  });
+
+  const oldCore = card.dataset.core;
+  const hasChanged = oldCore !== coreData;
+  if (!hasChanged) return;
+
+  const html = tile(item);
+  const flashClass = ' flash-update';
+  const order = card.style.order || '0';
+  
+  card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${order}" data-core='${coreData}' class="tile${flashClass}`);
+  
+  const newCard = document.getElementById(cardId);
+  if (newCard) {
+    newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+  }
+}
+
+function renderData(items, meta, kpiSourceItems) {
     if (skeletonGrid) skeletonGrid.classList.add('hidden');
     if (grid) grid.classList.remove('hidden');
     
@@ -877,7 +1213,7 @@ function renderData(items, meta) {
     currentItems = items;
     
     if (getViewMode() !== 'trash') {
-        renderKpis(items);
+        renderKpis(kpiSourceItems || items);
         kpis.hidden = false;
     } else {
         kpis.hidden = true;
@@ -1077,6 +1413,21 @@ configModalCancel?.addEventListener('click', closeConfigModal);
 configModalBackdrop?.addEventListener('click', closeConfigModal);
 configModalSave?.addEventListener('click', saveConfigModal);
 [cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin, cfgFechadoViraDesatualizadoHoras, cfgDesatualizadoCriticoHoras, cfgPollingSeconds].forEach((el) => el?.addEventListener('input', syncConfigSummary));
+
+const ddsToggle = document.getElementById("ddsToggle");
+const savedDdsState = localStorage.getItem('monitor_show_dds') === 'true';
+if (ddsToggle) {
+  ddsToggle.checked = savedDdsState;
+  ddsToggle.addEventListener('change', () => {
+    localStorage.setItem('monitor_show_dds', ddsToggle.checked);
+    // Se ligou o DDS e os dados ainda não foram carregados, carrega agora
+    if (ddsToggle.checked && !ddsDataLoaded) {
+      loadDdsBackground();
+    } else {
+      syncRealtimeData();
+    }
+  });
+}
 
 searchInput.addEventListener('input', () => syncRealtimeData());
 teamSelect?.addEventListener('change', () => syncRealtimeData());

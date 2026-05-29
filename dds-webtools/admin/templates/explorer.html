@@ -21,6 +21,157 @@
     Esta tela mostra todas as pastas físicas no Storage. Itens <strong>Arquivados</strong> existem no servidor mas não aparecem no aplicativo móvel.
   </div>
 
+  <!-- Storage Control Section -->
+  <details class="filters-section storage-control-section" id="storageControlSection" style="margin-bottom: 24px;">
+    <summary>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">📦</span> 
+        <span>Controle de Armazenamento</span>
+        <span id="storageHeaderBadge" style="font-size: 10px; background: rgba(34, 197, 94, 0.15); color: #86efac; padding: 3px 8px; border-radius: 12px; margin-left: 4px; display: none;">Carregado</span>
+      </div>
+    </summary>
+    <div class="storage-control-wrapper" style="padding: 20px; position: relative;">
+      <!-- Loading Overlay -->
+      <div id="storageLoadingOverlay" class="storage-loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p style="margin: 8px 0 0 0; font-size: 0.9em; color: var(--muted); font-weight: 600;">Processando arquivos do Bucket...</p>
+      </div>
+
+      <div class="storage-control-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--line);">
+        <div style="font-size: 0.9em; color: var(--muted);">
+          <span>📅 Última atualização: </span>
+          <strong id="storageLastUpdated" style="color: var(--text);">Carregando...</strong>
+        </div>
+        <button class="btn btn-secondary" id="btnSyncStorage" style="padding: 6px 12px; font-size: 0.85em;">
+          <span>🔄</span> Atualizar Dados
+        </button>
+      </div>
+
+      <div id="storageCardsGrid" class="storage-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 10px;">
+        <!-- Card 1: DDS_Fotos -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">DDS_Fotos</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_DDS_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_DDS_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_DDS_Fotos')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+
+        <!-- Card 2: ChicoEletro -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">ChicoEletro</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_ChicoEletro" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_ChicoEletro" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_ChicoEletro')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+
+        <!-- Card 3: Fotos -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">Fotos</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_Fotos')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+      </div>
+
+      <!-- Detail Tables (Hidden by default) -->
+      <div id="detail_DDS_Fotos" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: DDS_Fotos
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_DDS_Fotos">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="detail_ChicoEletro" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: ChicoEletro
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_ChicoEletro">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="detail_Fotos" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: Fotos
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_Fotos">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </details>
+
   <!-- Filters -->
   <details class="filters-section" {% if month or status %}open{% endif %}>
     <summary>
@@ -166,9 +317,210 @@
         btn.innerHTML = originalHtml;
       }
     });
+
+    // Helper to format bytes to human readable sizes
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Helper to format ISO date string to BR format (DD/MM/YYYY HH:MM:SS)
+    function formatIsoToBr(isoStr) {
+      if (!isoStr) return '-';
+      try {
+        const dt = new Date(isoStr);
+        return dt.toLocaleString('pt-BR');
+      } catch (e) {
+        return isoStr;
+      }
+    }
+
+    // Toggle monthly details display
+    function toggleDetails(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        const isHidden = el.style.display === 'none';
+        // Close all first to ensure clean layout
+        document.querySelectorAll('.storage-details-panel').forEach(panel => {
+          panel.style.display = 'none';
+        });
+        if (isHidden) {
+          el.style.display = 'block';
+          // Smooth scroll to details
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
+
+    // Render storage stats into DOM
+    function renderStorageStats(data) {
+      if (!data) {
+        document.getElementById('storageLastUpdated').textContent = 'Nenhum dado cacheado. Clique em "Atualizar Dados".';
+        return;
+      }
+
+      document.getElementById('storageLastUpdated').textContent = formatIsoToBr(data.last_updated);
+      document.getElementById('storageHeaderBadge').style.display = 'inline-block';
+
+      const folders = ['DDS_Fotos', 'ChicoEletro', 'Fotos'];
+      folders.forEach(folder => {
+        const months = data.folders[folder] || [];
+        
+        let totalCount = 0;
+        let totalBytes = 0;
+        let tbodyHtml = '';
+
+        months.forEach(m => {
+          totalCount += m.count;
+          totalBytes += m.size_bytes;
+          tbodyHtml += `
+            <tr>
+              <td><strong style="color: var(--text);">${m.month}</strong></td>
+              <td style="text-align: right;">${m.count}</td>
+              <td style="text-align: right;">${formatBytes(m.size_bytes)}</td>
+              <td style="text-align: right;">
+                ${m.count > 0 ? `
+                  <button class="btn btn-danger" onclick="cleanupPhotos('${folder}', '${m.month}', '${formatBytes(m.size_bytes)}')" style="padding: 4px 8px; font-size: 0.8em; margin: 0;" title="Apagar fotos grandes deste mês">
+                    🧹 Limpar Fotos
+                  </button>
+                ` : '-'}
+              </td>
+            </tr>
+          `;
+        });
+
+        document.getElementById(`files_${folder}`).textContent = totalCount;
+        document.getElementById(`size_${folder}`).textContent = formatBytes(totalBytes);
+        
+        const tbody = document.getElementById(`body_${folder}`);
+        if (tbody) {
+          tbody.innerHTML = tbodyHtml || `<tr><td colspan="4" style="text-align:center; color: var(--muted); padding: 12px;">Nenhum arquivo armazenado.</td></tr>`;
+        }
+      });
+    }
+
+    // Handle monthly GCS cleanup
+    async function cleanupPhotos(folder, month, sizeStr) {
+      const warningMsg = `ATENÇÃO: Você está prestes a apagar as FOTOS GRANDES (originais) da pasta "${folder}" referentes ao mês de ${month} (tamanho aproximado: ${sizeStr}).\n\n` +
+                         `IMPORTANTE:\n` +
+                         `1. Esta ação é IRREVERSÍVEL e as imagens originais serão PERDIDAS PARA SEMPRE.\n` +
+                         `2. As miniaturas (thumbnails) serão mantidas, garantindo que relatórios e painéis continuem exibindo as imagens em formato reduzido.\n\n` +
+                         `Para confirmar, digite o código do mês "${month}" no campo abaixo:`;
+                         
+      const confirmation = prompt(warningMsg);
+      if (confirmation !== month) {
+        if (confirmation !== null) {
+          alert("Confirmação incorreta. Limpeza cancelada.");
+        }
+        return;
+      }
+      
+      const loader = document.getElementById('storageLoadingOverlay');
+      if (loader) loader.style.display = 'flex';
+      
+      try {
+        const resp = await fetch("{{ url_for('admin.cleanup_storage_photos') }}", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ folder: folder, month: month })
+        });
+        const res = await resp.json();
+        if (res.ok) {
+          alert(`Limpeza concluída com sucesso!\n\nFotos apagadas: ${res.details.deleted_count}\nDocumentos atualizados no Firestore: ${res.details.updated_docs}`);
+          if (res.stats) {
+            renderStorageStats(res.stats);
+          } else {
+            window.location.reload();
+          }
+        } else {
+          alert('Erro ao executar limpeza: ' + (res.error || 'Erro desconhecido'));
+        }
+      } catch (e) {
+        alert('Erro de rede: ' + e);
+      } finally {
+        if (loader) loader.style.display = 'none';
+      }
+    }
+
+    // Load initial stats from Firestore cache
+    async function loadStorageStats() {
+      try {
+        const resp = await fetch("{{ url_for('admin.get_storage_stats') }}");
+        const res = await resp.json();
+        if (res.ok && res.stats) {
+          renderStorageStats(res.stats);
+        } else {
+          document.getElementById('storageLastUpdated').textContent = 'Sem dados de cache. Clique para atualizar.';
+        }
+      } catch (e) {
+        console.error('Erro ao ler estatísticas do storage:', e);
+        document.getElementById('storageLastUpdated').textContent = 'Erro ao carregar dados.';
+      }
+    }
+
+    // Handle recalculate sync
+    document.getElementById('btnSyncStorage')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSyncStorage');
+      const loader = document.getElementById('storageLoadingOverlay');
+      
+      if (!confirm('Deseja varrer o bucket de armazenamento no GCS agora? \nEssa operação pode demorar cerca de 15 a 20 segundos devido à quantidade de fotos.')) return;
+      
+      btn.disabled = true;
+      loader.style.display = 'flex';
+      
+      try {
+        const resp = await fetch("{{ url_for('admin.recalculate_storage_stats') }}", { method: 'POST' });
+        const res = await resp.json();
+        if (res.ok && res.stats) {
+          renderStorageStats(res.stats);
+          alert('Estatísticas de armazenamento atualizadas com sucesso!');
+        } else {
+          alert('Erro ao atualizar: ' + (res.error || 'Erro desconhecido'));
+        }
+      } catch (e) {
+        alert('Erro na requisição: ' + e);
+      } finally {
+        loader.style.display = 'none';
+        btn.disabled = false;
+      }
+    });
+
+    // Run on startup
+    loadStorageStats();
   </script>
 
   <style>
+    /* CSS para controle de armazenamento */
+    .storage-loading-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 16, 32, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+    }
+    .storage-details-panel {
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 992px) {
+      .storage-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
 
     .info-alert {
       background: rgba(47, 111, 237, 0.05);

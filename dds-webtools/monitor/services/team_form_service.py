@@ -11,7 +11,7 @@ from google.cloud import firestore
 from services.firestore_client import db
 from services.teams_service import get_team, list_equipment_history, save_team
 from services.turno_equipes_service import get_turno_equipe, save_turno_equipe
-from services.turnos_service import normalize_estado, string_list, to_utc_dt, update_realtime_view
+from services.turnos_service import normalize_estado, string_list, to_utc_dt, update_realtime_view, get_team_dds_data
 
 def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
     team_doc = get_team(team_key) or {}
@@ -46,6 +46,8 @@ def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
         "active": bool(team_doc.get("active", True)),
     }
 
+    dds_data = get_team_dds_data(empresa, team_key)
+
     return {
         "empresa": empresa,
         "teamKey": team_key,
@@ -56,6 +58,10 @@ def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
             "teamDocExists": bool(team_doc.get("_exists")),
             "turnoDocExists": bool(turno_doc.get("_exists")),
         },
+        "ddsHistory": dds_data["ddsHistory"],
+        "ddsDays": dds_data["ddsDays"],
+        "ddsTimes": dds_data["ddsTimes"],
+        "ddsToday": dds_data["ddsToday"],
     }
 
 def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
@@ -71,9 +77,13 @@ def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
 
     team_doc = get_team(team_key)
     was_active = bool(team_doc.get("active", True)) if team_doc else True
+    previous_members = string_list(team_doc.get("members")) if team_doc else []
 
     saved_team = save_team(team_key, team_payload, consolidate=False)
     is_active = bool(saved_team.get("active", True))
+    current_members = string_list(saved_team.get("members"))
+    added_members = [name for name in current_members if name.casefold() not in {m.casefold() for m in previous_members}]
+    removed_members = [name for name in previous_members if name.casefold() not in {m.casefold() for m in current_members}]
 
     original_turno = get_turno_equipe(empresa, team_key) or {}
 
@@ -105,6 +115,24 @@ def save_team_form_data(payload: dict[str, Any]) -> dict[str, Any]:
         members_snapshot=saved_team.get("members") or [],
         touch_activity=touch,
     )
+
+    if added_members or removed_members:
+        try:
+            from services.turnos_service import _record_team_activity
+            _record_team_activity(
+                empresa=empresa,
+                team_key=team_key,
+                equipe=saved_team.get("displayName") or team_key,
+                source="team_members_changed",
+                activity_at=None,
+                active_after_event=is_active,
+                extra={
+                    "addedMembers": added_members,
+                    "removedMembers": removed_members,
+                },
+            )
+        except Exception as exc:
+            print(f"[team_form] Erro ao registrar alteração de membros para {team_key}: {exc}")
 
     if is_active != was_active:
         from services.teams_service import set_team_active_state

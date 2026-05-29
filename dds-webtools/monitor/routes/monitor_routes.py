@@ -14,7 +14,7 @@ from fastapi.encoders import jsonable_encoder
 import os
 from schemas.monitor_config_schema import MonitorConfigPayload
 from services.monitor_config_service import save_monitor_settings
-from services.turnos_service import APP_TITLE, DEFAULT_EMPRESA, get_monitor_config, list_turnos, update_realtime_view
+from services.turnos_service import APP_TITLE, DEFAULT_EMPRESA, get_activity_feed, get_monitor_config, list_turnos, list_turnos_dds, update_realtime_view
 from services.teams_service import list_trash_teams_map, move_to_trash, restore_from_trash, permanently_delete, get_team_trash_preview, get_team, save_team
 from services.requests_service import list_pending_requests, approve_request, reject_request
 
@@ -22,6 +22,9 @@ from services.requests_service import list_pending_requests, approve_request, re
 def get_app_version() -> str:
     """Extrai a versão simplificada da revisão atual (ex: 00113-dx8)."""
     revision = os.environ.get('K_REVISION', 'local')
+    if revision == 'local':
+        import time
+        return f"local-{int(time.time() // 60)}"
     if "-" in revision:
         parts = revision.split("-")
         if len(parts) >= 2:
@@ -106,6 +109,42 @@ def turnos(
     return JSONResponse(jsonable_encoder(list_turnos(**kwargs)))
 
 
+@router.get("/api/turnos/dds")
+def turnos_dds(
+    empresa: str = Query(DEFAULT_EMPRESA),
+    active: str | None = Query("all"),
+    refresh: str | None = Query(None),
+    setor: str = Query(None),
+):
+    """
+    Endpoint de carga lazy para o histórico DDS das equipes.
+    Leve e rápido — lê direto do cache sem tocar no Firestore.
+    Chamado pelo frontend após a carga inicial de status.
+    """
+    active_bool = None
+    if active and active.lower() == "true":
+        active_bool = True
+    elif active and active.lower() == "false":
+        active_bool = False
+
+    manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
+    if manual_refresh:
+        kwargs = {"empresa": empresa, "manual_refresh": True}
+        if setor:
+            kwargs["setor"] = setor
+        update_realtime_view(**kwargs)
+
+    return JSONResponse(jsonable_encoder(list_turnos_dds(empresa=empresa, active=active_bool)))
+
+
+@router.get("/api/activity-feed")
+def activity_feed(
+    empresa: str = Query(DEFAULT_EMPRESA),
+    limit: int = Query(5, ge=1, le=20),
+):
+    return JSONResponse(jsonable_encoder(get_activity_feed(empresa=empresa, limit=limit)))
+
+
 @router.post("/api/internal/sync-realtime")
 def sync_realtime(
     empresa: str = Query(DEFAULT_EMPRESA),
@@ -183,7 +222,7 @@ def toggle_team_active(team_key: str, active: bool):
 # Trava de deduplicação para evitar que múltiplos navegadores disparem o mesmo sync
 _RECENT_SYNC_LOCKS = {} # {team_key: timestamp}
 
-@router.post("/api/internal/sync-realtime")
+@router.post("/api/internal/sync-realtime/team")
 async def internal_sync_realtime(empresa: str, team: str):
     """
     Endpoint interno chamado pelo navegador para avisar o servidor que uma equipe mudou.

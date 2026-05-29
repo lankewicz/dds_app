@@ -15,7 +15,50 @@
 
     let currentRequests = [];
 
-    async function loadRequests() {
+    let unsubRequests = null;
+
+    function initRealtimeRequests() {
+        // Tenta obter a instância do Firestore db do escopo global
+        const firestoreDb = window.db || (typeof db !== 'undefined' ? db : null) || (typeof firebase !== 'undefined' && firebase.apps.length ? firebase.firestore() : null);
+
+        if (firestoreDb) {
+            console.log("Solicitações em tempo real ativas ⚡");
+            try {
+                unsubRequests = firestoreDb.collection("monitor/requests/prefix_changes")
+                    .where("status", "==", "PENDING")
+                    .onSnapshot((snapshot) => {
+                        const requests = [];
+                        snapshot.forEach((doc) => {
+                            const data = doc.data();
+                            data.id = doc.id;
+                            requests.push(data);
+                        });
+                        // Ordena por data (mais antigos primeiro para aprovação)
+                        requests.sort((a, b) => {
+                            const dateA = a.requestedAt || "";
+                            const dateB = b.requestedAt || "";
+                            return dateA.localeCompare(dateB);
+                        });
+                        currentRequests = requests;
+                        renderRequests();
+                        updateBadge();
+                    }, (error) => {
+                        console.error("Erro no onSnapshot das solicitações:", error);
+                        loadRequestsFallback();
+                    });
+            } catch (err) {
+                console.error("Falha ao configurar onSnapshot das solicitações:", err);
+                loadRequestsFallback();
+            }
+        } else {
+            console.warn("Firebase SDK não disponível para solicitações. Usando fallback HTTP polling.");
+            loadRequestsFallback();
+            // Polling de fallback a cada 15 segundos se não houver Firestore em tempo real
+            setInterval(loadRequestsFallback, 15000);
+        }
+    }
+
+    async function loadRequestsFallback() {
         try {
             const response = await fetch('/api/requests');
             const data = await response.json();
@@ -23,8 +66,16 @@
             renderRequests();
             updateBadge();
         } catch (error) {
-            console.error('Erro ao carregar solicitações:', error);
-            requestsList.innerHTML = '<div class="emptyState">Erro ao carregar solicitações.</div>';
+            console.error('Erro ao carregar solicitações (fallback):', error);
+            if (requestsList) {
+                requestsList.innerHTML = '<div class="emptyState">Erro ao carregar solicitações.</div>';
+            }
+        }
+    }
+
+    function refreshRequests() {
+        if (!unsubRequests) {
+            loadRequestsFallback();
         }
     }
 
@@ -75,7 +126,7 @@
         try {
             const response = await fetch(`/api/requests/${id}/approve`, { method: 'POST' });
             if (response.ok) {
-                loadRequests();
+                refreshRequests();
             }
         } catch (error) {
             alert('Erro ao aprovar solicitação.');
@@ -87,7 +138,7 @@
         try {
             const response = await fetch(`/api/requests/${id}/reject`, { method: 'POST' });
             if (response.ok) {
-                loadRequests();
+                refreshRequests();
             }
         } catch (error) {
             alert('Erro ao rejeitar solicitação.');
@@ -109,7 +160,7 @@
         if (searchInput) searchInput.parentElement.style.display = 'none';
         if (kpis) kpis.style.display = 'none';
 
-        loadRequests();
+        refreshRequests();
     });
 
     // Ao clicar em outros tabs, restaura o grid
@@ -123,8 +174,7 @@
         });
     });
 
-    // Inicia carregando as solicitações para atualizar o badge
-    setInterval(loadRequests, 60000);
-    loadRequests();
+    // Inicia a escuta em tempo real
+    initRealtimeRequests();
 
 })();

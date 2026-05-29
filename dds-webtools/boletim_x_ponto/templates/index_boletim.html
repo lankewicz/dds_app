@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boletim x Ponto - DDS Webtools</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon-portal.svg">
+
+  <style>
+    /* Estilos Premium Adicionais para Boletim x Ponto */
+    :root {
+      --bg-boletim-header: rgba(59, 130, 246, 0.15);
+      --bg-ponto-header: rgba(16, 185, 129, 0.15);
+      --bg-diferenca-header: rgba(245, 158, 11, 0.15);
+      --border-boletim: rgba(59, 130, 246, 0.3);
+      --border-ponto: rgba(16, 185, 129, 0.3);
+      --border-diferenca: rgba(245, 158, 11, 0.3);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      margin: 0;
+      padding-bottom: 60px;
+    }
+
+    .mainContainer {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+
+    /* Grid do topo: Filtros (esquerda) e Dropzones (direita) */
+    .topGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    
+    @media (max-width: 1024px) {
+      .topGrid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Glass Cards */
+    .glassCard {
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: var(--shadow-premium);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .cardTitle {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+
+    /* Inputs e Controls */
+    .formGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .formGroup {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .formGroup.fullWidth {
+      grid-column: span 2;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select, input[type="date"], input[type="text"] {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+      outline: none;
+      width: 100%;
+    }
+
+    select:focus, input[type="date"]:focus, input[type="text"]:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+
+    /* Slider Switcher (Decimal vs HH:MM) */
+    .toggleWrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(15, 23, 42, 0.4);
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+    }
+
+    .toggleContainer {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .toggleSwitch {
+      position: relative;
+      display: inline-block;
+      width: 52px;
+      height: 28px;
+    }
+
+    .toggleSwitch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: .3s;
+      border-radius: 34px;
+      border: 1px solid var(--glass-border);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--blue);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
+    /* Dropzones Layout */
+    .dropzonesContainer {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      height: 100%;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--glass-border);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.2);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      min-height: 160px;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--blue);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .dropzoneIcon {
+      font-size: 32px;
+      transition: transform 0.2s;
+    }
+
+    .dropzone:hover .dropzoneIcon {
+      transform: scale(1.1);
+    }
+
+    .dropzoneText {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .dropzoneSubtext {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .fileInput {
+      display: none;
+    }
+
+    /* Buttons Panel */
+    .actionsGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: white;
+      text-decoration: none;
+    }
+
+    .btnPrimary {
+      background: var(--blue);
+    }
+    .btnPrimary:hover {
+      background: #2563eb;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .btnSecondary {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--glass-border);
+    }
+    .btnSecondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .btnSuccess {
+      background: var(--green);
+    }
+    .btnSuccess:hover {
+      background: #059669;
+      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+    }
+
+    .btnDanger {
+      background: var(--red);
+    }
+    .btnDanger:hover {
+      background: #dc2626;
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    }
+
+    /* Comparison Grid Table View */
+    .comparisonCard {
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: var(--shadow-premium);
+      min-height: 300px;
+    }
+
+    .tableHeaderActions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    .employeeInfo {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+
+    .badgeBlue {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .tableContainer {
+      width: 100%;
+      overflow-x: auto;
+      max-height: 600px;
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    /* Estilo para colunas do cabeçalho */
+    th {
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 10px 12px;
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+      text-align: center;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    /* Primeira linha de th (Grupos) */
+    tr.groupHeader th {
+      font-size: 13px;
+      padding: 12px;
+      background: #0f172a;
+    }
+
+    tr.subHeader th {
+      background: #1e293b;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    th.th-boletim { background-color: var(--bg-boletim-header); border-bottom: 2px solid var(--border-boletim); }
+    th.th-ponto { background-color: var(--bg-ponto-header); border-bottom: 2px solid var(--border-ponto); }
+    th.th-diferenca { background-color: var(--bg-diferenca-header); border-bottom: 2px solid var(--border-diferenca); }
+
+    /* Estilos das Linhas de Dados */
+    td {
+      padding: 8px 12px;
+      border: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    td.td-date, td.td-boletim-num {
+      font-weight: 500;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    td.td-val {
+      text-align: right;
+    }
+
+    /* Cores das células por grupo */
+    td.td-bol { background: rgba(59, 130, 246, 0.03); }
+    td.td-pto { background: rgba(16, 185, 129, 0.03); }
+    td.td-dif { background: rgba(245, 158, 11, 0.03); }
+
+    td.td-dif-negative {
+      color: var(--red);
+      font-weight: 700;
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    /* Linhas de totais no final */
+    tr.totalsRow td {
+      font-weight: 700;
+      font-size: 13px;
+      background: #1e293b;
+      border-top: 2px solid var(--glass-border);
+      border-bottom: 2px solid var(--glass-border);
+    }
+
+    /* Modal Popup */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(2, 6, 23, 0.85);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modalContent {
+      width: 100%;
+      max-width: 900px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow: hidden;
+      animation: modalSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalSlide {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .modalHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+
+    .modalBody {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-right: 4px;
+    }
+
+    /* Tabela dentro do Modal */
+    .modalTableContainer {
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.4);
+      max-height: 350px;
+      overflow-y: auto;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 14px 20px;
+      color: white;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 9999;
+      font-size: 14px;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toastSuccess { border-left: 4px solid var(--green); }
+    .toastError { border-left: 4px solid var(--red); }
+    .toastInfo { border-left: 4px solid var(--blue); }
+
+    /* Custom Loading Spinner */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loadingOverlay {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 40px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .loadingOverlay.show {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar Copiada do Monitor com adaptação -->
+  <header class="topbar">
+    <div class="topbarLeft">
+      <a href="/" class="viewTab" style="display: flex; align-items: center; gap: 8px;">
+        <span>←</span> Voltar ao Portal
+      </a>
+    </div>
+    
+    <div class="topbarCenter">
+      <div class="titleBlock">
+        <div style="font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 700; color: #fff;">
+          Boletim x Ponto
+        </div>
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">
+          DDS Webtools Dashboard
+        </div>
+      </div>
+    </div>
+    
+    <div class="topbarRight">
+      <div style="text-align: right;">
+        <span style="font-size: 11px; color: var(--muted);">Operador:</span>
+        <span style="font-size: 13px; font-weight: 600; color: #fff;">{{ request.cookies.get("user_email") }}</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="mainContainer">
+    
+    <!-- Top Grid: Filtros e Uploads -->
+    <div class="topGrid">
+      
+      <!-- Painel de Filtros -->
+      <div class="glassCard">
+        <h2 class="cardTitle">
+          <span>📅</span> Filtros de Apuração
+        </h2>
+        
+        <div class="formGrid">
+          <div class="formGroup">
+            <label for="dataIni">Data Inicial</label>
+            <input type="date" id="dataIni">
+          </div>
+          <div class="formGroup">
+            <label for="dataFim">Data Final</label>
+            <input type="date" id="dataFim">
+          </div>
+          
+          <div class="formGroup">
+            <label for="selectContrato">Contrato</label>
+            <select id="selectContrato">
+              <option value="">-- Todos os Contratos --</option>
+            </select>
+          </div>
+          
+          <div class="formGroup">
+            <label for="selectFuncionario">Funcionário</label>
+            <select id="selectFuncionario" disabled>
+              <option value="">-- Escolha um período/contrato --</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="toggleWrapper">
+          <span style="font-size: 13px; font-weight: 600;">Exibir Formato das Horas</span>
+          <div class="toggleContainer">
+            <span style="font-size: 12px; font-weight: 700; color: var(--muted);" id="toggleLabelDec">Decimal (8,00)</span>
+            <label class="toggleSwitch">
+              <input type="checkbox" id="toggleFormat">
+              <span class="slider"></span>
+            </label>
+            <span style="font-size: 12px; font-weight: 700; color: var(--text);" id="toggleLabelHh">HH:MM (8:00)</span>
+          </div>
+        </div>
+
+        <div class="actionsGrid">
+          <button class="btn btnSecondary" id="btnOpenMapping">
+            <span>⚙️</span> Relação de Nomes
+          </button>
+          
+          <button class="btn btnSecondary" id="btnConsolidado">
+            <span>📦</span> Zip Consolidado
+          </button>
+        </div>
+      </div>
+
+      <!-- Painel de Upload de Arquivos -->
+      <div class="glassCard">
+        <h2 class="cardTitle">
+          <span>📤</span> Importação de Arquivos (Base Local Parquet)
+        </h2>
+        
+        <div class="dropzonesContainer">
+          <!-- Dropzone Boletins PDF -->
+          <div class="dropzone" id="dropzoneBoletim">
+            <div class="dropzoneIcon">📄</div>
+            <div class="dropzoneText">Boletins PDF</div>
+            <div class="dropzoneSubtext">Arraste ou clique para selecionar</div>
+            <input type="file" class="fileInput" id="inputBoletim" accept=".pdf">
+          </div>
+
+          <!-- Dropzone Ponto CSV/XLSX -->
+          <div class="dropzone" id="dropzonePonto">
+            <div class="dropzoneIcon">📊</div>
+            <div class="dropzoneText">Cartões Ponto</div>
+            <div class="dropzoneSubtext">Arraste ou clique (.csv, .xlsx, .xls)</div>
+            <input type="file" class="fileInput" id="inputPonto" accept=".csv, .xlsx, .xls">
+          </div>
+        </div>
+        
+        <div style="font-size: 11px; color: var(--muted); line-height: 1.4;">
+          * O processamento é realizado de forma 100% in-memory e mesclado ao banco de dados Parquet local no servidor. Arquivos já existentes com a mesma chave única (Boletim + Data + Funcionário ou CPF + Data) serão desconsiderados evitando duplicidades.
+        </div>
+      </div>
+      
+    </div>
+
+    <!-- Seção de Comparação -->
+    <div class="comparisonCard" id="comparisonCard">
+      <div class="tableHeaderActions">
+        <div class="employeeInfo">
+          <h2 class="cardTitle" style="border:none; padding:0; margin:0;" id="currentEmployeeTitle">
+            <span>📋</span> Relatório Diário
+          </h2>
+          <span class="badge badgeBlue" id="badgeRegistro">Chapa/Registro: -</span>
+          <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbd38d; border: 1px solid rgba(245, 158, 11, 0.3);" id="badgeBoletins">Boletins: n/a</span>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
+          <button class="btn btnSecondary" id="btnExportExcel" disabled>
+            <span>📈</span> Exportar Excel
+          </button>
+          <button class="btn btnSecondary" id="btnExportPDF" disabled>
+            <span>📕</span> Exportar PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Spinner / Informação inicial -->
+      <div class="loadingOverlay show" id="initialStateMsg">
+        Nenhum funcionário selecionado. Por favor, selecione um período e escolha um funcionário nos filtros acima.
+      </div>
+
+      <div class="loadingOverlay" id="gridLoading">
+        <div class="spinner"></div> Carregando dados de comparação diária...
+      </div>
+
+      <!-- Tabela Unificada de Comparação -->
+      <div class="tableContainer" id="tableContainer" style="display:none;">
+        <table id="comparisonTable">
+          <thead>
+            <tr class="groupHeader" id="tableHeaderGroup">
+              <!-- Renderizado dinamicamente pelo JS -->
+            </tr>
+            <tr class="subHeader" id="tableHeaderSub">
+              <!-- Renderizado dinamicamente pelo JS -->
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Renderizado dinamicamente pelo JS -->
+          </tbody>
+        </table>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- Modal Popup Relação de Nomes -->
+  <div class="modal" id="mappingModal">
+    <div class="modalContent glassCard">
+      <div class="modalHeader">
+        <h3 class="cardTitle" style="border:none; padding:0; margin:0;">
+          <span>⚙️</span> Gerenciar Relação de Nomes
+        </h3>
+        <button class="btn btnSecondary" style="padding:6px 12px; font-size:16px;" id="btnCloseMapping">×</button>
+      </div>
+      
+      <div class="modalBody">
+        <!-- Form de inserção/edição -->
+        <div class="formGrid" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 8px; border: 1px solid var(--glass-border);">
+          <div class="formGroup">
+            <label for="mapNomeBoletim">Nome no Boletim</label>
+            <input type="text" id="mapNomeBoletim" placeholder="Ex: JOAO DA SILVA">
+          </div>
+          <div class="formGroup">
+            <label for="mapNomePonto">Nome no Ponto</label>
+            <input type="text" id="mapNomePonto" placeholder="Ex: Joao Silva">
+          </div>
+          <div class="formGroup">
+            <label for="mapCPF">CPF Ponto</label>
+            <input type="text" id="mapCPF" placeholder="Ex: 000.000.000-00">
+          </div>
+          <div class="formGroup">
+            <label for="mapPIS">PIS Ponto</label>
+            <input type="text" id="mapPIS" placeholder="Ex: 000.00000.00-0">
+          </div>
+          <div class="formGroup fullWidth" style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button class="btn btnPrimary" id="btnSaveMapping" style="width:150px;">
+              <span>💾</span> Salvar Vínculo
+            </button>
+          </div>
+        </div>
+
+        <!-- Filtro/Busca na tabela -->
+        <div class="formGroup">
+          <input type="text" id="inputSearchMapping" placeholder="🔎 Pesquisar na tabela de relações...">
+        </div>
+
+        <!-- Tabela com scroll -->
+        <div class="modalTableContainer">
+          <table id="mappingTable" style="background:transparent;">
+            <thead>
+              <tr style="background:#1e293b;">
+                <th style="text-align:left; position:sticky; top:0;">Nome Boletim</th>
+                <th style="text-align:left; position:sticky; top:0;">Nome Ponto Mapeado</th>
+                <th style="text-align:left; position:sticky; top:0;">CPF Ponto</th>
+                <th style="text-align:left; position:sticky; top:0;">PIS Ponto</th>
+                <th style="text-align:center; position:sticky; top:0; width:80px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="mappingTableBody">
+              <!-- Inserido dinamicamente via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Toast -->
+  <div class="toast" id="toastNotification">
+    <span id="toastIcon">ℹ️</span>
+    <span id="toastMessage">Texto explicativo</span>
+  </div>
+
+  <!-- Javascript Logic -->
+  <script>
+    // Configurações do Estado
+    const state = {
+      dataMin: "",
+      dataMax: "",
+      contratos: [],
+      funcionarios: [],
+      selectedFuncionario: "",
+      exibirHhmm: true, // Padrão HH:MM
+      mappingData: [],
+      currentResponseData: null // Cache da última comparação
+    };
+
+    // DOM Elements
+    const elements = {
+      dataIni: document.getElementById("dataIni"),
+      dataFim: document.getElementById("dataFim"),
+      selectContrato: document.getElementById("selectContrato"),
+      selectFuncionario: document.getElementById("selectFuncionario"),
+      toggleFormat: document.getElementById("toggleFormat"),
+      toggleLabelDec: document.getElementById("toggleLabelDec"),
+      toggleLabelHh: document.getElementById("toggleLabelHh"),
+      btnOpenMapping: document.getElementById("btnOpenMapping"),
+      btnConsolidado: document.getElementById("btnConsolidado"),
+      dropzoneBoletim: document.getElementById("dropzoneBoletim"),
+      dropzonePonto: document.getElementById("dropzonePonto"),
+      inputBoletim: document.getElementById("inputBoletim"),
+      inputPonto: document.getElementById("inputPonto"),
+      currentEmployeeTitle: document.getElementById("currentEmployeeTitle"),
+      badgeRegistro: document.getElementById("badgeRegistro"),
+      badgeBoletins: document.getElementById("badgeBoletins"),
+      btnExportExcel: document.getElementById("btnExportExcel"),
+      btnExportPDF: document.getElementById("btnExportPDF"),
+      initialStateMsg: document.getElementById("initialStateMsg"),
+      gridLoading: document.getElementById("gridLoading"),
+      tableContainer: document.getElementById("tableContainer"),
+      tableHeaderGroup: document.getElementById("tableHeaderGroup"),
+      tableHeaderSub: document.getElementById("tableHeaderSub"),
+      tableBody: document.getElementById("tableBody"),
+      
+      // Modal Mapping Elements
+      mappingModal: document.getElementById("mappingModal"),
+      btnCloseMapping: document.getElementById("btnCloseMapping"),
+      mapNomeBoletim: document.getElementById("mapNomeBoletim"),
+      mapNomePonto: document.getElementById("mapNomePonto"),
+      mapCPF: document.getElementById("mapCPF"),
+      mapPIS: document.getElementById("mapPIS"),
+      btnSaveMapping: document.getElementById("btnSaveMapping"),
+      inputSearchMapping: document.getElementById("inputSearchMapping"),
+      mappingTableBody: document.getElementById("mappingTableBody"),
+      
+      // Toast
+      toastNotification: document.getElementById("toastNotification"),
+      toastIcon: document.getElementById("toastIcon"),
+      toastMessage: document.getElementById("toastMessage")
+    };
+
+    // Toasts helper
+    function showToast(message, type = "info") {
+      elements.toastMessage.textContent = message;
+      elements.toastNotification.className = "toast show";
+      
+      if (type === "success") {
+        elements.toastNotification.classList.add("toastSuccess");
+        elements.toastIcon.textContent = "✅";
+      } else if (type === "error") {
+        elements.toastNotification.classList.add("toastError");
+        elements.toastIcon.textContent = "❌";
+      } else {
+        elements.toastNotification.classList.add("toastInfo");
+        elements.toastIcon.textContent = "ℹ️";
+      }
+      
+      setTimeout(() => {
+        elements.toastNotification.classList.remove("show");
+      }, 4000);
+    }
+
+    // Inicialização da Página
+    window.addEventListener("DOMContentLoaded", async () => {
+      // Toggle inicial do switch
+      elements.toggleFormat.checked = state.exibirHhmm;
+      updateToggleLabels();
+      
+      // Carregar Filtros iniciais
+      await loadFilters();
+      
+      // Setup Event Listeners
+      setupListeners();
+    });
+
+    // Atualiza classes dos labels do switcher de formato
+    function updateToggleLabels() {
+      if (state.exibirHhmm) {
+        elements.toggleLabelDec.style.color = "var(--muted)";
+        elements.toggleLabelHh.style.color = "var(--text)";
+      } else {
+        elements.toggleLabelDec.style.color = "var(--text)";
+        elements.toggleLabelHh.style.color = "var(--muted)";
+      }
+    }
+
+    // Carregar filtros da API
+    async function loadFilters() {
+      try {
+        const res = await fetch("/boletim-x-ponto/api/filtros");
+        const data = await res.json();
+        
+        if (data.ok) {
+          state.dataMin = data.data_min;
+          state.dataMax = data.data_max;
+          state.contratos = data.contratos;
+          
+          // Preencher campos de data com o intervalo padrão (ou último mês disponível)
+          elements.dataIni.value = state.dataMin;
+          elements.dataFim.value = state.dataMax;
+          elements.dataIni.min = state.dataMin;
+          elements.dataIni.max = state.dataMax;
+          elements.dataFim.min = state.dataMin;
+          elements.dataFim.max = state.dataMax;
+          
+          // Preencher select de contratos
+          elements.selectContrato.innerHTML = '<option value="">-- Todos os Contratos --</option>';
+          state.contratos.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c;
+            opt.textContent = c;
+            elements.selectContrato.appendChild(opt);
+          });
+          
+          await reloadEmployees();
+        } else {
+          showToast(data.message || "Erro ao obter filtros da API.", "error");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Erro ao conectar com a API de filtros.", "error");
+      }
+    }
+
+    // Atualiza a lista de funcionários
+    async function reloadEmployees() {
+      const dataIni = elements.dataIni.value;
+      const dataFim = elements.dataFim.value;
+      const contrato = elements.selectContrato.value;
+      
+      if (!dataIni || !dataFim) return;
+      
+      try {
+        let url = `/boletim-x-ponto/api/funcionarios?data_ini=${dataIni}&data_fim=${dataFim}`;
+        if (contrato) {
+          url += `&contrato=${encodeURIComponent(contrato)}`;
+        }
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.ok) {
+          state.funcionarios = data.funcionarios;
+          
+          elements.selectFuncionario.innerHTML = '<option value="">-- Escolha um Funcionário --</option>';
+          if (state.funcionarios.length > 0) {
+            elements.selectFuncionario.removeAttribute("disabled");
+            state.funcionarios.forEach(f => {
+              const opt = document.createElement("option");
+              opt.value = f;
+              opt.textContent = f;
+              elements.selectFuncionario.appendChild(opt);
+            });
+          } else {
+            elements.selectFuncionario.setAttribute("disabled", "true");
+            elements.selectFuncionario.innerHTML = '<option value="">Nenhum funcionário encontrado</option>';
+            resetDashboardView();
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Erro ao carregar lista de funcionários.", "error");
+      }
+    }
+
+    // Limpa a tela da tabela quando não tem ninguém selecionado
+    function resetDashboardView() {
+      state.selectedFuncionario = "";
+      state.currentResponseData = null;
+      elements.initialStateMsg.classList.add("show");
+      elements.initialStateMsg.textContent = "Nenhum funcionário selecionado. Por favor, escolha um na lista.";
+      elements.tableContainer.style.display = "none";
+      elements.btnExportExcel.setAttribute("disabled", "true");
+      elements.btnExportPDF.setAttribute("disabled", "true");
+      elements.currentEmployeeTitle.innerHTML = "<span>📋</span> Relatório Diário";
+      elements.badgeRegistro.textContent = "Chapa/Registro: -";
+      elements.badgeBoletins.textContent = "Boletins: n/a";
+    }
+
+    // Carrega e desenha o grid comparativo
+    async function loadComparison() {
+      const emp = elements.selectFuncionario.value;
+      const di = elements.dataIni.value;
+      const df = elements.dataFim.value;
+      
+      if (!emp) {
+        resetDashboardView();
+        return;
+      }
+      
+      state.selectedFuncionario = emp;
+      elements.initialStateMsg.classList.remove("show");
+      elements.tableContainer.style.display = "none";
+      elements.gridLoading.classList.add("show");
+      
+      try {
+        const formatParam = state.exibirHhmm ? "hhmm" : "decimal";
+        const res = await fetch(`/boletim-x-ponto/api/comparar?employee=${encodeURIComponent(emp)}&data_ini=${di}&data_fim=${df}&format=${formatParam}`);
+        const data = await res.json();
+        
+        elements.gridLoading.classList.remove("show");
+        
+        if (data.ok) {
+          state.currentResponseData = data;
+          renderComparisonTable(data);
+          
+          // Libera botões
+          elements.btnExportExcel.removeAttribute("disabled");
+          elements.btnExportPDF.removeAttribute("disabled");
+        } else {
+          showToast(data.message || "Erro ao gerar grids de comparação.", "error");
+          elements.initialStateMsg.classList.add("show");
+          elements.initialStateMsg.textContent = "Erro ao carregar comparação: " + data.message;
+        }
+      } catch (err) {
+        console.error(err);
+        elements.gridLoading.classList.remove("show");
+        elements.initialStateMsg.classList.add("show");
+        elements.initialStateMsg.textContent = "Erro de rede ao buscar dados do servidor.";
+        showToast("Erro ao conectar com a API de comparação.", "error");
+      }
+    }
+
+    // Renderiza a tabela HTML unificada
+    function renderComparisonTable(data) {
+      const headers = data.headers;
+      const gridB = data.grid_boletim;
+      const gridP = data.grid_ponto;
+      const gridD = data.grid_diferenca;
+      
+      // Atualiza cabeçalhos e metadados
+      elements.currentEmployeeTitle.innerHTML = `<span>📋</span> Relatório Diário — <b>${state.selectedFuncionario}</b>`;
+      elements.badgeRegistro.textContent = `Chapa/Registro: ${data.registro || "-"}`;
+      elements.badgeBoletins.textContent = `Boletins: ${data.boletins.length > 0 ? data.boletins.join(", ") : "nenhum"}`;
+      
+      // 1) Grupo headers (primeira linha do thead)
+      // Data + Boletim + Boletim_Horas + Ponto_Horas + Diferenca_Horas
+      let groupHtml = `
+        <th rowspan="2" style="background:#0f172a;">Data</th>
+        <th rowspan="2" style="background:#0f172a;">Boletim</th>
+        <th colspan="${headers.length}" class="th-boletim">Boletim (Horas Declaradas)</th>
+        <th colspan="${headers.length}" class="th-ponto">Ponto (Horas Registradas)</th>
+        <th colspan="${headers.length}" class="th-diferenca">Diferença (Boletim - Ponto)</th>
+      `;
+      elements.tableHeaderGroup.innerHTML = groupHtml;
+      
+      // 2) Sub-headers (segunda linha do thead)
+      let subHtml = "";
+      // Boletim headers
+      headers.forEach(h => {
+        subHtml += `<th class="th-boletim" style="font-size:10px; font-weight:600;">${h}</th>`;
+      });
+      // Ponto headers
+      headers.forEach(h => {
+        subHtml += `<th class="th-ponto" style="font-size:10px; font-weight:600;">${h}</th>`;
+      });
+      // Diferenca headers
+      headers.forEach(h => {
+        subHtml += `<th class="th-diferenca" style="font-size:10px; font-weight:600;">${h}</th>`;
+      });
+      elements.tableHeaderSub.innerHTML = subHtml;
+      
+      // 3) Construir as linhas do body
+      let bodyHtml = "";
+      
+      // Zippa as linhas
+      const daysCount = gridB.length;
+      for (let i = 0; i < daysCount; i++) {
+        const rowB = gridB[i]; // [data, boletim_num, val1, val2, ...]
+        const rowP = gridP[i]; // [data, val1, val2, ...]
+        const rowD = gridD[i]; // [data, val1, val2, ...]
+        
+        const dateStr = rowB[0];
+        const boletimNum = rowB[1] || "-";
+        
+        let rowHtml = `<tr>`;
+        rowHtml += `<td class="td-date">${dateStr}</td>`;
+        rowHtml += `<td class="td-boletim-num">${boletimNum}</td>`;
+        
+        // Boletim valores
+        for (let idx = 2; idx < rowB.length; idx++) {
+          rowHtml += `<td class="td-val td-bol">${rowB[idx]}</td>`;
+        }
+        // Ponto valores
+        for (let idx = 1; idx < rowP.length; idx++) {
+          rowHtml += `<td class="td-val td-pto">${rowP[idx]}</td>`;
+        }
+        // Diferenca valores (destacando negativo)
+        for (let idx = 1; idx < rowD.length; idx++) {
+          const val = rowD[idx];
+          const isNeg = val && val.toString().trim().startsWith("-");
+          const classes = isNeg ? "td-val td-dif td-dif-negative" : "td-val td-dif";
+          rowHtml += `<td class="${classes}">${val}</td>`;
+        }
+        
+        rowHtml += `</tr>`;
+        bodyHtml += rowHtml;
+      }
+      
+      // Linha de TOTAIS
+      const totB = data.totais_boletim;
+      const totP = data.totais_ponto;
+      const totD = data.totais_diferenca;
+      
+      let totHtml = `<tr class="totalsRow">`;
+      totHtml += `<td>TOTAIS</td>`;
+      totHtml += `<td class="td-boletim-num"></td>`;
+      
+      // Totais Boletim
+      for (let idx = 2; idx < totB.length; idx++) {
+        totHtml += `<td class="td-val">${totB[idx]}</td>`;
+      }
+      // Totais Ponto
+      for (let idx = 1; idx < totP.length; idx++) {
+        totHtml += `<td class="td-val">${totP[idx]}</td>`;
+      }
+      // Totais Diferenca
+      for (let idx = 1; idx < totD.length; idx++) {
+        const val = totD[idx];
+        const isNeg = val && val.toString().trim().startsWith("-");
+        const classes = isNeg ? "td-val td-dif-negative" : "td-val";
+        totHtml += `<td class="${classes}">${val}</td>`;
+      }
+      totHtml += `</tr>`;
+      bodyHtml += totHtml;
+      
+      elements.tableBody.innerHTML = bodyHtml;
+      elements.tableContainer.style.display = "block";
+    }
+
+    // Carregar Relação de Nomes
+    async function loadMappings() {
+      try {
+        const res = await fetch("/boletim-x-ponto/api/mapping");
+        const data = await res.json();
+        
+        if (data.ok) {
+          state.mappingData = data.mapping;
+          renderMappingsTable(state.mappingData);
+        } else {
+          showToast(data.message || "Erro ao obter relação de nomes.", "error");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Erro ao conectar com a API de mapeamentos.", "error");
+      }
+    }
+
+    // Renderiza a tabela de mapeamentos do popup modal
+    function renderMappingsTable(list) {
+      elements.mappingTableBody.innerHTML = "";
+      if (list.length === 0) {
+        elements.mappingTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; color:var(--muted);">Nenhum mapeamento registrado.</td></tr>`;
+        return;
+      }
+      
+      list.forEach(m => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${m.Nome_Boletim}</td>
+          <td>${m.Nome_Ponto_Mapeado}</td>
+          <td>${m.CPF_Ponto || "-"}</td>
+          <td>${m.PIS_Ponto || "-"}</td>
+          <td style="text-align:center;">
+            <button class="btn btnSecondary" style="padding:4px 8px; font-size:11px;" onclick="editMapping('${m.Nome_Boletim.replace(/'/g, "\\'")}', '${m.Nome_Ponto_Mapeado.replace(/'/g, "\\'")}', '${m.CPF_Ponto}', '${m.PIS_Ponto}')">✏️ Editar</button>
+          </td>
+        `;
+        elements.mappingTableBody.appendChild(tr);
+      });
+    }
+
+    // Callback para carregar os dados de uma linha no formulário de edição do modal
+    window.editMapping = function(nomeB, nomeP, cpf, pis) {
+      elements.mapNomeBoletim.value = nomeB;
+      elements.mapNomePonto.value = nomeP;
+      elements.mapCPF.value = cpf === "null" || !cpf ? "" : cpf;
+      elements.mapPIS.value = pis === "null" || !pis ? "" : pis;
+      showToast("Mapeamento selecionado para edição.", "info");
+    };
+
+    // Event Listeners Configuration
+    function setupListeners() {
+      // Inputs de filtros chamando reload de funcionários
+      elements.dataIni.addEventListener("change", reloadEmployees);
+      elements.dataFim.addEventListener("change", reloadEmployees);
+      elements.selectContrato.addEventListener("change", reloadEmployees);
+      
+      // Seleção de funcionário acionando o grid
+      elements.selectFuncionario.addEventListener("change", loadComparison);
+      
+      // Toggle Switch de formato
+      elements.toggleFormat.addEventListener("change", () => {
+        state.exibirHhmm = elements.toggleFormat.checked;
+        updateToggleLabels();
+        if (state.selectedFuncionario) {
+          loadComparison();
+        }
+      });
+      
+      // Modal Mapping triggers
+      elements.btnOpenMapping.addEventListener("click", async () => {
+        // Limpa campos
+        elements.mapNomeBoletim.value = "";
+        elements.mapNomePonto.value = "";
+        elements.mapCPF.value = "";
+        elements.mapPIS.value = "";
+        elements.inputSearchMapping.value = "";
+        
+        await loadMappings();
+        elements.mappingModal.classList.add("show");
+      });
+      
+      elements.btnCloseMapping.addEventListener("click", () => {
+        elements.mappingModal.classList.remove("show");
+      });
+      
+      // Busca local no Modal Mappings
+      elements.inputSearchMapping.addEventListener("input", (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        if (!query) {
+          renderMappingsTable(state.mappingData);
+          return;
+        }
+        
+        const filtered = state.mappingData.filter(m => 
+          m.Nome_Boletim.toLowerCase().includes(query) ||
+          m.Nome_Ponto_Mapeado.toLowerCase().includes(query) ||
+          (m.CPF_Ponto && m.CPF_Ponto.includes(query)) ||
+          (m.PIS_Ponto && m.PIS_Ponto.includes(query))
+        );
+        renderMappingsTable(filtered);
+      });
+      
+      // Salvar Mapeamento
+      elements.btnSaveMapping.addEventListener("click", async () => {
+        const nomeB = elements.mapNomeBoletim.value.trim();
+        const nomeP = elements.mapNomePonto.value.trim();
+        const cpf = elements.mapCPF.value.trim();
+        const pis = elements.mapPIS.value.trim();
+        
+        if (!nomeB || !nomeP) {
+          showToast("Nome Boletim e Nome Ponto são obrigatórios.", "error");
+          return;
+        }
+        
+        try {
+          const res = await fetch("/boletim-x-ponto/api/mapping", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nome_boletim: nomeB,
+              nome_ponto_mapeado: nomeP,
+              cpf_ponto: cpf,
+              pis_ponto: pis
+            })
+          });
+          const data = await res.json();
+          
+          if (data.ok) {
+            showToast("Mapeamento salvo com sucesso!", "success");
+            elements.mapNomeBoletim.value = "";
+            elements.mapNomePonto.value = "";
+            elements.mapCPF.value = "";
+            elements.mapPIS.value = "";
+            
+            await loadMappings();
+            // Recarrega comparação atual se houver
+            if (state.selectedFuncionario) {
+              loadComparison();
+            }
+          } else {
+            showToast(data.message || "Erro ao salvar mapeamento.", "error");
+          }
+        } catch (err) {
+          console.error(err);
+          showToast("Falha de comunicação com o servidor.", "error");
+        }
+      });
+      
+      // Exportações
+      elements.btnExportExcel.addEventListener("click", () => {
+        triggerIndividualExport("excel", "comparacao");
+      });
+      elements.btnExportPDF.addEventListener("click", () => {
+        triggerIndividualExport("pdf", "comparacao");
+      });
+      
+      elements.btnConsolidado.addEventListener("click", () => {
+        triggerConsolidatedExport();
+      });
+
+      // Configuração de Drag & Drop para os Uploads
+      setupDragAndDrop(elements.dropzoneBoletim, elements.inputBoletim, "/boletim-x-ponto/api/upload/boletim");
+      setupDragAndDrop(elements.dropzonePonto, elements.inputPonto, "/boletim-x-ponto/api/upload/ponto");
+    }
+
+    // Realiza a chamada de download para relatórios individuais
+    function triggerIndividualExport(format, reportType) {
+      const emp = state.selectedFuncionario;
+      const di = elements.dataIni.value;
+      const df = elements.dataFim.value;
+      const hourFormat = state.exibirHhmm ? "hhmm" : "decimal";
+      
+      if (!emp) return;
+      
+      const url = `/boletim-x-ponto/api/export/individual?employee=${encodeURIComponent(emp)}&data_ini=${di}&data_fim=${df}&format=${format}&report_type=${reportType}&hour_format=${hourFormat}`;
+      window.open(url, "_blank");
+      showToast("Exportando relatório individual...", "success");
+    }
+
+    // Realiza a chamada de download para o Zip consolidado
+    function triggerConsolidatedExport() {
+      const di = elements.dataIni.value;
+      const df = elements.dataFim.value;
+      const hourFormat = state.exibirHhmm ? "hhmm" : "decimal";
+      
+      // Vamos obter os contratos selecionados (ou se for todos, obter todos os contratos disponíveis)
+      const selectedContrato = elements.selectContrato.value;
+      let contratosStr = "";
+      
+      if (selectedContrato) {
+        contratosStr = selectedContrato;
+      } else {
+        // Zippa todos os contratos listados
+        const contracts = Array.from(elements.selectContrato.options)
+                               .map(o => o.value)
+                               .filter(v => v !== "");
+        if (contracts.length === 0) {
+          showToast("Nenhum contrato cadastrado para exportação.", "error");
+          return;
+        }
+        contratosStr = contracts.join(",");
+      }
+      
+      const url = `/boletim-x-ponto/api/export/totais-consolidados?contratos=${encodeURIComponent(contratosStr)}&data_ini=${di}&data_fim=${df}&hour_format=${hourFormat}`;
+      window.open(url, "_blank");
+      showToast("Exportando Zip consolidado por contrato...", "success");
+    }
+
+    // Handler genérico de Drag and Drop
+    function setupDragAndDrop(dropzone, fileInput, uploadUrl) {
+      // Clique no dropzone abre o file picker
+      dropzone.addEventListener("click", () => fileInput.click());
+      
+      // Alteração do arquivo envia imediatamente
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) {
+          handleFileUpload(fileInput.files[0], uploadUrl, dropzone);
+        }
+      });
+      
+      // Eventos de Drag over / leave
+      ["dragenter", "dragover"].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropzone.classList.add("dragover");
+        }, false);
+      });
+      
+      ["dragleave", "drop"].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove("dragover");
+        }, false);
+      });
+      
+      // Drop event
+      dropzone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+          handleFileUpload(files[0], uploadUrl, dropzone);
+        }
+      });
+    }
+
+    // Processa o Envio do Arquivo para a API
+    async function handleFileUpload(file, uploadUrl, dropzone) {
+      const originalText = dropzone.querySelector(".dropzoneText").textContent;
+      const originalSub = dropzone.querySelector(".dropzoneSubtext").textContent;
+      const icon = dropzone.querySelector(".dropzoneIcon");
+      
+      // UI visual de progresso
+      dropzone.querySelector(".dropzoneText").textContent = "Enviando arquivo...";
+      dropzone.querySelector(".dropzoneSubtext").textContent = file.name;
+      icon.innerHTML = `<div class="spinner"></div>`;
+      
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      try {
+        const res = await fetch(uploadUrl, {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        
+        // Retorna UI ao estado inicial
+        dropzone.querySelector(".dropzoneText").textContent = originalText;
+        dropzone.querySelector(".dropzoneSubtext").textContent = originalSub;
+        icon.innerHTML = uploadUrl.includes("boletim") ? "📄" : "📊";
+        
+        if (data.ok) {
+          showToast(data.message || "Upload processado com sucesso!", "success");
+          
+          // Recarregar os filtros e dropdowns caso novos contratos/datas tenham entrado
+          await loadFilters();
+        } else {
+          showToast(data.message || "Falha ao processar arquivo.", "error");
+        }
+      } catch (err) {
+        console.error(err);
+        dropzone.querySelector(".dropzoneText").textContent = originalText;
+        dropzone.querySelector(".dropzoneSubtext").textContent = originalSub;
+        icon.innerHTML = uploadUrl.includes("boletim") ? "📄" : "📊";
+        showToast("Erro na conexão com o servidor ao fazer upload.", "error");
+      }
+    }
+  </script>
+</body>
+</html>

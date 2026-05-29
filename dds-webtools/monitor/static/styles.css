@@ -61,7 +61,7 @@ body.modalOpen {
 
 .topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   gap: 24px;
   align-items: center;
   padding: 16px 32px;
@@ -407,6 +407,9 @@ button:disabled {
   background: rgba(255, 255, 255, .04);
 }
 
+
+
+
 .grid {
   padding: 14px 18px 28px;
   display: grid;
@@ -667,7 +670,7 @@ button:disabled {
 .tile:focus-visible {
   transform: translateY(-4px) scale(1.01);
   box-shadow: 0 18px 38px rgba(0, 0, 0, .36);
-  z-index: 30;
+  z-index: 200;
 }
 
 .tileBorderYellow {
@@ -931,10 +934,11 @@ button:disabled {
 }
 
 .ddsTrackExpanded {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px 10px;
+  justify-items: center;
+  align-items: start;
 }
 
 .ddsDayDot {
@@ -1041,7 +1045,7 @@ button:disabled {
   transform: translateX(-25%) translateY(8px) scale(.98);
   transform-origin: center top;
   transition: opacity .18s ease, visibility .18s ease, transform .18s ease;
-  z-index: 2;
+  z-index: 201;
 }
 
 /* Temporariamente comentado para suprimir o espaco das bolinhas
@@ -2611,6 +2615,10 @@ button:disabled {
   background: radial-gradient(circle at 30% 30%, #cbd5e1 0%, #64748b 60%, #334155 100%) !important;
   box-shadow: inset -2px -2px 3px rgba(0,0,0,0.5), inset 1px 1px 2px rgba(255,255,255,0.9), 0 2px 3px rgba(0,0,0,0.6) !important;
 }
+.dotTeal { 
+  background: radial-gradient(circle at 30% 30%, #a7f3d0 0%, #06b6d4 60%, #0891b2 100%) !important;
+  box-shadow: inset -2px -2px 3px rgba(0,0,0,0.5), inset 1px 1px 2px rgba(255,255,255,0.9), 0 2px 3px rgba(0,0,0,0.6) !important;
+}
 
 
 .ddsDot {
@@ -2644,3 +2652,178 @@ button:disabled {
   transform: scale(1.3);
   box-shadow: inset -2px -2px 3px rgba(0,0,0,0.5), inset 1px 1px 3px rgba(255,255,255,1), 0 0 5px rgba(255,255,255,0.4), 0 2px 4px rgba(0,0,0,0.7) !important;
 }
+
+.ddsDot--future {
+  background: transparent !important;
+  border: 1.5px dashed rgba(255, 255, 255, 0.25) !important;
+  box-shadow: none !important;
+  margin: 0 2px;
+}
+
+/* Toggle para Exibir/Ocultar DDS */
+.ddsToggleContainer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.ddsToggleContainer:hover {
+  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+.ddsToggleCheckbox {
+  display: none;
+}
+
+.ddsToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.ddsToggleCheckbox:checked + .ddsToggleLabel {
+  color: var(--text);
+}
+
+.ddsToggleCheckbox:checked + .ddsToggleLabel .ddsToggleIcon {
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+
+.ddsToggleIcon {
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAINEL DE ÚLTIMA ATIVIDADE NO CABEÇALHO
+   ═══════════════════════════════════════════════════════════════════════════ */
+.topbarActivity {
+  min-width: 160px;
+  max-width: 280px;
+  width: min(20vw, 280px);
+  align-self: center;
+  justify-self: start;
+  position: relative;
+  z-index: 4;
+}
+
+.activityFeedPanel {
+  position: relative;
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.62));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.activityFeedPanelHeader {
+  min-height: unset;
+}
+
+.activityFeedList {
+  display: grid;
+  gap: 3px;
+  padding: 7px 10px 9px 10px;
+  height: 123px; /* Altura fixa de 5 linhas: 5 * 19px + 4 * 3px + 16px padding vertical */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.3) transparent;
+}
+
+.activityFeedList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.activityFeedList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activityFeedList::-webkit-scrollbar-thumb {
+  background-color: rgba(96, 165, 250, 0.3);
+  border-radius: 4px;
+}
+
+.activityFeedItem {
+  display: grid;
+  grid-template-columns: 42px 58px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  min-height: 19px;
+  font-size: 11px;
+  line-height: 1.15;
+  color: #e5eefc;
+}
+
+.activityFeedTime {
+  font-weight: 900;
+  color: #bfdbfe;
+  font-variant-numeric: tabular-nums;
+}
+
+.activityFeedTeam {
+  font-weight: 900;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityFeedLabel {
+  color: rgba(226, 232, 240, 0.86);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityFeedEmpty,
+.activityFeedError {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.activityFeedError {
+  color: #fecaca;
+}
+
+@media (max-width: 1420px) {
+  .topbarActivity {
+    width: min(18vw, 240px);
+    min-width: 140px;
+  }
+
+  .activityFeedItem {
+    grid-template-columns: 38px 52px minmax(0, 1fr);
+    gap: 6px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .topbarActivity {
+    display: none;
+  }
+}
+

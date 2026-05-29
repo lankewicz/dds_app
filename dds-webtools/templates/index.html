@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
   <link rel="stylesheet" href="/static/messaging.css?v={{ app_version }}">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon-monitor.svg">
   
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.11.1/firebase-app-compat.js"></script>
@@ -31,6 +32,14 @@
         </div>
         <span class="srOnly" id="empresaLabel">-</span>
       </div>
+    </div>
+
+    <div class="topbarActivity">
+      <section class="activityFeedPanel activityFeedPanelHeader" id="activityFeedPanel" aria-live="polite">
+        <div class="activityFeedList" id="activityFeedList">
+          <div class="activityFeedEmpty">Carregando atividades...</div>
+        </div>
+      </section>
     </div>
 
     <div class="topbarCenter">
@@ -93,6 +102,13 @@
         <select id="teamSelect">
           <option value="">Todas as equipes</option>
         </select>
+        <div class="ddsToggleContainer" id="ddsToggleBtn" title="Exibir histórico e presença do DDS nas equipes">
+          <input type="checkbox" id="ddsToggle" class="ddsToggleCheckbox" />
+          <label for="ddsToggle" class="ddsToggleLabel">
+            <span class="ddsToggleIcon">📊</span>
+            <span>Exibir DDS</span>
+          </label>
+        </div>
       </div>
 
       <div class="topbarSummaryRow">
@@ -103,6 +119,7 @@
   </header>
 
   <main class="mainContent">
+
     <div id="skeletonGrid" class="skeletonContainer">
       <!-- 10 cards pulsantes para o carregamento inicial -->
       <div class="skeletonTile"><div class="skeletonCircle"></div><div class="skeletonLine short"></div><div class="skeletonLine mid"></div><div class="skeletonLine"></div></div>
@@ -271,8 +288,8 @@
                 <div class="liveSummaryItem"><span>Há</span><strong id="teamLiveAgo">-</strong></div>
               </div>
 
-              <div class="modalSectionTitle" style="margin-top: 1.5rem; display: none !important;">Presenças no DDS (Últimos 20 dias)</div>
-              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem; display: none !important;">
+              <div class="modalSectionTitle modalSectionTitleDds" style="margin-top: 1.5rem; display: none;">Presenças no DDS (Últimas 3 semanas)</div>
+              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem; display: none;">
                 <div class="popoverEmpty">Nenhum DDS registrado</div>
               </div>
 
