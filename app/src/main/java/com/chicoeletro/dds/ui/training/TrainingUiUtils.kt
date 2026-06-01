@@ -224,3 +224,44 @@ fun buildMonthParticipationDays(
         )
     }
 }
+
+fun buildRollingParticipationDays(
+    selectedTrainingId: String?,
+    trainings: List<Training>,
+    completedTrainingIds: Set<String>,
+    today: LocalDate = LocalDate.now(),
+    numDays: Int = 30
+): List<MonthParticipationDay> {
+    val selectedDate = selectedTrainingId
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::trainingIsoDateFromId)
+
+    val targetDate = selectedDate ?: today
+
+    val dates = (0 until numDays).map { offset ->
+        targetDate.minusDays(offset.toLong())
+    }.reversed()
+
+    val trainingsByDate = trainings
+        .mapNotNull { training ->
+            val date = trainingIsoDateFromId(training.id) ?: return@mapNotNull null
+            date to training
+        }
+        .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+
+    return dates.map { date ->
+        val dayTrainings = trainingsByDate[date].orEmpty()
+        val isPresent = dayTrainings.any { it.id in completedTrainingIds }
+        val isAbsent = dayTrainings.isNotEmpty() && !isPresent && dayTrainings.all {
+            isExpiredTrainingId(it.id, today)
+        }
+
+        MonthParticipationDay(
+            dayNumber = date.dayOfMonth,
+            hasTraining = dayTrainings.isNotEmpty(),
+            isPresent = isPresent,
+            isAbsent = isAbsent,
+            isSelected = date == targetDate
+        )
+    }
+}

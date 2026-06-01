@@ -175,7 +175,21 @@ object TurnoFirestoreUploader {
             "deviceId" to actor.deviceId,
             "deviceModel" to actor.deviceModel,
             "appVersion" to actor.appVersion
-        )
+        ),
+        "bdoList" to bdoList?.map { ss ->
+            mapOf(
+                "ssId" to ss.ssId,
+                "status" to ss.status.name,
+                "cancelReason" to ss.cancelReason,
+                "transitions" to ss.transitions.map { t ->
+                    mapOf(
+                        "status" to t.status.name,
+                        "timestampMs" to t.timestampMs,
+                        "km" to t.km
+                    )
+                }
+            )
+        }
     )
 
     private fun TurnoStateRemote.toFirestoreMap(): Map<String, Any?> = mapOf(
@@ -213,6 +227,20 @@ object TurnoFirestoreUploader {
         "lastMotivoOutro" to lastMotivoOutro,
 
         "lastWasDescansoSemanal" to lastWasDescansoSemanal,
-        "deviceIdLastWriter" to deviceIdLastWriter
+        "deviceIdLastWriter" to deviceIdLastWriter,
+        "bdoList" to bdoList?.map { ss ->
+            mapOf(
+                "ssId" to ss.ssId,
+                "status" to ss.status.name,
+                "cancelReason" to ss.cancelReason,
+                "transitions" to ss.transitions.map { t ->
+                    mapOf(
+                        "status" to t.status.name,
+                        "timestampMs" to t.timestampMs,
+                        "km" to t.km
+                    )
+                }
+            )
+        }
     )
 }

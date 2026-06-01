@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.chicoeletro.dds.data.Training
 import com.chicoeletro.dds.ui.training.buildTrainingDisplay
 import com.chicoeletro.dds.ui.training.trainingTitleFromId
@@ -44,7 +46,8 @@ import com.chicoeletro.dds.storage.TrainingExecSyncState
 
 @Composable
 fun LeftSidebarSection(
-    widthDp: Int,
+    widthDp: Int = 220,
+    modifier: Modifier = Modifier.width(widthDp.dp),
     online: Boolean,
     isSyncing: Boolean,
     overallTotal: Int,
@@ -85,7 +88,7 @@ fun LeftSidebarSection(
         label = "alpha"
     )
 
-    Column(Modifier.width(widthDp.dp).background(Color(0xFFEFEFEF))) {
+    Column(modifier.background(Color(0xFFEFEFEF))) {
 
         Row(
             Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -195,36 +198,44 @@ fun LeftSidebarSection(
             }
         }
 
-        Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Card da Esquerda (Identificação da Equipe)
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onClickEquipe() },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFCCEEFF)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = equipe.ifBlank { "(não definida)" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Card da Direita (Status do Turno)
             TurnoBadge(
                 estado = turnoEstado,
                 nocSs = turnoNocSs,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 onClick = onClickTurno
             )
-        }
-
-
-        Card(
-            Modifier.fillMaxWidth().padding(8.dp).clickable { onClickEquipe() },
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFCCEEFF)),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Box(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(8.dp)) {
-                    Text("Equipe: ${equipe.ifBlank { "(não definida)" }}", style = MaterialTheme.typography.bodyMedium)
-                    if (eletricistas.isNotEmpty() && equipe.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        eletricistas.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                    }
-                }
-                IconButton(
-                    onClick = onClickEquipe,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
-                ) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Editar equipe", tint = Color.DarkGray)
-                }
-            }
         }
     }
 }

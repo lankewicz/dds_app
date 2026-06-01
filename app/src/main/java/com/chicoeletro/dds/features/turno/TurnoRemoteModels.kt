@@ -55,7 +55,8 @@ data class TurnoEventRemote(
     val membersSnapshot: List<String>? = null,
 
     val photoAudit: TurnoPhotoAudit,
-    val actor: TurnoActor
+    val actor: TurnoActor,
+    val bdoList: List<BdoSs>? = null
 )
 
 /**
@@ -102,7 +103,8 @@ data class TurnoStateRemote(
     val lastMotivoOutro: String? = null,
 
     val lastWasDescansoSemanal: Boolean = false,
-    val deviceIdLastWriter: String
+    val deviceIdLastWriter: String,
+    val bdoList: List<BdoSs>? = null
 )
 
 /**

@@ -114,6 +114,7 @@ object TrainingExecLocalStore {
         context.trainingExecDataStore.edit { prefs ->
             val current = prefs[prefKey]
             val map = if (current.isNullOrBlank()) mutableMapOf() else parse(current).toMutableMap()
+            map[trainingId] = entry
             prefs[prefKey] = toJson(map)
         }
     }

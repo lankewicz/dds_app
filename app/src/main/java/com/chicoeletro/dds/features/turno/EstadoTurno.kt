@@ -66,7 +66,13 @@ data class TurnoSnapshot(
 
     // Controle de Interjornada (Art 66 e 67)
     val lastClosedAtMs: Long? = null,
-    val lastWasDescansoSemanal: Boolean = false
+    val lastWasDescansoSemanal: Boolean = false,
+    val transicoes: List<TurnoTransition> = emptyList()
+)
+
+data class TurnoTransition(
+    val estado: EstadoTurno,
+    val timestampMs: Long
 )
 
 data class PlanoTransicao(

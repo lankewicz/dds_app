@@ -68,6 +68,15 @@ object TurnoLocalStore {
         val arr = JSONArray()
         s.ultimosKmLast3.forEach { arr.put(it) }
         o.put("ultimosKmLast3", arr)
+
+        val trans = JSONArray()
+        s.transicoes.forEach { t ->
+            val obj = JSONObject()
+            obj.put("estado", t.estado.name)
+            obj.put("timestampMs", t.timestampMs)
+            trans.put(obj)
+        }
+        o.put("transicoes", trans)
         return o.toString()
     }
     private fun fromJson(raw: String): TurnoSnapshot {
@@ -163,7 +172,18 @@ object TurnoLocalStore {
             lastMotivo = motivo,
             lastMotivoOutro = motivoOutro,
             lastClosedAtMs = lastClosedAtMs,
-            lastWasDescansoSemanal = lastWasDescansoSemanal
+            lastWasDescansoSemanal = lastWasDescansoSemanal,
+            transicoes = buildList {
+                val transArr = o.optJSONArray("transicoes") ?: JSONArray()
+                for (i in 0 until transArr.length()) {
+                    val item = transArr.optJSONObject(i)
+                    if (item != null) {
+                        val est = EstadoTurno.valueOf(item.optString("estado"))
+                        val ts = item.optLong("timestampMs")
+                        add(TurnoTransition(est, ts))
+                    }
+                }
+            }
         )
     }
 }

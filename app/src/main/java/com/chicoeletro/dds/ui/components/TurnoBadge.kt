@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,48 +43,22 @@ fun TurnoBadge(
         )
     }
 
-    val nocLabel = nocSs?.trim()?.takeIf { it.isNotEmpty() }?.let { "SS/NOC: $it" }
-    val textColor = Color.White
-
     Surface(
-        color = fg,
+        color = bg,
         shape = MaterialTheme.shapes.small,
         modifier = modifier.clickable { onClick() }
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Linha 0: Rótulo
-            Text(
-                text = "Turno:",
-                color = textColor,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1
-            )
-
-            Spacer(Modifier.height(2.dp))
-
-            // Linha 1: Estado
             Text(
                 text = label,
-                color = textColor, // texto claro
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                color = fg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.ExtraBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-
-            // Linha 2: SS/NOC (somente quando tiver valor)
-            if (nocLabel != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = nocLabel,
-                    color = textColor,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
         }
     }
 }

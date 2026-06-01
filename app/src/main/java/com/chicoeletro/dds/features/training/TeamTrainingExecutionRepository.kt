@@ -84,6 +84,13 @@ class TeamTrainingExecutionRepository(
         val duracao: String
     )
 
+    suspend fun getExecutedTrainingsForMonth(teamName: String, ym: java.time.YearMonth): Map<String, ExecStatus> {
+        val teamKey = teamKeyOf(teamName)
+        val snap = monthDoc(teamKey, ym).get().await()
+        if (!snap.exists()) return emptyMap()
+        return parseExecutedTrainings(snap)
+    }
+
     /**
      * Listener em tempo real (offline-first via cache do Firestore).
      * Retorna um ListenerRegistration para ser removido no onDispose().

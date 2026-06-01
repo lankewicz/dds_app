@@ -172,11 +172,13 @@ class TurnoController(
 
         val nowMs = System.currentTimeMillis()
         val nowIso = Instant.now().toString()
+        val newTrans = snap.transicoes + TurnoTransition(to, nowMs)
         var updated = snap.copy(
             estado = to,
             lastChangedAtIso = nowIso,
             clientUpdatedAtMs = maxOf(snap.clientUpdatedAtMs, nowMs),
-            lastEventAtClientMs = maxOf(snap.lastEventAtClientMs, nowMs)
+            lastEventAtClientMs = maxOf(snap.lastEventAtClientMs, nowMs),
+            transicoes = newTrans
         )
 
         // -------- ODOMETRIA (sempre somando) --------

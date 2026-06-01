@@ -77,6 +77,29 @@ object TurnoPendingStore {
         put("actorDeviceId", ev.actor.deviceId)
         put("actorDeviceModel", ev.actor.deviceModel)
         put("actorAppVersion", ev.actor.appVersion)
+
+        val bdoArr = JSONArray()
+        (ev.bdoList ?: emptyList()).forEach { ss ->
+            val ssObj = JSONObject()
+            ssObj.put("ssId", ss.ssId)
+            ssObj.put("status", ss.status.name)
+            if (ss.cancelReason != null) {
+                ssObj.put("cancelReason", ss.cancelReason)
+            }
+            val transArr = JSONArray()
+            ss.transitions.forEach { t ->
+                val to = JSONObject()
+                to.put("status", t.status.name)
+                to.put("timestampMs", t.timestampMs)
+                if (t.km != null) {
+                    to.put("km", t.km)
+                }
+                transArr.put(to)
+            }
+            ssObj.put("transitions", transArr)
+            bdoArr.put(ssObj)
+        }
+        put("bdoList", bdoArr)
     }
 
     private fun fromJson(o: JSONObject): TurnoEventRemote {
@@ -124,6 +147,31 @@ object TurnoPendingStore {
             appVersion = o.optString("actorAppVersion")
         )
 
+        val bdoArr = o.optJSONArray("bdoList") ?: JSONArray()
+        val bdoList = buildList {
+            for (i in 0 until bdoArr.length()) {
+                val ssObj = bdoArr.getJSONObject(i)
+                val ssId = ssObj.getString("ssId")
+                val status = SsStatus.valueOf(ssObj.getString("status"))
+                val cancelReason = if (ssObj.has("cancelReason")) ssObj.getString("cancelReason") else null
+                val transArr = ssObj.optJSONArray("transitions") ?: JSONArray()
+                val trans = buildList {
+                    for (j in 0 until transArr.length()) {
+                        val toVal = transArr.getJSONObject(j)
+                        val kmVal = if (toVal.has("km") && !toVal.isNull("km")) toVal.getLong("km") else null
+                        add(
+                            SsTransition(
+                                status = SsStatus.valueOf(toVal.getString("status")),
+                                timestampMs = toVal.getLong("timestampMs"),
+                                km = kmVal
+                            )
+                        )
+                    }
+                }
+                add(BdoSs(ssId, status, trans, cancelReason))
+            }
+        }
+
         return TurnoEventRemote(
             empresa = empresa,
             equipe = equipe,
@@ -146,7 +194,8 @@ object TurnoPendingStore {
                 storagePath = storagePath,
                 thumbPath = thumbPath
             ),
-            actor = actor
+            actor = actor,
+            bdoList = bdoList
         )
     }
 

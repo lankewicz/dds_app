@@ -31,6 +31,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.foundation.layout.offset
+import com.chicoeletro.dds.ui.training.buildRollingParticipationDays
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -117,7 +126,7 @@ import com.chicoeletro.dds.features.turno.TurnoStateRemote
 import com.chicoeletro.dds.features.turno.TurnoSessionRemote
 import com.chicoeletro.dds.features.turno.TurnoActor
 import com.chicoeletro.dds.features.turno.TurnoPhotoAudit
-import com.chicoeletro.dds.ui.components.TurnoControlDialog
+import com.chicoeletro.dds.ui.components.TurnoControlScreen
 import com.chicoeletro.dds.ui.components.CommunicationScreen
 import com.chicoeletro.dds.ui.components.DdsWarningDialog
 import com.chicoeletro.dds.ui.components.UpdateBanner
@@ -191,6 +200,8 @@ fun MainLayoutContainer() {
     val syncState by syncViewModel.state.collectAsState()
 
     var selectedTraining by rememberSaveable { mutableStateOf<String?>(null) }
+    var isInDdsModule by rememberSaveable { mutableStateOf(false) }
+    var showAbastecimento by rememberSaveable { mutableStateOf(false) }
     var showForm by rememberSaveable { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var teamDialogMandatory by rememberSaveable { mutableStateOf(false) }
@@ -552,6 +563,267 @@ fun MainLayoutContainer() {
         else -> Color.Gray
     }
 
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
+
+    val showTurnoContent = @Composable {
+        if (equipe.isNotBlank()) {
+            val ctrl = remember(equipe) { TurnoController(context, equipe) }
+            TurnoControlScreen(
+                equipe = equipe,
+                snapshot = turnoSnap,
+                onDismiss = { showTurnoControl = false },
+                online = online,
+                onSaveNocSs = { noc: String? ->
+                    runCatching {
+                        val after = ctrl.atualizarNocSs(noc)
+                        turnoSnap = after
+
+                        val bdoList = com.chicoeletro.dds.features.turno.BdoLocalStore.loadToday(context, equipe)
+
+                        val state = TurnoStateRemote(
+                            empresa = empresa,
+                            equipe = equipe,
+                            turnoId = after.turnoId,
+                            isOpen = after.isOpen,
+                            membersSnapshot = after.membersSnapshot,
+                            openedAtClientMs = after.openedAtClientMs,
+                            closedAtClientMs = null,
+                            closeReason = null,
+                            clientUpdatedAtMs = after.clientUpdatedAtMs,
+                            updatedAtIso = after.lastChangedAtIso ?: Instant.ofEpochMilli(after.clientUpdatedAtMs).toString(),
+                            lastEventId = after.lastEventId,
+                            lastEventAtClientMs = after.lastEventAtClientMs,
+                            estado = after.estado.name,
+                            nocSs = after.nocSs,
+                            kmTotalAbs = after.kmTotalAbs,
+                            kmInicioTotalAbs = after.kmInicioTotalAbs,
+                            kmDeltaTurno = after.kmDeltaTurno,
+                            kmInicioTurno4 = after.kmInicioLast3,
+                            inicioTurnoAtIso = after.inicioTurnoAtIso,
+                            odometroVerificado = after.odometroVerificado,
+                            ultimosKm4 = after.ultimosKmLast3,
+                            eventosKmCounter = after.eventosKmCounter,
+                            lastMotivo = after.lastMotivo?.name,
+                            lastMotivoOutro = after.lastMotivoOutro,
+                            lastWasDescansoSemanal = after.lastWasDescansoSemanal,
+                            deviceIdLastWriter = deviceId,
+                            bdoList = bdoList
+                        )
+
+                        TurnoFirestoreUploader.pushState(
+                            empresa = empresa,
+                            equipe = equipe,
+                            state = state
+                        )
+                    }
+                },
+                onOpenOdometerCamera = { target, motivo, motivoOutro ->
+                    // salva contexto para reabrir direto no step KM depois da foto
+                    odoPendingTarget = target
+                    odoPendingMotivo = motivo
+                    odoPendingMotivoOutro = motivoOutro
+                    showTurnoControl = false
+                    abrirCameraOdo = true
+                },
+                prefillKmTotal = odoKmTotalPrefill,
+                startAtKmTarget = odoPendingTarget,
+                prefillMotivo = odoPendingMotivo,
+                prefillMotivoOutro = odoPendingMotivoOutro,
+                onRequestTransition = { req: RequisicaoTransicao ->
+
+                    // ===== ABRIR TURNO (sessão determinística) =====
+                    // Regra: mudança de membros implica fechar e abrir novo turno.
+                    if (!turnoSnap.isOpen && (req.to == EstadoTurno.ABERTO || req.to == EstadoTurno.DESLOCAMENTO_ESPECIAL)) {
+                        val opened = runCatching { ctrl.abrirTurno(empresa, eletricistas) }.getOrNull()
+                            ?: return@TurnoControlScreen
+                        turnoSnap = opened
+
+                        // Clear the local BDO list for this team when opening a new shift session
+                        com.chicoeletro.dds.features.turno.BdoLocalStore.saveToday(context, equipe, emptyList())
+
+                        // Sessão: grava openedAtServer (oficial) quando online
+                        val sessionOpen = TurnoSessionRemote(
+                            empresa = empresa,
+                            equipe = equipe,
+                            turnoId = opened.turnoId!!,
+                            membersSnapshot = opened.membersSnapshot,
+                            openedAtClientMs = opened.openedAtClientMs!!,
+                            openedByUid = null,
+                            openedByDeviceId = deviceId
+                        )
+                        scope.launch {
+                            runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionOpen) }
+                        }
+                    }
+
+                    val plano = runCatching {
+                        ctrl.plan(
+                            to = req.to,
+                            proposedKmTotalAbs = req.kmTotalAbs,
+                            proposedKmLast3 = req.kmLast3
+                        )
+                    }
+                        .onFailure { e ->
+                            android.util.Log.w("DDS-TURNO", "Falha plan: ${e.message}", e)
+                            Toast.makeText(context, e.message ?: "Falha ao planejar transição", Toast.LENGTH_LONG).show()
+                        }
+                        .getOrNull() ?: return@TurnoControlScreen
+
+                    val after = runCatching { ctrl.confirm(req, photoProvided = false) }
+                        .onFailure { e ->
+                            android.util.Log.w("DDS-TURNO", "Falha confirm: ${e.message}", e)
+                            Toast.makeText(context, e.message ?: "Falha ao confirmar transição", Toast.LENGTH_LONG).show()
+                        }
+                        .getOrNull() ?: return@TurnoControlScreen
+
+                    val before = turnoSnap
+                    // Atualiza UI local imediatamente
+                    turnoSnap = after
+
+                    // -------------------------
+                    // Firebase (event + state) - offline-first
+                    // -------------------------
+                    // eventId determinístico (offline-first)
+                    val occurredAtMs = after.lastEventAtClientMs
+                    val tsIso = Instant.ofEpochMilli(occurredAtMs).toString()
+                    val eventId = "${deviceId}_${occurredAtMs}_${req.to.name}"
+
+                    // kmDeltaTurno: no modelo OPÇÃO 1, o controller acumula sempre.
+                    // Só envia quando FECHA (ABERTO -> FECHADO).
+                    val kmDeltaTurno: Int? =
+                        if (before.estado == EstadoTurno.ABERTO && req.to == EstadoTurno.FECHADO) after.kmDeltaTurno else null
+
+                    val actor = TurnoActor(
+                        deviceId = deviceId,
+                        deviceModel = Build.MODEL ?: "unknown",
+                        appVersion = appVersion
+                    )
+
+                    val photoAudit = TurnoPhotoAudit(
+                        required = plano.pedeFoto,
+                        photoId = null,       // sem foto por enquanto
+                        storagePath = null,   // futuro
+                        thumbPath = null      // futuro
+                    )
+
+                    val bdoList = com.chicoeletro.dds.features.turno.BdoLocalStore.loadToday(context, equipe)
+
+                    val event = TurnoEventRemote(
+                        empresa = empresa,
+                        equipe = equipe,
+                        turnoId = after.turnoId!!,
+                        eventId = eventId,
+                        occurredAtClientMs = occurredAtMs,
+                        clientCreatedAtIso = tsIso,
+                        from = before.estado.name,
+                        to = req.to.name,
+                        // OPÇÃO 1: KM total (quando informado)
+                        kmTotalAbs = req.kmTotalAbs,
+                        // Mantemos km4 como "últimos 3" por enquanto (compat com modelo remoto atual).
+                        // Se veio apenas KM total, o dialog/controller deve derivar kmLast3.
+                        km4 = req.kmLast3,
+                        // OPÇÃO 1: início do turno (totalAbs quando existir)
+                        kmInicioTotalAbs = before.kmInicioTotalAbs,
+                        kmInicioTurno4 = before.kmInicioLast3,
+                        kmDeltaTurno = kmDeltaTurno,
+                        nocSs = before.nocSs,
+                        motivo = req.motivo?.name,
+                        motivoOutro = req.motivoOutro?.trim()?.takeIf { it.isNotBlank() },
+                        photoAudit = photoAudit,
+                        actor = actor,
+                        bdoList = bdoList
+                    )
+
+                    // Estado “último vence”
+                    val state = TurnoStateRemote(
+                        empresa = empresa,
+                        equipe = equipe,
+
+                        turnoId = after.turnoId,
+                        isOpen = after.isOpen,
+                        membersSnapshot = after.membersSnapshot,
+
+                        openedAtClientMs = after.openedAtClientMs,
+                        closedAtClientMs = if (req.to == EstadoTurno.FECHADO) occurredAtMs else null,
+                        closeReason = null,
+
+                        clientUpdatedAtMs = after.clientUpdatedAtMs,
+                        updatedAtIso = after.lastChangedAtIso ?: tsIso,
+
+                        lastEventId = eventId,
+                        lastEventAtClientMs = occurredAtMs,
+
+                        estado = after.estado.name,
+                        nocSs = after.nocSs,
+
+                        // OPÇÃO 1: odometria no current
+                        kmTotalAbs = after.kmTotalAbs,
+                        kmInicioTotalAbs = after.kmInicioTotalAbs,
+                        kmDeltaTurno = after.kmDeltaTurno,
+
+                        kmInicioTurno4 = after.kmInicioLast3,
+                        inicioTurnoAtIso = after.inicioTurnoAtIso,
+
+                        odometroVerificado = after.odometroVerificado,
+                        ultimosKm4 = after.ultimosKmLast3,
+                        eventosKmCounter = after.eventosKmCounter,
+
+                        lastMotivo = after.lastMotivo?.name,
+                        lastMotivoOutro = after.lastMotivoOutro,
+
+                        lastWasDescansoSemanal = after.lastWasDescansoSemanal,
+                        deviceIdLastWriter = deviceId,
+                        bdoList = bdoList
+                    )
+
+                    // Se fechou o turno, registra closedAtServer (oficial) na sessão
+                    if (req.to == EstadoTurno.FECHADO && before.isOpen && !before.turnoId.isNullOrBlank()) {
+                        val sessionClose = TurnoSessionRemote(
+                            empresa = empresa,
+                            equipe = equipe,
+                            turnoId = before.turnoId,
+                            membersSnapshot = before.membersSnapshot,
+                            openedAtClientMs = before.openedAtClientMs ?: 0L,
+                            closedAtClientMs = occurredAtMs,
+                            closeReason = null,
+                            openedByUid = null,
+                            openedByDeviceId = deviceId,
+                            closedByUid = null,
+                            closedByDeviceId = deviceId
+                        )
+                        scope.launch {
+                            runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionClose) }
+                        }
+                    }
+
+                    // 1) Enfileira SEMPRE (offline-first) SEMPRE (offline-first)
+                    TurnoPendingStore.enqueue(context, event)
+
+                    // 2) Atualiza o doc de state (último vence) — se falhar, fica só local por enquanto
+                    TurnoFirestoreUploader.pushState(
+                        empresa = empresa,
+                        equipe = equipe,
+                        state = state
+                    )
+
+                    // 3) Tenta enviar pendências se online (inclui este evento recém-enfileirado)
+                    TurnoFirestoreUploader.tryPushPending(context, online)
+
+                    if (req.to == EstadoTurno.FECHADO) {
+                        showTurnoControl = false
+                    }
+
+                    // depois de confirmar uma transição, limpa prefill para não “vazar” para próximas ações
+                    odoKmTotalPrefill = ""
+                    odoPendingTarget = null
+                    odoPendingMotivo = null
+                    odoPendingMotivoOutro = ""
+                }
+            )
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         if (isInitializing) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
@@ -566,137 +838,385 @@ fun MainLayoutContainer() {
                 HeaderBar(
                     overlayAlpha = 1f,
                     selectedTraining = selectedTraining,
+                    isInDdsModule = isInDdsModule,
                     monthParticipationDays = headerParticipationDays,
                     showTestCameraButton = modoTesteAtivo,
                     onTestCameraClick = { if (modoTesteAtivo) showOnlineTest = true },
                     onCommunicationClick = { showCommunicationDialog = true },
-                    bubbleColor = bubbleColor
-                )
-                Row(Modifier.weight(1f)) {
-                    LeftSidebarSection(
-                        widthDp = 220,
-                        online = online,
-                        isSyncing = syncState.isSyncing,
-                        overallTotal = syncState.overallTotal,
-                        overallDone = syncState.overallDone,
-                        plannedTrainingsTotal = syncState.plannedTrainingsTotal,
-                        currentTotal = syncState.currentTotal,
-                        currentDone = syncState.currentDone,
-                        currentId = syncState.currentId,
-                        onHome = { selectedTraining = null },
-                        onSyncNow = { syncViewModel.syncNow() },
-                        onPresenceReport = { 
-                            if (allDone) {
-                                showPresenceReport = true
-                            } else {
-                                showDdsWarning = true
-                            }
-                            presenceReportAccessed = true
-                        },
-                        trainings = visibleTrainings,
-                        selectedTraining = selectedTraining,
-                        trainingStatus = trainingStatus,
-                        onSelectTraining = { tid ->
-                            selectedTraining = tid
-                            tempoInicioDDS = System.currentTimeMillis()
-                            showForm = false
-                        },
-                        presenceReportAccessed = presenceReportAccessed,
-                        turnoEstado = turnoSnap.estado,
-                        turnoNocSs = turnoSnap.nocSs,
-                        onClickTurno = { showTurnoControl = true },
-                        equipe = equipe,
-                        eletricistas = eletricistas,
-                        onClickEquipe = {
-                            teamDialogMandatory = false
-                            showEditDialog = true
+                    bubbleColor = bubbleColor,
+                    onBack = if (!isTablet) {
+                        when {
+                            selectedTraining != null -> { { selectedTraining = null } }
+                            showTurnoControl -> { { showTurnoControl = false } }
+                            isInDdsModule -> { { isInDdsModule = false } }
+                            else -> null
                         }
-                    )
-
-                    val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
-
-                    Box(Modifier.weight(1f).fillMaxHeight().background(fundoPainelDireito).padding(8.dp)) {
-                        if (selectedTraining == null) {
-                            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.dds),
-                                    contentDescription = "Logo DDS",
-                                    modifier = Modifier.fillMaxWidth(0.8f).padding(bottom = 24.dp).clickable {
-                                        cliqueLogo++
-                                        if (cliqueLogo >= 10) {
-                                            modoTesteAtivo = !modoTesteAtivo
-                                            if (!modoTesteAtivo) showOnlineTest = false
-                                            cliqueLogo = 0
-                                        }
-                                    },
-                                    contentScale = ContentScale.Fit
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(32.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Selecione um treinamento", style = MaterialTheme.typography.bodyLarge)
-                                }
-                            }
-                        } else {
-                            val vContext = LocalContext.current
-                            val viewerVM = remember { ViewerViewModel(vContext) }
-                            val currentId = selectedTraining!!
-                            val canConcludeCurrent = canConcludeTrainingId(currentId)
-                            ViewerScreen(
-                                trainingId = currentId,
-                                viewModel  = viewerVM,
-                                status     = trainingStatus[currentId],
-                                canConclude = canConcludeCurrent,
-                                onOpenForm = {
-                                    if (!canConcludeCurrent) return@ViewerScreen
-                                    if (equipe.isBlank() || eletricistas.isEmpty()) {
+                    } else {
+                        null
+                    },
+                    isInTurnoModule = showTurnoControl
+                )
+                if (isTablet) {
+                    Row(Modifier.weight(1f)) {
+                        if (isInDdsModule || selectedTraining != null) {
+                            LeftSidebarSection(
+                                widthDp = 220,
+                                online = online,
+                                isSyncing = syncState.isSyncing,
+                                overallTotal = syncState.overallTotal,
+                                overallDone = syncState.overallDone,
+                                plannedTrainingsTotal = syncState.plannedTrainingsTotal,
+                                currentTotal = syncState.currentTotal,
+                                currentDone = syncState.currentDone,
+                                currentId = syncState.currentId,
+                                onHome = { 
+                                    selectedTraining = null 
+                                    isInDdsModule = false
+                                    showTurnoControl = false
+                                },
+                                onSyncNow = { syncViewModel.syncNow() },
+                                onPresenceReport = { 
+                                    if (allDone) {
+                                        showPresenceReport = true
+                                    } else {
+                                        showDdsWarning = true
+                                    }
+                                    presenceReportAccessed = true
+                                },
+                                trainings = visibleTrainings,
+                                selectedTraining = selectedTraining,
+                                trainingStatus = trainingStatus,
+                                onSelectTraining = { tid ->
+                                    selectedTraining = tid
+                                    tempoInicioDDS = System.currentTimeMillis()
+                                    showForm = false
+                                },
+                                presenceReportAccessed = presenceReportAccessed,
+                                turnoEstado = turnoSnap.estado,
+                                turnoNocSs = turnoSnap.nocSs,
+                                onClickTurno = {
+                                    if (equipe.isBlank()) {
+                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
                                         showEditDialog = true
                                     } else {
-                                        abrirCamera = true
-                                        showForm = false
+                                        showTurnoControl = true
                                     }
                                 },
-                                onEnterAgora = {
-                                    val sessionIsoDate = currentId.substringBefore(" - ").trim()
-                                    val title = currentId.substringAfter(" - ").trim()
-                                    
-                                    val session = activeSessions.find { s ->
-                                        val parts = s.date.split("/")
-                                        val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
-                                        
-                                        val isDateMatch = formattedDate == sessionIsoDate
-                                        val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
-                                        
-                                        val isMatch = if (extractedTime != null) {
-                                            s.time == extractedTime
+                                equipe = equipe,
+                                eletricistas = eletricistas,
+                                onClickEquipe = {
+                                    teamDialogMandatory = false
+                                    showEditDialog = true
+                                }
+                            )
+                        }
+
+                        val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
+
+                        Box(Modifier.weight(1f).fillMaxHeight().background(fundoPainelDireito).padding(8.dp)) {
+                            if (selectedTraining != null) {
+                                val vContext = LocalContext.current
+                                val viewerVM = remember { ViewerViewModel(vContext) }
+                                val currentId = selectedTraining!!
+                                val canConcludeCurrent = canConcludeTrainingId(currentId)
+                                ViewerScreen(
+                                    trainingId = currentId,
+                                    viewModel  = viewerVM,
+                                    status     = trainingStatus[currentId],
+                                    canConclude = canConcludeCurrent,
+                                    onOpenForm = {
+                                        if (!canConcludeCurrent) return@ViewerScreen
+                                        if (equipe.isBlank() || eletricistas.isEmpty()) {
+                                            showEditDialog = true
                                         } else {
-                                            s.subject.trim().equals(title, ignoreCase = true)
+                                            abrirCamera = true
+                                            showForm = false
                                         }
+                                    },
+                                    onEnterAgora = {
+                                        val sessionIsoDate = currentId.substringBefore(" - ").trim()
+                                        val title = currentId.substringAfter(" - ").trim()
                                         
-                                        isDateMatch && isMatch
-                                    }
-                                    
-                                    if (session != null) {
-                                        val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
-                                        
-                                        if (session.status == "active") {
-                                            if (session.channelName.isNotBlank()) {
-                                                activeSessionChannel = session.channelName
+                                        val session = activeSessions.find { s ->
+                                            val parts = s.date.split("/")
+                                            val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
+                                            
+                                            val isDateMatch = formattedDate == sessionIsoDate
+                                            val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
+                                            
+                                            val isMatch = if (extractedTime != null) {
+                                                s.time == extractedTime
                                             } else {
-                                                Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
+                                                s.subject.trim().equals(title, ignoreCase = true)
                                             }
-                                        } else if (isHost) {
-                                            // É o organizador e a reunião ainda está 'scheduled'
-                                            showOrganizerDialog = session
-                                        } else {
-                                            // Participante comum e reunião não aberta
-                                            Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
+                                            
+                                            isDateMatch && isMatch
                                         }
+                                        
+                                        if (session != null) {
+                                            val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
+                                            
+                                            if (session.status == "active") {
+                                                if (session.channelName.isNotBlank()) {
+                                                    activeSessionChannel = session.channelName
+                                                } else {
+                                                    Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else if (isHost) {
+                                                showOrganizerDialog = session
+                                            } else {
+                                                Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onStatusChanged = { viewerStatus = it }
+                                )
+                            } else if (showTurnoControl) {
+                                showTurnoContent()
+                            } else if (isInDdsModule) {
+                                val arrowTransition = rememberInfiniteTransition(label = "arrow_bounce")
+                                val arrowOffset by arrowTransition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = -12f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "arrow_offset"
+                                )
+
+                                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.dds),
+                                        contentDescription = "Logo DDS",
+                                        modifier = Modifier.fillMaxWidth(0.8f).padding(bottom = 24.dp).clickable {
+                                            cliqueLogo++
+                                            if (cliqueLogo >= 10) {
+                                                modoTesteAtivo = !modoTesteAtivo
+                                                if (!modoTesteAtivo) showOnlineTest = false
+                                                cliqueLogo = 0
+                                            }
+                                        },
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .offset(x = arrowOffset.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Selecione um treinamento", style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                }
+                            } else {
+                                val homeParticipationDays = remember<List<com.chicoeletro.dds.ui.training.MonthParticipationDay>>(trainings, trainingStatus) {
+                                    buildRollingParticipationDays(
+                                        selectedTrainingId = null,
+                                        trainings = trainings,
+                                        completedTrainingIds = trainingStatus.keys,
+                                        today = LocalDate.now(),
+                                        numDays = 15
+                                    )
+                                }
+                                HomeScreen(
+                                    equipe = equipe,
+                                    eletricistas = eletricistas,
+                                    monthParticipationDays = homeParticipationDays,
+                                    turnoEstado = turnoSnap.estado,
+                                    onClickEquipe = {
+                                        teamDialogMandatory = false
+                                        showEditDialog = true
+                                    },
+                                    onDdsClick = {
+                                        isInDdsModule = true
+                                    },
+                                    onTurnoClick = {
+                                        if (equipe.isBlank()) {
+                                            Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
+                                            showEditDialog = true
+                                        } else {
+                                            showTurnoControl = true
+                                        }
+                                    },
+                                    onProducaoClick = {
+                                        if (allDone) {
+                                            showPresenceReport = true
+                                        } else {
+                                            showDdsWarning = true
+                                        }
+                                    },
+                                    onMensagensClick = { showCommunicationDialog = true },
+                                    onAbastecimentoClick = {
+                                        showAbastecimento = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Layout de painel único para Celulares
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        if (selectedTraining != null) {
+                            val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
+                            Box(Modifier.fillMaxSize().background(fundoPainelDireito).padding(8.dp)) {
+                                val vContext = LocalContext.current
+                                val viewerVM = remember { ViewerViewModel(vContext) }
+                                val currentId = selectedTraining!!
+                                val canConcludeCurrent = canConcludeTrainingId(currentId)
+                                ViewerScreen(
+                                    trainingId = currentId,
+                                    viewModel  = viewerVM,
+                                    status     = trainingStatus[currentId],
+                                    canConclude = canConcludeCurrent,
+                                    onOpenForm = {
+                                        if (!canConcludeCurrent) return@ViewerScreen
+                                        if (equipe.isBlank() || eletricistas.isEmpty()) {
+                                            showEditDialog = true
+                                        } else {
+                                            abrirCamera = true
+                                            showForm = false
+                                        }
+                                    },
+                                    onEnterAgora = {
+                                        val sessionIsoDate = currentId.substringBefore(" - ").trim()
+                                        val title = currentId.substringAfter(" - ").trim()
+                                        
+                                        val session = activeSessions.find { s ->
+                                            val parts = s.date.split("/")
+                                            val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
+                                            
+                                            val isDateMatch = formattedDate == sessionIsoDate
+                                            val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
+                                            
+                                            val isMatch = if (extractedTime != null) {
+                                                s.time == extractedTime
+                                            } else {
+                                                s.subject.trim().equals(title, ignoreCase = true)
+                                            }
+                                            
+                                            isDateMatch && isMatch
+                                        }
+                                        
+                                        if (session != null) {
+                                            val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
+                                            
+                                            if (session.status == "active") {
+                                                if (session.channelName.isNotBlank()) {
+                                                    activeSessionChannel = session.channelName
+                                                } else {
+                                                    Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else if (isHost) {
+                                                showOrganizerDialog = session
+                                            } else {
+                                                Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onStatusChanged = { viewerStatus = it }
+                                )
+                            }
+                        } else if (showTurnoControl) {
+                            showTurnoContent()
+                        } else if (isInDdsModule) {
+                            LeftSidebarSection(
+                                modifier = Modifier.fillMaxSize(),
+                                online = online,
+                                isSyncing = syncState.isSyncing,
+                                overallTotal = syncState.overallTotal,
+                                overallDone = syncState.overallDone,
+                                plannedTrainingsTotal = syncState.plannedTrainingsTotal,
+                                currentTotal = syncState.currentTotal,
+                                currentDone = syncState.currentDone,
+                                currentId = syncState.currentId,
+                                onHome = { 
+                                    selectedTraining = null 
+                                    isInDdsModule = false
+                                    showTurnoControl = false
+                                },
+                                onSyncNow = { syncViewModel.syncNow() },
+                                onPresenceReport = { 
+                                    if (allDone) {
+                                        showPresenceReport = true
                                     } else {
-                                        Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
+                                        showDdsWarning = true
+                                    }
+                                    presenceReportAccessed = true
+                                },
+                                trainings = visibleTrainings,
+                                selectedTraining = selectedTraining,
+                                trainingStatus = trainingStatus,
+                                onSelectTraining = { tid ->
+                                    selectedTraining = tid
+                                    tempoInicioDDS = System.currentTimeMillis()
+                                    showForm = false
+                                },
+                                presenceReportAccessed = presenceReportAccessed,
+                                turnoEstado = turnoSnap.estado,
+                                turnoNocSs = turnoSnap.nocSs,
+                                onClickTurno = {
+                                    if (equipe.isBlank()) {
+                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
+                                        showEditDialog = true
+                                    } else {
+                                        showTurnoControl = true
                                     }
                                 },
-                                onStatusChanged = { viewerStatus = it }
+                                equipe = equipe,
+                                eletricistas = eletricistas,
+                                onClickEquipe = {
+                                    teamDialogMandatory = false
+                                    showEditDialog = true
+                                }
+                            )
+                        } else {
+                            val homeParticipationDays = remember<List<com.chicoeletro.dds.ui.training.MonthParticipationDay>>(trainings, trainingStatus) {
+                                buildRollingParticipationDays(
+                                    selectedTrainingId = null,
+                                    trainings = trainings,
+                                    completedTrainingIds = trainingStatus.keys,
+                                    today = LocalDate.now(),
+                                    numDays = 15
+                                )
+                            }
+                            HomeScreen(
+                                equipe = equipe,
+                                eletricistas = eletricistas,
+                                monthParticipationDays = homeParticipationDays,
+                                turnoEstado = turnoSnap.estado,
+                                onClickEquipe = {
+                                    teamDialogMandatory = false
+                                    showEditDialog = true
+                                },
+                                onDdsClick = {
+                                    isInDdsModule = true
+                                },
+                                onTurnoClick = {
+                                    if (equipe.isBlank()) {
+                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
+                                        showEditDialog = true
+                                    } else {
+                                        showTurnoControl = true
+                                    }
+                                },
+                                onProducaoClick = {
+                                    if (allDone) {
+                                        showPresenceReport = true
+                                    } else {
+                                        showDdsWarning = true
+                                    }
+                                },
+                                onMensagensClick = { showCommunicationDialog = true },
+                                onAbastecimentoClick = {
+                                    showAbastecimento = true
+                                }
                             )
                         }
                     }
@@ -947,247 +1467,7 @@ fun MainLayoutContainer() {
                 )
             }
 
-            if (showTurnoControl && equipe.isNotBlank()) {
-                val ctrl = remember(equipe) { TurnoController(context, equipe) }
-                TurnoControlDialog(
-                    snapshot = turnoSnap,
-                    onDismiss = { showTurnoControl = false },
-                    onSaveNocSs = { noc: String? ->
-                        runCatching {
-                            val after = ctrl.atualizarNocSs(noc)
-                            turnoSnap = after
 
-                            val state = TurnoStateRemote(
-                                empresa = empresa,
-                                equipe = equipe,
-                                turnoId = after.turnoId,
-                                isOpen = after.isOpen,
-                                membersSnapshot = after.membersSnapshot,
-                                openedAtClientMs = after.openedAtClientMs,
-                                closedAtClientMs = null,
-                                closeReason = null,
-                                clientUpdatedAtMs = after.clientUpdatedAtMs,
-                                updatedAtIso = after.lastChangedAtIso ?: Instant.ofEpochMilli(after.clientUpdatedAtMs).toString(),
-                                lastEventId = after.lastEventId,
-                                lastEventAtClientMs = after.lastEventAtClientMs,
-                                estado = after.estado.name,
-                                nocSs = after.nocSs,
-                                kmTotalAbs = after.kmTotalAbs,
-                                kmInicioTotalAbs = after.kmInicioTotalAbs,
-                                kmDeltaTurno = after.kmDeltaTurno,
-                                kmInicioTurno4 = after.kmInicioLast3,
-                                inicioTurnoAtIso = after.inicioTurnoAtIso,
-                                odometroVerificado = after.odometroVerificado,
-                                ultimosKm4 = after.ultimosKmLast3,
-                                eventosKmCounter = after.eventosKmCounter,
-                                lastMotivo = after.lastMotivo?.name,
-                                lastMotivoOutro = after.lastMotivoOutro,
-                                lastWasDescansoSemanal = after.lastWasDescansoSemanal,
-                                deviceIdLastWriter = deviceId
-                            )
-
-                            TurnoFirestoreUploader.pushState(
-                                empresa = empresa,
-                                equipe = equipe,
-                                state = state
-                            )
-                        }
-                    },
-                    onOpenOdometerCamera = { target, motivo, motivoOutro ->
-                        // salva contexto para reabrir direto no step KM depois da foto
-                        odoPendingTarget = target
-                        odoPendingMotivo = motivo
-                        odoPendingMotivoOutro = motivoOutro
-                        showTurnoControl = false
-                        abrirCameraOdo = true
-                    },
-                    prefillKmTotal = odoKmTotalPrefill,
-                    startAtKmTarget = odoPendingTarget,
-                    prefillMotivo = odoPendingMotivo,
-                    prefillMotivoOutro = odoPendingMotivoOutro,
-                    onRequestTransition = { req: RequisicaoTransicao ->
-
-                        // ===== ABRIR TURNO (sessão determinística) =====
-                        // Regra: mudança de membros implica fechar e abrir novo turno.
-                        if (!turnoSnap.isOpen && (req.to == EstadoTurno.ABERTO || req.to == EstadoTurno.DESLOCAMENTO_ESPECIAL)) {
-                            val opened = runCatching { ctrl.abrirTurno(empresa, eletricistas) }.getOrNull()
-                                ?: return@TurnoControlDialog
-                            turnoSnap = opened
-
-                            // Sessão: grava openedAtServer (oficial) quando online
-                            val sessionOpen = TurnoSessionRemote(
-                                empresa = empresa,
-                                equipe = equipe,
-                                turnoId = opened.turnoId!!,
-                                membersSnapshot = opened.membersSnapshot,
-                                openedAtClientMs = opened.openedAtClientMs!!,
-                                openedByUid = null,
-                                openedByDeviceId = deviceId
-                            )
-                            scope.launch {
-                                runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionOpen) }
-                            }
-                        }
-
-                        val plano = runCatching {
-                            ctrl.plan(
-                                to = req.to,
-                                proposedKmTotalAbs = req.kmTotalAbs,
-                                proposedKmLast3 = req.kmLast3
-                            )
-                        }
-                            .onFailure { e ->
-                                android.util.Log.w("DDS-TURNO", "Falha plan: ${e.message}", e)
-                                Toast.makeText(context, e.message ?: "Falha ao planejar transição", Toast.LENGTH_LONG).show()
-                            }
-                            .getOrNull() ?: return@TurnoControlDialog
-
-                        val after = runCatching { ctrl.confirm(req, photoProvided = false) }
-                            .onFailure { e ->
-                                android.util.Log.w("DDS-TURNO", "Falha confirm: ${e.message}", e)
-                                Toast.makeText(context, e.message ?: "Falha ao confirmar transição", Toast.LENGTH_LONG).show()
-                            }
-                            .getOrNull() ?: return@TurnoControlDialog
-
-                        val before = turnoSnap
-                        // Atualiza UI local imediatamente
-                        turnoSnap = after
-
-                        // -------------------------
-                        // Firebase (event + state) - offline-first
-                        // -------------------------
-                        // eventId determinístico (offline-first)
-                        val occurredAtMs = after.lastEventAtClientMs
-                        val tsIso = Instant.ofEpochMilli(occurredAtMs).toString()
-                        val eventId = "${deviceId}_${occurredAtMs}_${req.to.name}"
-
-                        // kmDeltaTurno: no modelo OPÇÃO 1, o controller acumula sempre.
-                        // Só envia quando FECHA (ABERTO -> FECHADO).
-                        val kmDeltaTurno: Int? =
-                            if (before.estado == EstadoTurno.ABERTO && req.to == EstadoTurno.FECHADO) after.kmDeltaTurno else null
-
-                        val actor = TurnoActor(
-                            deviceId = deviceId,
-                            deviceModel = Build.MODEL ?: "unknown",
-                            appVersion = appVersion
-                        )
-
-                        val photoAudit = TurnoPhotoAudit(
-                            required = plano.pedeFoto,
-                            photoId = null,       // sem foto por enquanto
-                            storagePath = null,   // futuro
-                            thumbPath = null      // futuro
-                        )
-
-                        val event = TurnoEventRemote(
-                            empresa = empresa,
-                            equipe = equipe,
-                            turnoId = after.turnoId!!,
-                            eventId = eventId,
-                            occurredAtClientMs = occurredAtMs,
-                            clientCreatedAtIso = tsIso,
-                            from = before.estado.name,
-                            to = req.to.name,
-                            // OPÇÃO 1: KM total (quando informado)
-                            kmTotalAbs = req.kmTotalAbs,
-                            // Mantemos km4 como "últimos 3" por enquanto (compat com modelo remoto atual).
-                            // Se veio apenas KM total, o dialog/controller deve derivar kmLast3.
-                            km4 = req.kmLast3,
-                            // OPÇÃO 1: início do turno (totalAbs quando existir)
-                            kmInicioTotalAbs = before.kmInicioTotalAbs,
-                            kmInicioTurno4 = before.kmInicioLast3,
-                            kmDeltaTurno = kmDeltaTurno,
-                            nocSs = before.nocSs,
-                            motivo = req.motivo?.name,
-                            motivoOutro = req.motivoOutro?.trim()?.takeIf { it.isNotBlank() },
-                            photoAudit = photoAudit,
-                            actor = actor
-                        )
-
-                        // Estado “último vence”
-                        val state = TurnoStateRemote(
-                            empresa = empresa,
-                            equipe = equipe,
-
-                            turnoId = after.turnoId,
-                            isOpen = after.isOpen,
-                            membersSnapshot = after.membersSnapshot,
-
-                            openedAtClientMs = after.openedAtClientMs,
-                            closedAtClientMs = if (req.to == EstadoTurno.FECHADO) occurredAtMs else null,
-                            closeReason = null,
-
-                            clientUpdatedAtMs = after.clientUpdatedAtMs,
-                            updatedAtIso = after.lastChangedAtIso ?: tsIso,
-
-                            lastEventId = eventId,
-                            lastEventAtClientMs = occurredAtMs,
-
-                            estado = after.estado.name,
-                            nocSs = after.nocSs,
-
-                            // OPÇÃO 1: odometria no current
-                            kmTotalAbs = after.kmTotalAbs,
-                            kmInicioTotalAbs = after.kmInicioTotalAbs,
-                            kmDeltaTurno = after.kmDeltaTurno,
-
-                            kmInicioTurno4 = after.kmInicioLast3,
-                            inicioTurnoAtIso = after.inicioTurnoAtIso,
-
-                            odometroVerificado = after.odometroVerificado,
-                            ultimosKm4 = after.ultimosKmLast3,
-                            eventosKmCounter = after.eventosKmCounter,
-
-                            lastMotivo = after.lastMotivo?.name,
-                            lastMotivoOutro = after.lastMotivoOutro,
-
-                            lastWasDescansoSemanal = after.lastWasDescansoSemanal,
-                            deviceIdLastWriter = deviceId
-                        )
-
-                        // Se fechou o turno, registra closedAtServer (oficial) na sessão
-                        if (req.to == EstadoTurno.FECHADO && before.isOpen && !before.turnoId.isNullOrBlank()) {
-                            val sessionClose = TurnoSessionRemote(
-                                empresa = empresa,
-                                equipe = equipe,
-                                turnoId = before.turnoId,
-                                membersSnapshot = before.membersSnapshot,
-                                openedAtClientMs = before.openedAtClientMs ?: 0L,
-                                closedAtClientMs = occurredAtMs,
-                                closeReason = null,
-                                openedByUid = null,
-                                openedByDeviceId = deviceId,
-                                closedByUid = null,
-                                closedByDeviceId = deviceId
-                            )
-                            scope.launch {
-                                runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionClose) }
-                            }
-                        }
-
-                        // 1) Enfileira SEMPRE (offline-first) SEMPRE (offline-first)
-                        TurnoPendingStore.enqueue(context, event)
-
-                        // 2) Atualiza o doc de state (último vence) — se falhar, fica só local por enquanto
-                        TurnoFirestoreUploader.pushState(
-                            empresa = empresa,
-                            equipe = equipe,
-                            state = state
-                        )
-
-                        // 3) Tenta enviar pendências se online (inclui este evento recém-enfileirado)
-                        TurnoFirestoreUploader.tryPushPending(context, online)
-
-                        showTurnoControl = false
-
-                        // depois de confirmar uma transição, limpa prefill para não “vazar” para próximas ações
-                        odoKmTotalPrefill = ""
-                        odoPendingTarget = null
-                        odoPendingMotivo = null
-                        odoPendingMotivoOutro = ""
-                    }
-                )
-            }
             if (showPresenceReport) {
                 if (equipe.isBlank()) {
                     LaunchedEffect(Unit) {

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -65,11 +66,14 @@ object HeaderBarState {
 fun HeaderBar(
     overlayAlpha: Float,
     selectedTraining: String?,
+    isInDdsModule: Boolean,
     monthParticipationDays: List<MonthParticipationDay> = emptyList(),
     showTestCameraButton: Boolean = false,
     onTestCameraClick: (() -> Unit)? = null,
     onCommunicationClick: () -> Unit = {},
-    bubbleColor: Color = Color.Gray
+    bubbleColor: Color = Color.Gray,
+    onBack: (() -> Unit)? = null,
+    isInTurnoModule: Boolean = false
 ) {
     val pendingCount = rememberPendingDdsCount()
 
@@ -81,9 +85,13 @@ fun HeaderBar(
         raw.substringAfter("- ")
             .trim()
             .takeUnless { it.isBlank() }
-            ?: "Diálogo Diário de Segurança"
+            ?: "DDS - Diálogo Diário de Segurança"
+    } else if (isInDdsModule) {
+        "DDS - Diálogo Diário de Segurança"
+    } else if (isInTurnoModule) {
+        "Controle de Turno (BDO)"
     } else {
-        "Diálogo Diário de Segurança"
+        "GESTÃO CHICO ELETRO"
     }
     val context = LocalContext.current
 
@@ -103,13 +111,25 @@ fun HeaderBar(
             modifier = Modifier.weight(1f),
             contentAlignment = Alignment.CenterStart
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.logo_chico),
-                contentDescription = "Logo Chico Eletro",
-                modifier = Modifier
-                    .heightIn(min = 36.dp, max = 48.dp)
-                    .padding(end = 8.dp)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = Color.Black
+                        )
+                    }
+                } else {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_chico),
+                        contentDescription = "Logo Chico Eletro",
+                        modifier = Modifier
+                            .heightIn(min = 36.dp, max = 48.dp)
+                            .padding(end = 8.dp)
+                    )
+                }
+            }
         }
 
         Column(
@@ -125,7 +145,7 @@ fun HeaderBar(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (monthParticipationDays.isNotEmpty()) {
+            if ((isInDdsModule || hasSelection) && monthParticipationDays.isNotEmpty()) {
                 MonthParticipationStrip(days = monthParticipationDays)
             }
         }
