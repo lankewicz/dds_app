@@ -1,3 +1,8 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/features/turno/BdoLocalStore.kt
+// Função: Armazenamento local das solicitações de serviço (SS) vinculadas ao Boletim Diário de Obra (BDO) integrado com estados de turno.
+// Tecnologias: Android SharedPreferences, JSON.
+// Autor: Valdinei Lankewicz
+
 package com.chicoeletro.dds.features.turno
 
 import android.content.Context

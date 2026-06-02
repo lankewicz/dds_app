@@ -1,3 +1,8 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/ui/components/TurnoPanels.kt
+// Função: Painéis de interface principais do diálogo de turno (painel lateral esquerdo de status e ações, painel direito do Boletim Diário de Obra).
+// Tecnologias: Jetpack Compose, Material3.
+// Autor: Valdinei Lankewicz
+
 package com.chicoeletro.dds.ui.components
 
 import androidx.compose.foundation.background

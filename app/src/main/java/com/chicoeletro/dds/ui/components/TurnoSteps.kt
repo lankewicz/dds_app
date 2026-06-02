@@ -1,3 +1,8 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/ui/components/TurnoSteps.kt
+// Função: Componentes de fluxo secundários do diálogo de turno (entrada manual de KM por quadrinhos, motivos de deslocamento e recibo final).
+// Tecnologias: Jetpack Compose, Material3.
+// Autor: Valdinei Lankewicz
+
 package com.chicoeletro.dds.ui.components
 
 import androidx.compose.foundation.background

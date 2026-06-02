@@ -1,3 +1,8 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/features/turno/TurnoCalculations.kt
+// Função: Funções puras de cálculo de tempo ativo, intervalos, tempos de serviço e análise de lacunas ociosas ("SEM EXECUÇÃO").
+// Tecnologias: Kotlin, Jetpack Compose.
+// Autor: Valdinei Lankewicz
+
 package com.chicoeletro.dds.features.turno
 
 import androidx.compose.ui.graphics.Color

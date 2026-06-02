@@ -1,3 +1,8 @@
+// Módulo: app/src/main/java/com/chicoeletro/dds/ui/components/TurnoTimelineComponents.kt
+// Função: Componentes de interface da timeline do BDO. Renderiza cartões de serviços, transições de turno e faixas de ociosidade ("SEM EXECUÇÃO").
+// Tecnologias: Jetpack Compose, Material3.
+// Autor: Valdinei Lankewicz
+
 package com.chicoeletro.dds.ui.components
 
 import androidx.compose.foundation.BorderStroke
