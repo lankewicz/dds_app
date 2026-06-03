@@ -8,7 +8,7 @@ from app.schemas.requests import BalanceRequestOut, PaginatedBalanceRequests
 
 router = APIRouter(prefix="/solicitacoes", tags=["Solicitações"])
 # Referências unificadas no Firestore
-ROOT_DOC = db.collection("vexpenses").document("data")
+ROOT_DOC = db.collection("webtools").document("vexpenses")
 COL_REQUESTS = ROOT_DOC.collection("balance_requests")
 
 @router.get("", response_model=PaginatedBalanceRequests)

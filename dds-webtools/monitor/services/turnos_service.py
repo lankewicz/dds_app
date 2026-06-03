@@ -114,7 +114,7 @@ def update_productivity_metadata(empresa: str = DEFAULT_EMPRESA):
         agencies = sorted(list(set(d.get("agency") for d in data_latest if d.get("agency"))))
 
         # 3. Salva no documento 'meta' da produtividade
-        db.collection("productivity").document(empresa).set({
+        db.collection("webtools").document("producao_mensal").collection("metadata").document(empresa).set({
             "lastCompetencia": competencia,
             "lastYear": year,
             "lastMonth": month,

@@ -6,6 +6,7 @@
 package com.chicoeletro.dds.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +36,8 @@ fun MenuStep(
     onDismiss: () -> Unit,
     onSelectTarget: (EstadoTurno) -> Unit,
     equipe: String,
+    teamType: String? = null,
+    onClickEquipe: () -> Unit = {},
     online: Boolean,
     bdoList: List<BdoSs>,
     onDefinirSs: (String) -> Unit,
@@ -55,19 +58,29 @@ fun MenuStep(
             onDismiss = onDismiss,
             onSelectTarget = onSelectTarget,
             equipe = equipe,
+            teamType = teamType,
+            onClickEquipe = onClickEquipe,
             online = online,
             modifier = Modifier.weight(leftWeight).fillMaxHeight()
         )
         
-        BdoSection(
-            snapshot = snapshot,
-            equipe = equipe,
-            online = online,
-            bdoList = bdoList,
-            onDefinirSs = onDefinirSs,
-            onAlterarEstado = onAlterarEstado,
-            modifier = Modifier.weight(rightWeight).fillMaxHeight()
-        )
+        if (teamType == "CONSTRUCAO") {
+            ConstructionBdoSection(
+                equipe = equipe,
+                online = online,
+                modifier = Modifier.weight(rightWeight).fillMaxHeight()
+            )
+        } else {
+            BdoSection(
+                snapshot = snapshot,
+                equipe = equipe,
+                online = online,
+                bdoList = bdoList,
+                onDefinirSs = onDefinirSs,
+                onAlterarEstado = onAlterarEstado,
+                modifier = Modifier.weight(rightWeight).fillMaxHeight()
+            )
+        }
     }
 }
 
@@ -77,6 +90,8 @@ fun LeftPanel(
     onDismiss: () -> Unit,
     onSelectTarget: (EstadoTurno) -> Unit,
     equipe: String,
+    teamType: String? = null,
+    onClickEquipe: () -> Unit = {},
     online: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -256,7 +271,8 @@ fun LeftPanel(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(65.dp)
+                    .heightIn(min = 65.dp)
+                    .clickable { onClickEquipe() }
             ) {
                 Row(
                     modifier = Modifier
@@ -285,6 +301,22 @@ fun LeftPanel(
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val readableType = when (teamType) {
+                            "STC" -> "STC (NR-10)"
+                            "EP" -> "EP (Manutenção)"
+                            "LINHA_VIVA" -> "Linha Viva"
+                            "ROCADA" -> "Roçada"
+                            "CONSTRUCAO" -> "Construção"
+                            else -> "Não Definido"
+                        }
+                        Text(
+                            text = readableType,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = themeColor,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -451,30 +483,13 @@ fun BdoSection(
                         Text(formatDuration(sumExecutionMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("Sem Execução", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatDuration(sumSemExecucaoMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = Color(0xFFF57F17))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Text("Tempo Total", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(formatDuration(sumTotalMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                     }
-                }
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f),
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Sem Execução Acumulado (> 5 min):",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = formatDuration(sumSemExecucaoMs),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFF57F17) // Amber/Yellow
-                    )
                 }
             }
         }

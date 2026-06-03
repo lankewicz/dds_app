@@ -12,6 +12,7 @@ import android.util.Log
 import com.chicoeletro.dds.core.LastTeamData
 import com.chicoeletro.dds.core.LastTeamStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 object TeamConfigSync {
     private val repo = TeamFormationRepository()
@@ -21,18 +22,36 @@ object TeamConfigSync {
     fun observeLocal(context: Context): Flow<LastTeamData?> =
         LastTeamStore.carregar(context)
 
-    suspend fun savePendingLocal(context: Context, teamKey: String, members: List<String>, schedule: com.chicoeletro.dds.core.WorkSchedule) {
+    suspend fun savePendingLocal(
+        context: Context,
+        teamKey: String,
+        members: List<String>,
+        schedule: com.chicoeletro.dds.core.WorkSchedule,
+        teamType: String? = null
+    ) {
         val data = LastTeamData(
             equipe = teamKey,
             eletricistas = members,
             pendingSync = true,
             lastSyncedAt = null,
-            workSchedule = schedule
+            workSchedule = schedule,
+            teamType = teamType
         )
         LastTeamStore.salvar(context, data)
-        Log.i(TAG, "savePendingLocal: team=$teamKey members=${members.size} pendingSync=true")
+        Log.i(TAG, "savePendingLocal: team=$teamKey members=${members.size} teamType=$teamType pendingSync=true")
     }
 
+    /**
+     * Salva somente o tipo de equipe localmente, preservando o restante.
+     */
+    suspend fun saveTeamTypeLocal(context: Context, teamType: String) {
+        val current = observeLocal(context).firstOrNull()
+        if (current != null) {
+            val updated = current.copy(teamType = teamType, pendingSync = true)
+            LastTeamStore.salvar(context, updated)
+            Log.i(TAG, "saveTeamTypeLocal: team=${current.equipe} type=$teamType")
+        }
+    }
 
     /**
      * Salva somente o cache local (sem marcar pendência).
@@ -42,6 +61,7 @@ object TeamConfigSync {
         LastTeamStore.salvar(context, data.copy(pendingSync = false))
         Log.d(TAG, "saveLocalCache: team=${data.equipe} members=${data.eletricistas.size} pendingSync=false")
     }
+
     /**
      * Tenta enviar se:
      * - online
@@ -75,7 +95,8 @@ object TeamConfigSync {
             repo.saveAndAudit(
                 teamKey = d.equipe,
                 newMembers = d.eletricistas,
-                workSchedule = payloadSchedule
+                workSchedule = payloadSchedule,
+                teamType = d.teamType
             )
         }.isSuccess
 
@@ -129,18 +150,21 @@ object TeamConfigSync {
 
         val membersChanged = remoteMembers.isNotEmpty() && remoteMembers != d.eletricistas
         val scheduleChanged = remoteSchedule != null && remoteSchedule != d.workSchedule
+        val remoteTeamType = remote.teamType
+        val typeChanged = remoteTeamType != null && remoteTeamType != d.teamType
 
-        if (membersChanged || scheduleChanged) {
+        if (membersChanged || scheduleChanged || typeChanged) {
             LastTeamStore.salvar(
                 context,
                 d.copy(
                     eletricistas = if (membersChanged) remoteMembers else d.eletricistas,
                     workSchedule = if (scheduleChanged) remoteSchedule!! else d.workSchedule,
+                    teamType = if (typeChanged) remoteTeamType else d.teamType,
                     pendingSync = false,
                     lastSyncedAt = System.currentTimeMillis()
                 )
             )
-            Log.i(TAG, "pullLatestIfSafe: UPDATED team=${d.equipe} (members=$membersChanged, schedule=$scheduleChanged)")
+            Log.i(TAG, "pullLatestIfSafe: UPDATED team=${d.equipe} (members=$membersChanged, schedule=$scheduleChanged, type=$typeChanged)")
         } else {
             Log.d(TAG, "pullLatestIfSafe: no change team=${d.equipe}")
         }

@@ -17,6 +17,7 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,9 +62,10 @@ fun TeamEditDialog(
     initialTeamName: String,
     initialMembers: List<String>,
     initialWorkSchedule: com.chicoeletro.dds.core.WorkSchedule = com.chicoeletro.dds.core.WorkSchedule(),
+    initialTeamType: String? = null,
     mandatory: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (teamName: String, members: List<String>, schedule: com.chicoeletro.dds.core.WorkSchedule) -> Unit,
+    onSave: (teamName: String, members: List<String>, schedule: com.chicoeletro.dds.core.WorkSchedule, teamType: String?) -> Unit,
 ) {
     BackHandler(enabled = true) { /* bloqueado: use os botões */ }
 
@@ -91,6 +94,7 @@ fun TeamEditDialog(
     }
 
     var workSchedule by remember { mutableStateOf(initialWorkSchedule) }
+    var teamType by remember { mutableStateOf(initialTeamType) }
     var showScheduleConfig by remember { mutableStateOf(false) }
 
     // controla se usuário já mexeu manualmente nos participantes (para não sobrescrever)
@@ -242,6 +246,8 @@ fun TeamEditDialog(
                                 teamName = teamName,
                                 onTeamNameChange = { raw -> teamName = raw.uppercase(ptBr).trimStart() },
                                 teamNameValid = teamNameValid,
+                                teamType = teamType,
+                                onTeamTypeChange = { teamType = it },
                                 onDone = { hideKeyboard() },
                                 onTeamNameFocusChanged = { focused ->
                                     // Dispara APENAS quando perde o foco (true -> false)
@@ -290,6 +296,8 @@ fun TeamEditDialog(
                                 teamName = teamName,
                                 onTeamNameChange = { raw -> teamName = raw.uppercase(ptBr).trimStart() },
                                 teamNameValid = teamNameValid,
+                                teamType = teamType,
+                                onTeamTypeChange = { teamType = it },
                                 onDone = { hideKeyboard() },
                                 onTeamNameFocusChanged = { focused ->
                                     if (wasTeamFieldFocused && !focused) triggerLoadFormationIfNeeded()
@@ -359,7 +367,7 @@ fun TeamEditDialog(
                             }
 
                             // 1) Salva local (fluxo atual do app)
-                            onSave(team, list, workSchedule)
+                            onSave(team, list, workSchedule, teamType)
 
                             Toast.makeText(context, "Equipe registrada com sucesso!", Toast.LENGTH_SHORT).show()
                             onDismiss()
@@ -389,6 +397,8 @@ private fun TeamCard(
     teamName: String,
     onTeamNameChange: (String) -> Unit,
     teamNameValid: Boolean,
+    teamType: String?,
+    onTeamTypeChange: (String?) -> Unit,
     onDone: () -> Unit,
     onTeamNameFocusChanged: (focused: Boolean) -> Unit = {},
     onEditSchedule: () -> Unit
@@ -451,6 +461,58 @@ private fun TeamCard(
                     }
                 }
             )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Campo de seleção de Tipo de Equipe
+            var dropdownExpanded by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = when (teamType) {
+                        "STC" -> "STC (antiga NR-10)"
+                        "EP" -> "EP (Manutenção)"
+                        "LINHA_VIVA" -> "Linha Viva"
+                        "ROCADA" -> "Roçada"
+                        "CONSTRUCAO" -> "Construção"
+                        else -> "Não Selecionado"
+                    },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Tipo de Equipe") },
+                    trailingIcon = {
+                        IconButton(onClick = { dropdownExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Expandir"
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { dropdownExpanded = true }
+                )
+                DropdownMenu(
+                    expanded = dropdownExpanded,
+                    onDismissRequest = { dropdownExpanded = false },
+                    modifier = Modifier.fillMaxWidth(0.9f)
+                ) {
+                    listOf(
+                        "STC" to "STC (antiga NR-10)",
+                        "EP" to "EP (Manutenção)",
+                        "LINHA_VIVA" to "Linha Viva",
+                        "ROCADA" to "Roçada",
+                        "CONSTRUCAO" to "Construção"
+                    ).forEach { pair ->
+                        DropdownMenuItem(
+                            text = { Text(pair.second) },
+                            onClick = {
+                                onTeamTypeChange(pair.first)
+                                dropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
             OutlinedButton(

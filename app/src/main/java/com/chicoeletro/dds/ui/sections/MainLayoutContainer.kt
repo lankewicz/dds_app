@@ -127,6 +127,7 @@ import com.chicoeletro.dds.features.turno.TurnoSessionRemote
 import com.chicoeletro.dds.features.turno.TurnoActor
 import com.chicoeletro.dds.features.turno.TurnoPhotoAudit
 import com.chicoeletro.dds.ui.components.TurnoControlScreen
+import com.chicoeletro.dds.ui.components.TeamTypeSelectionScreen
 import com.chicoeletro.dds.ui.components.CommunicationScreen
 import com.chicoeletro.dds.ui.components.DdsWarningDialog
 import com.chicoeletro.dds.ui.components.UpdateBanner
@@ -158,6 +159,13 @@ data class TrainingStatus(
     val horaConclusao: String,
     val duracao: String,
     val syncState: String = TrainingExecSyncState.SYNCED
+)
+
+data class PendingTeamChange(
+    val name: String,
+    val members: List<String>,
+    val schedule: com.chicoeletro.dds.core.WorkSchedule,
+    val teamType: String?
 )
 
 @Composable
@@ -271,7 +279,7 @@ fun MainLayoutContainer() {
     var isStartingMeeting by remember { mutableStateOf(false) }
 
     var showReasonDialog by remember { mutableStateOf(false) }
-    var pendingTeamChange by remember { mutableStateOf<Triple<String, List<String>, com.chicoeletro.dds.core.WorkSchedule>?>(null) }
+    var pendingTeamChange by remember { mutableStateOf<PendingTeamChange?>(null) }
     var pendingRequestId by rememberSaveable { mutableStateOf<String?>(null) }
     var activeRequest by remember { mutableStateOf<TeamChangeRequest?>(null) }
     val requestRepo = remember { TeamChangeRequestRepository() }
@@ -568,12 +576,24 @@ fun MainLayoutContainer() {
 
     val showTurnoContent = @Composable {
         if (equipe.isNotBlank()) {
-            val ctrl = remember(equipe) { TurnoController(context, equipe) }
-            TurnoControlScreen(
-                equipe = equipe,
-                snapshot = turnoSnap,
-                onDismiss = { showTurnoControl = false },
-                online = online,
+            if (lastTeamData?.teamType.isNullOrBlank()) {
+                TeamTypeSelectionScreen(
+                    onDismiss = { showTurnoControl = false },
+                    onConfirm = { type ->
+                        scope.launch {
+                            teamSync.saveTeamTypeLocal(context, type)
+                        }
+                    }
+                )
+            } else {
+                val ctrl = remember(equipe) { TurnoController(context, equipe) }
+                TurnoControlScreen(
+                    equipe = equipe,
+                    snapshot = turnoSnap,
+                    onDismiss = { showTurnoControl = false },
+                    online = online,
+                    teamType = lastTeamData?.teamType,
+                    onClickEquipe = { showEditDialog = true },
                 onSaveNocSs = { noc: String? ->
                     runCatching {
                         val after = ctrl.atualizarNocSs(noc)
@@ -821,6 +841,7 @@ fun MainLayoutContainer() {
                     odoPendingMotivoOutro = ""
                 }
             )
+            }
         }
     }
 
@@ -1231,17 +1252,18 @@ fun MainLayoutContainer() {
                 TeamEditDialog(
                     initialTeamName = equipe,
                     initialMembers  = eletricistas,
+                    initialTeamType = lastTeamData?.teamType,
                     onDismiss = { showEditDialog = false },
-                    onSave   = { name, members, schedule ->
+                    onSave   = { name, members, schedule, teamType ->
                         val oldName = equipe
                         if (oldName.isNotBlank() && oldName != name) {
                             // Mudança de prefixo: pede motivo antes de salvar
-                            pendingTeamChange = Triple(name, members, schedule)
+                            pendingTeamChange = PendingTeamChange(name, members, schedule, teamType)
                             showReasonDialog = true
                         } else {
                             // Mesma equipe ou primeira vez: salva direto
                             scope.launch {
-                                teamSync.savePendingLocal(context, name, members, schedule)
+                                teamSync.savePendingLocal(context, name, members, schedule, teamType)
                                 equipe = name
                                 eletricistas = members
                                 teamDialogMandatory = false
@@ -1255,10 +1277,10 @@ fun MainLayoutContainer() {
             if (showReasonDialog && pendingTeamChange != null) {
                 TeamChangeReasonDialog(
                     oldPrefix = equipe,
-                    newPrefix = pendingTeamChange!!.first,
+                    newPrefix = pendingTeamChange!!.name,
                     onCancel = { showReasonDialog = false },
                     onConfirm = { reason ->
-                        val (name, members, schedule) = pendingTeamChange!!
+                        val (name, members, schedule, pendingType) = pendingTeamChange!!
                         val oldName = equipe
                         
                         scope.launch {
@@ -1270,7 +1292,7 @@ fun MainLayoutContainer() {
                                 TrainingExecLocalStore.clearLocalOnly(context, oldName)
                             }
                             
-                            teamSync.savePendingLocal(context, name, members, schedule)
+                            teamSync.savePendingLocal(context, name, members, schedule, pendingType)
                             equipe = name
                             eletricistas = members
                             

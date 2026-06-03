@@ -50,7 +50,9 @@ fun TurnoControlScreen(
     startAtKmTarget: EstadoTurno? = null,
     prefillMotivo: MotivoDeslocamentoEspecial? = null,
     prefillMotivoOutro: String? = null,
-    online: Boolean = false
+    online: Boolean = false,
+    teamType: String? = null,
+    onClickEquipe: () -> Unit = {}
 ) {
     var step by remember(startAtKmTarget) {
         mutableStateOf(if (startAtKmTarget != null) Step.KM else Step.MENU)
@@ -415,6 +417,8 @@ fun TurnoControlScreen(
                         onDismiss = onDismiss,
                         onSelectTarget = { handleSelectTarget(it) },
                         equipe = equipe,
+                        teamType = teamType,
+                        onClickEquipe = onClickEquipe,
                         online = online,
                         bdoList = bdoList,
                         onDefinirSs = { ssId ->

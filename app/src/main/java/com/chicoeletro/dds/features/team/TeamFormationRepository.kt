@@ -24,6 +24,7 @@ data class TeamFormation(
     val teamKey: String,
     val members: List<String>,
     val workSchedule: Map<String, Any>? = null,
+    val teamType: String? = null,
     val updatedAt: Timestamp? = null,
     val updatedByUid: String? = null,
     val updatedByName: String? = null,
@@ -61,6 +62,7 @@ class TeamFormationRepository(
             teamKey = teamKey,
             members = members,
             workSchedule = schedule,
+            teamType = snap.getString("teamType"),
             updatedAt = snap.getTimestamp("updatedAt"),
             updatedByUid = snap.getString("updatedByUid"),
             updatedByName = snap.getString("updatedByName"),
@@ -68,7 +70,7 @@ class TeamFormationRepository(
         )
     }
 
-    suspend fun saveAndAudit(teamKey: String, newMembers: List<String>, workSchedule: Map<String, Any>? = null) {
+    suspend fun saveAndAudit(teamKey: String, newMembers: List<String>, workSchedule: Map<String, Any>? = null, teamType: String? = null) {
         val uid = ensureAuthUid()
 
         val before = getCurrent(teamKey)
@@ -92,6 +94,9 @@ class TeamFormationRepository(
         if (workSchedule != null) {
             currentPayload["workSchedule"] = workSchedule
         }
+        if (teamType != null) {
+            currentPayload["teamType"] = teamType
+        }
 
         // Atualiza CURRENT (merge)
         doc(teamKey).set(currentPayload, SetOptions.merge()).await()
@@ -113,6 +118,12 @@ class TeamFormationRepository(
         }
         if (before?.workSchedule != null) {
             histPayload["beforeSchedule"] = before.workSchedule
+        }
+        if (teamType != null) {
+            histPayload["afterTeamType"] = teamType
+        }
+        if (before?.teamType != null) {
+            histPayload["beforeTeamType"] = before.teamType
         }
 
         doc(teamKey).collection("history").add(histPayload).await()

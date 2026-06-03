@@ -50,5 +50,7 @@ data class LastTeamData(
     val workStartHour: Int = 7,
     val workEndHour: Int = 18,
     // NOVO: Cronograma detalhado
-    val workSchedule: WorkSchedule = WorkSchedule()
+    val workSchedule: WorkSchedule = WorkSchedule(),
+    // NOVO: Tipo de equipe
+    val teamType: String? = null
 )

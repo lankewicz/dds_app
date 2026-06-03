@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(base_dir, "admin"))
 sys.path.insert(0, os.path.join(base_dir, "vexpenses"))
 sys.path.insert(0, os.path.join(base_dir, "token_server"))
 sys.path.insert(0, os.path.join(base_dir, "boletim_x_ponto"))
+sys.path.insert(0, os.path.join(base_dir, "controle_projetos"))
 
 # Configuração de Credenciais: Local (arquivo) vs Cloud Run (ADC)
 local_key = r"d:\programas\DDS\firebase_config.json"
@@ -89,6 +90,9 @@ from produtividade.routes.prod_routes import router as produtividade_router
 # Boletim x Ponto import
 from boletim_x_ponto.routes.boletim_routes import router as boletim_router
 
+# Controle de Projetos import
+from controle_projetos.routes.projeto_routes import router as projeto_router
+
 listener_manager = None
 
 @asynccontextmanager
@@ -111,7 +115,8 @@ app = FastAPI(title=APP_TITLE, lifespan=lifespan)
 
 # Static files for Monitor
 app.mount("/static", StaticFiles(directory=os.path.join(base_dir, "monitor", "static")), name="static_monitor")
-# Static files for Admin (Flask handles its own static files inside WSGI, but if it fails we could mount them too)
+# Static files for Controle de Projetos
+app.mount("/controle-projetos/static", StaticFiles(directory=os.path.join(base_dir, "controle_projetos", "static")), name="static_controle_projetos")
 
 # Modifica o Flask app para não usar prefixo se estivermos montando em /admin
 # O Flask app_bp já tem url_prefix='/admin', então se montarmos o WSGI no '/', ele pega '/admin'
@@ -140,7 +145,7 @@ class LoginPayload(BaseModel):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    public_paths = ["/login", "/api/login", "/static", "/favicon.ico"]
+    public_paths = ["/login", "/api/login", "/static", "/favicon.ico", "/controle-projetos/static"]
     if not any(request.url.path.startswith(p) for p in public_paths):
         user_email = request.cookies.get("user_email")
         if not user_email:
@@ -208,6 +213,7 @@ app.include_router(messaging_router)
 app.include_router(token_router)
 app.include_router(produtividade_router)
 app.include_router(boletim_router)
+app.include_router(projeto_router)
 
 if __name__ == "__main__":
     import uvicorn

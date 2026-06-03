@@ -11,7 +11,7 @@ def get_latest_competence(empresa: str = "ChicoEletro", force_scan: bool = False
     """
     if not force_scan:
         try:
-            meta_doc = db.collection("productivity").document(empresa).get()
+            meta_doc = db.collection("webtools").document("producao_mensal").collection("metadata").document(empresa).get()
             if meta_doc.exists:
                 data = meta_doc.to_dict()
                 year = data.get("lastYear")

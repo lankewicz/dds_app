@@ -63,7 +63,7 @@ class ReportService:
         def update_task(progress: int, message: str):
             if task_id:
                 try:
-                    db.collection("vexpenses").document("data").collection("system_tasks").document(task_id).update({
+                    db.collection("webtools").document("vexpenses").collection("system_tasks").document(task_id).update({
                         "progress": progress,
                         "message": message
                     })
@@ -249,7 +249,7 @@ class ReportService:
         logger.info("Caches reconstruídos com sucesso.")
         update_task(100, "Concluído com sucesso!")
         if task_id:
-            db.collection("vexpenses").document("data").collection("system_tasks").document(task_id).update({
+            db.collection("webtools").document("vexpenses").collection("system_tasks").document(task_id).update({
                 "status": "completed",
                 "finished_at": datetime.now(timezone.utc)
             })
