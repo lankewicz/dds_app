@@ -14,7 +14,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     id("com.google.gms.google-services")
@@ -46,7 +45,7 @@ val versionNameAuto by extra {
 
 android {
     namespace = "com.chicoeletro.dds"
-    compileSdk = 36
+    compileSdk = 37
 
     // ===================================================================
     // INÍCIO DO CÓDIGO DE ASSINATURA ADICIONADO
@@ -76,7 +75,7 @@ android {
     defaultConfig {
         applicationId = "com.chicoeletro.dds.app"
         minSdk = 27
-        targetSdk = 36
+        targetSdk = 37
         versionCode = versionCodeAuto
         versionName = versionNameAuto
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -116,10 +115,9 @@ android {
 }
 
 dependencies {
-    // ─── Firebase (FORMA CORRIGIDA) ──────────────────────────────────────────    // 1. Importe o Firebase BoM (Bill of Materials) para gerenciar as versões
-    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    // ─── Firebase (Sincronizado com Version Catalog) ──────────────────────────
+    implementation(platform(libs.firebase.bom))
 
-    // 2. Adicione as dependências do Firebase SEM o sufixo -ktx e SEM a versão
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
@@ -127,7 +125,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
 
     // Firebase Tasks -> Kotlin Coroutines (await)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation(libs.kotlinx.coroutines.play.services)
     // ─── Sign-in with Google (Credential Manager) ─────────────────────────────
     // Base recomendado pelo Android/Firebase para login Google moderno
     // - credentials: API unificada de credenciais (passkeys, passwords, federated)
@@ -171,12 +169,10 @@ dependencies {
     implementation(libs.lifecycle.runtime.ktx)
 
     // ─── DataStore Preferences ────────────────────────────────────────────────
-    //implementation(libs.datastore.preferences)
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation(libs.datastore.preferences)
 
     // ─── WorkManager (Background Tasks) ───────────────────────────────────────
     implementation(libs.androidx.work.runtime.ktx)
-    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // ─── CameraX ──────────────────────────────────────────────────────────────
     implementation(libs.androidx.camera.core)
