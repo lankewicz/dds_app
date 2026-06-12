@@ -40,7 +40,9 @@ data class Atividade(
     val codigo: Int,
     val descricao: String,
     val us_montagem: Double,
-    val us_desmontagem: Double
+    val us_desmontagem: Double,
+    val calculo_dinamico: Boolean? = false,
+    val tipo_calculo: String? = null
 )
 
 @Serializable
@@ -56,7 +58,10 @@ data class LancamentoPosteRequest(
 data class ItemLoteRequest(
     val codigo: Int,
     val quantidade: Double,
-    val tipo: String
+    val tipo: String,
+    val elementos: Int? = null,
+    val distancia: Double? = null,
+    val horas: Double? = null
 )
 
 @Serializable

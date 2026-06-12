@@ -1,0 +1,356 @@
+=== PAGE 23 ===
+ MANUAL DE INSTRUÇÕES TÉCNICAS – MIT 
+Título: FISCALIZAÇÃO DE OBRA S DE DISTRIBUIÇÃO  Título  Módulo  Folha  
+31 08 24 
+Módulo: ATIVIDADES DE CONSTRUÇÃO DE REDES  Versão  
+16 21/07/2025  
+ 
+ 
+ 
+Órgão Emissor: SED /DEPN Visto:  Aprovado:  
+ 
+4.15 – LIGAÇÃO DE UNIDADE CONSUMIDORA  
+ITEM  ATIVIDADES  QUANTIDADE  
+US 
+MONTAGEM  QUANTIDADE  
+US 
+DESMONTAGEM  
+850 ENTRADA DE SERVIÇO M ONOFÁSICA, POR UNIDA DE 
+Consiste na montagem e instalação do padrão d a entrada de serviço  monofásica de 10A,   
+30A, 40A ou 70A, para 1 (um) consumidor, em poste auxiliar ou parede lateral, bem como a 
+fixação do eletroduto rígido ou flexível, incluindo o lançamento do ramal de entrada embutido  
+e as conexões necessárias.  3,40 1,36 
+851 ENTRADA DE SERVIÇO B IFÁSICA, POR UNIDADE  
+Consiste na montagem e instalação do padrão da entrada de serviço  bifásica de 40A, 70A 
+ou 100A para consumidor, em poste auxiliar ou parede lateral, bem como a fixação do 
+eletroduto rígido ou flexível, in cluindo o lançamento do ramal de entrada embutido  e as 
+conexões necessárias.  5,62 2,25 
+852 TERMINAL PARA MÉDIA  TENSÃO, INSTALAÇÃO I NTERNA, POR TERMINAL  
+Compreende a preparação, montagem e instalação interna do terminal de Média Tensão e 
+as conexões necess árias.  1,50 0,50 
+857 TERMINAL PARA MÉDIA  TENSÃO, INSTALAÇÃO E XTERNA, POR TERMINAL  
+Compreende a preparação, montagem e instalação em poste, do terminal de Média 
+Tensão e as conexões necessárias.  7,00 1,00 
+853 RAMAL DE LIGAÇÃO AER ÉA DE CONSUMIDOR EM BT, P OR RAMAL  
+Consiste na instalação e tensionamento de cabo multiplex ou cabo de cobre isolado, entre a 
+rede secundária e o ponto de entrega de energia, independente mente  do número de fases, 
+incluindo as conexões no ramal do consumidor, exceto ligações à rede.   0,78 0,31 
+854 REINSTALAÇÃO RAMAL L IGAÇÃO AÉREA CONSUMI DOR BT, POR RAMAL  
+Compreende a reinstalação do ramal de ligação  de consumidor desconectado em função 
+de melhoria na rede, incluindo o tensionamento e encabeçamento, independente mente  do 
+número de fas es, exceto ligações à rede.  0,49 - 
+855 INSTALAÇÃO DO MEDIDO R MONOFÁSICO, BIFÁSI CO OU TRIFÁSICO, POR  MEDIDOR  
+Compreende a instalação do medidor  monofásico, bifásico ou trifásico incluindo todas as 
+conexões necessárias.  
+ 0,45 0,18 
+856 INSTALAÇÃO DE CAIXA DE MEDIDOR MONOFÀS ICA, BIFÁS ICA E TRIFÁS ICA, POR 
+CAIXA  
+Compreende a instalação de caixa de medição  em poste da COPEL ou poste auxiliar e a 
+vedação dos orifícios a fim de impedir a entrada de água.  
+ 1,00 0,40 
+858 CAIXA DE DERIVAÇÃO E M CONCRETO PARA BT, TIPO CD -1 OU CD -2, POR CAIXA  
+Compreende a instalação da caixa de derivação  em concreto para BT, padrão COPEL, 
+tipo CD -1 ou CD -2, em cava já aberta, para atendimento em Baixa Tensão.  0,93 0,37 
+865 ELETRODUTO EM POSTE OU PAREDE, POR METRO  DE ELETRODUTO  
+Compree nde a fixação de eletroduto rígido ou flexível em poste ou parede, através de fita 
+de aço ou braçadeira, para atendimento em redes de Média ou Baixa Tensão.  0,86 0,34 
+885 INSTALAÇÃO INTERNA C OM RAMAL ALIMENTADOR   
+Consiste na execução da instalação interna  da residência do consumidor rural, incluindo as 
+seguintes atividades:  
+- Instalação do ramal alimentador;  
+- Instalação de caixa com disjuntor de proteção monofásico de 15A;  
+- Instalação de 3 pontos de luz com os respectivos interruptores;  
+- Instalação de 2 tomada s de 3 pinos;  
+- Instalação de 1 haste de aterramento e aterramento da s tomada s. 4,70 - 
+ 
+
+=== PAGE 24 ===
+ MANUAL DE INSTRUÇÕES TÉCNICAS – MIT 
+Título: FISCALIZAÇÃO DE OBRA S DE DISTRIBUIÇÃO  Título  Módulo  Folha  
+31 08 25 
+Módulo: ATIVIDADES DE CONSTRUÇÃO DE REDES  Versão  
+16 21/07/2025  
+ 
+ 
+ 
+Órgão Emissor: SED /DEPN Visto:  Aprovado:  
+ 
+ 
+4.16 – TRANSPORTES E DESLOCAMENTOS   
+ITEM  ATIVIDADES  QUANTIDADE  
+US 
+MONTAGEM  
+621 TRANSPORTE DO BIG JU MPER NO MUNICÍPIO BASE DO BIG JUMPER  
+Compreende a remuneraç ão do custo referente ao transporte do conjunto Big Jumper  
+(carreta e carretel motorizado) e demais acessórios necessários até o local de instalação a 
+ser realizada “no município ou seus distritos ” onde se localiza o equipamento Big 
+Jumper , por Big Jumper utilizado . 7,749  
+622 TRANSPORTE DO BIG JU MPER FORA DO MUNICÍP IO BASE DO BIG JUMPER  
+Compreende a remuneração do custo referente ao transporte do conjunto Big Jumper  
+(carreta e carretel motorizado) e demais acessórios necessários até o local de instalação a  
+ser realizada “fora do município ” onde se localiza o equipamento Big Jumper , por Big 
+Jumper utilizado.  14,928 
+690 ADICIONAL DE DESLOCA MENTO DE PESSOAL, PO R KM  
+Essa atividade se constitui em adicional ao deslocamento de pessoal considerado na 
+atividade 86 3. Esse adicional será calculado a cada 200 US  de tarefas de montagem e 
+desmontagem , com arredondamento do resultado para o próximo inteiro. Do número de 
+deslocamentos adicionais encontrados ( N) será deduzido 1 (um) deslocamento (previsto na 
+atividade 863) . 
+Considera -se o coeficiente 0,045  para deslocamento de 1 elemento , percurso de ida e volta. 
+Assim, o coeficiente 0,450  corresponde ao deslocamento da Turma com 10 elementos ; o 
+coeficiente 0,315  corresponde ao deslocamento da Turma com 7 elementos ; e o coe ficiente 
+0,090  corresponde ao deslocamento da Turma com 2 elementos  do Programa de 
+Eficientização Energética - PEE.  
+Obs.: Os comentários 2, 3, 4 e 5 da atividade 863 também se aplicam à esta atividade.  ( 0,450  x  D ) x (N – 1) 
+ 
+ou 
+ 
+( 0,315  x  D ) x (N – 1) 
+ 
+ou 
+ 
+( 0,090  x  D ) x (N – 1) 
+ 
+698 TRANSPORTE DE POSTES E MATERIAIS NO TK DEMANDA , P/ TON  
+Consiste  no transporte de postes e demais materiais  necessários à construção da obra a 
+ser realizada no s município s e seus distritos , afastados  da base do contra to em distância s 
+maiores que 50 km .  
+O pagamento desta atividade ocorrerá , automaticamente calculado pelo sistema , nas 
+medições em que se registrar  o pagamento de material à contratada.  
+A quantidade de US para o pagamento do transporte será obtida em funçã o do peso ( em 
+Tonelada ) transportado e a distância ( D) percorrida em quilômetros.  
+1) O coeficiente 0,113 contempla a ida e  volta  até a obra.  
+2) A distância  (D) corresponde a  distância da base do contrato até  o município  ou 
+distrito da realizaç ão da obra.  Será o btida do valor registrado na atividade 863 
+(deslocamento de pessoal até a obra)  
+3) O coeficiente  “ton” corresponde ao peso dos postes e demais materiais fornecidos 
+pela contratada, pago s na medição . 
+Obs.: Esta a tividade será remunerada somente nos  contratos do tipo TK Demanda . 0,113 x ( D – 50 ) x ton  
+861 DESLOCAMENTO DE PESS OAL REF ERENTE  AO DESLIGAMENTO CANCELA DO, 
+POR KM  
+Consiste no deslocamento de pessoal que compõe uma turma de construção, nas situações 
+em que o desligamento é cancelado no local da obra.  
+O coeficiente 0,045 corresponde ao deslocamento de 1 elemento, percurso de ida e volta. 
+Assim, o coeficiente 0,450  corresponde ao deslocamento da Turma com 10 elementos; o 
+coeficiente 0,315  corresponde ao deslocamento da Turma com 7 elementos ; e o coeficie nte 
+0,090  corresponde ao deslocamento da Turma com 2 elementos do Programa de 
+Eficientização Energética - PEE.  
+Obs.: Os comentários 2, 3, 4 e 5 da atividade 863 também se aplicam à esta atividade.  ( 0,450  x  D )  
+ 
+ou 
+ 
+( 0,315  x  D ) 
+ 
+ou 
+ 
+( 0,090  x  D ) 
+ 
+
+=== PAGE 25 ===
+ MANUAL DE INSTRUÇÕES TÉCNICAS – MIT 
+Título: FISCALIZAÇÃO DE OBRA S DE DISTRIBUIÇÃO  Título  Módulo  Folha  
+31 08 26 
+Módulo: ATIVIDADES DE CONSTRUÇÃO DE REDES  Versão  
+16 21/07/2025  
+ 
+ 
+ 
+Órgão Emissor: SED /DEPN Visto:  Aprovado:  
+ 
+863 DESLOCAMENTO DE PESS OAL ATÉ O MUNICÍPIO OU DISTRITO DA OBRA,  POR KM  
+Consiste no deslocamento de pessoal que compõe uma turma de construção. Considera -se 
+ainda:  
+1) O coeficiente 0,045 corresponde ao deslocamento de 1 elemento, percurso de ida e volta.  
+Assim, o coeficiente 0,450  corresponde ao deslocamento da Turma com 10 elementos; o 
+coeficiente 0,315  corresponde ao deslocamento da Turma com 7 elementos ; e o coeficiente 
+0,090  corresponde ao deslocamento da Turma com 2 elementos do Programa de 
+Eficienti zação Energética - PEE.  
+2)No coeficiente já estão considerados o tempo de ida e volta,  portanto,  a distância (D) 
+corresponde a distância da obra da base do contrato  até o município ou distrito da obra.  
+3) O deslocamento considerado será por obra, exceção f eita a obras vinculadas por ODI e 
+ODS realizadas em conjunto, consideradas mesmo projeto, ou. obras de I.P. cujo acervo foi 
+transferido para a COPEL em que são emitidas duas ODIs. Nestes casos, deverá ser 
+atribuída a distância somente na obra da rede de di stribuição.  
+4) Para obras executadas  no município base do contrato , não será pago deslocamento, pois 
+já est á considerado no valor da US. Excepcionalmente para obras realizadas em contratos 
+sediados  em Curitiba, será considerada a distância entre o Almoxar ifado Central de Curitiba 
+(Atuba) e a Divisão  de Obras Curitiba (VORCTA) 5) Os deslocamentos entre ramais em obras 
+rurais já estão incluídos na quantidade de US. Portanto, numa obra rural que abrange mais 
+de um município, a distância a ser considerada será a do município mais próximo da base 
+do contrato . ( 0,450  x  D )  
+ 
+ou 
+ 
+( 0,315  x  D ) 
+ 
+ou 
+ 
+( 0,090  x  D ) 
+ 
+880 TRANSPORTE DE MATERI AL E POSTE COM USO D E MEIOS ALTERNATIVOS  
+Compreende a remuneração d o transporte de postes e materiais quando o  local for de difícil 
+acesso a caminhões ou camionetas e exig ir a utilização de meios alternativos como : barcos, 
+tratores, tração animal, dentre outros  ou até mesmo manualmente pela turma de trabalho.  
+A quantidade de US para esta atividade poderá ser obtida de duas for mas:  
+1) Multiplicar o tempo (t) de execução pelo número de pessoas (n) envolvidas na execução; 
+ou 
+2) Nos casos de locações, dividir o valor comprovadamente gasto pela empreiteira pelo 
+preço unitário da US no contrato.  
+Como justificativa deve -se registar,  tanto  no BDO  como na Medição,  o meio de transporte 
+empregado e os comprovantes dos gastos, no caso de locação.  
+O transporte de postes e materiais do local de entrega da Copel até o local da obra deverá 
+ser efetuado através das atividades 890 e 891. Esta at ividade não compreende o 
+levantamento do poste.  1,000  
+890 TRANSPORTE DE POSTES  E MATERIAIS FORNECIDOS PELA COPE L, QUANDO A 
+OBRA SE LOCALIZA  NO MUNICÍPIO DO ALMOXARIFADO , P/ TON  
+Consiste no transporte de todos os postes e demais materiais necessários à co nstrução de 
+obra realizada no município , ou seus distritos , onde se localiza o a lmoxarifado  COPEL . É 
+permitido o pagamento de transportes parciais na proporção do peso transportado.  2,460  
+891 
+ TRANSPORTE DE POSTES  E MATERIAIS  FORNECIDOS PELA COPE L, QUANDO  A 
+OBRA SE LOCALIZA  FORA DO MUNICÍPIO DO ALMOXARIFADO , P/ TON  
+Consiste  no transporte de todos os postes e demais materiais necessários à construção de 
+obra realizada “ fora do município ” onde se localiza o almoxarifado COPEL . É permitido o 
+pagamento de tran sportes parciais na proporção do peso transportado.  4,739  
+896 
+ ADICIONAL DE TRANSPO RTE DE POSTES E MATE RIAIS PENDENTES , QUANDO A 
+OBRA SE LOCALIZA  NO MUNICÍPIO DO ALMOX ARIFADO , P/ TON  
+Consiste  no transporte adicional de todos os postes e demais materiais n ecessários à 
+construção de obra realizada no município , ou seus distritos , onde se localiza o almoxarifado 
+COPEL , cujo fornecimento esteve na condição “pendente” no almoxarifado. O pagamento 
+desta atividade ocorrerá nas medições em que se registrarem Movim entações de Materiais 
+(MDM) de pendência (de sequência  /1 até /9).  2,460  
+
+=== PAGE 26 ===
+ MANUAL DE INSTRUÇÕES TÉCNICAS – MIT 
+Título: FISCALIZAÇÃO DE OBRA S DE DISTRIBUIÇÃO  Título  Módulo  Folha  
+31 08 27 
+Módulo: ATIVIDADES DE CONSTRUÇÃO DE REDES  Versão  
+16 21/07/2025  
+ 
+ 
+ 
+Órgão Emissor: SED /DEPN Visto:  Aprovado:  
+ 
+897 
+ ADICIONAL DE TRANSPO RTE DE POSTES E MATE RIAIS PENDENTES , QUANDO A 
+OBRA SE LOCALIZA FOR A DO MUNICÍPIO  DO ALMOX ARIFADO , P/ TON  
+Consiste  no transporte adicional de todos os postes e demais materiais necessários à 
+construção de obra realizada “ fora do município ” onde se localiza o almoxarifado COPEL , 
+cujo fornecimento esteve na condição “pendente” no almoxarifado da Copel. O pagamento 
+desta atividade ocorrerá nas medições em que se r egistrarem Movimentações de Materiais 
+(MDM) de pendência (de sequência  /1 até /9).  4,739  
+ 
+4.17 – PODA DE ÁRVORES E ROÇADA EM FAIXA DE SERVIDÃO  
+ITEM  ATIVIDADES  QUANTIDADE  
+US 
+MONTAGEM  QUANTIDADE  
+US 
+DESMONTAGEM  
+749 CORTE DE ÁRVORE, POR  ÁRVORE  
+Compreende o corte de árvore  isolada, localizada dentro ou fora da faixa de segurança da 
+rede que pelo seu porte ou pela ação de agentes externos, tais como ventos, erosão, dentre 
+outros , possa atingir a estrutura ou os cabos da rede de distribuição de energia e interfe rir 
+em sua  operação.  
+Inclui ainda  os serviços de desbaste de  galhos  e corte de toras , bem como o  recolhimento e 
+a destinação adequada  dos resíduos , quando necessário.  1,10 - 
+758 CORTE DE ÁRVORE EM Á REA DE REFLORESTAMEN TO, POR M²  
+Compreende o corte de árv ores em área de reflorestamento  (pinheiros araucária, pinus, 
+eucaliptos ou outro tipo de árvore de grande porte), com uso intensivo de motosserra , 
+efetuando o corte das árvores a uma altura de 30 cm do solo, situadas dentro dos limites da 
+faixa de RDR esta belecida pela Copel. Para efetuar a limpeza da faixa de servidão e 
+desobstrução de estradas, as árvores deverão se r cortadas em toras com aproximadamente 
+02 (dois) metros  de comprimento . 0,028  - 
+707 PODA DE ÁRVORE, POR ÁRVORE  
+Compreende a poda de árvore  localizada próxima a rede de distribuição  que pelo seu porte 
+ou pela ação de agentes externos, tais como ventos, erosão, entre outros , possa atingir a 
+estrutura ou os cabos da rede de distribuição e interferir em sua  operação.  
+Inclui ainda o recolhimento e a destinação adequada dos resíduos . 0,50 - 
+708 ROÇADA EM FAIXA DE REDE DE DISTRIBUIÇÃO , POR M², TIPO 3  
+Compreende o rebaixamento de toda e qualquer vegetação, em estágio avançado de 
+desenvolvimento a uma altura máxima de 30 cm do solo, situada dentro dos l imites da faixa 
+de  segurança da rede de distribuição , estabelecida pela COPEL, incluindo a limpeza ao 
+nível do solo com a remoção de todo o entulho dentro da faixa central de 02 (dois) metros, 
+bem como das bases dos postes com no mínimo 01 (um) metro ao r edor desses.  
+Caracteriza -se este serviço quando sua execução exigir utilização intensiva de motosserra.  0,018  - 
+709 ROÇADA EM FAIXA DE  REDE DE DISTRIBUIÇÃ O, POR M², TIPO 2  
+Compreende o rebaixamento de toda e qualquer vegetação, em estágio médio de 
+desenv olvimento, a uma altura máxima de 30 cm do solo, situada dentro dos limites da faixa 
+de  segurança da rede de distribuição,  estabelecida pela COPEL, incluindo a limpeza ao 
+nível do solo com remoção de todo o entulho dentro da faixa central de 02 (dois) met ros,  
+bem como das bases postes com no mínimo 01 (um) metro ao redor desses.  
+Caracteriza -se este serviço quando sua execução exigir utilização intensiva de foice e 
+esporádica de motosserra.  0,013  - 
+711 ROÇADA EM FAIXA DE  REDE DE DISTRIBUIÇÃ O, POR M², TIPO  1 
+Compreende o rebaixamento de toda e qualquer vegetação, em estágio inicial de 
+desenvolvimento, a uma altura máxima de 30 cm do solo, situada dentro dos limites da faixa 
+de segurança da rede de distribuição , estabelecidas pela COPEL, incluindo a limpeza ao 
+nível do solo com remoção de todo o entulho dentro da faixa central de 02 (dois) metros,  
+bem como das bases postes com no mínimo 01 (um) metro ao redor desses.  
+Caracteriza -se este serviço quando sua execução exigir utilização intensiva de foice.  0,009  - 
+
+=== PAGE 27 ===
+ MANUAL DE INSTRUÇÕES TÉCNICAS – MIT 
+Título: FISCALIZAÇÃO DE OBRA S DE DISTRIBUIÇÃO  Título  Módulo  Folha  
+31 08 28 
+Módulo: ATIVIDADES DE CONSTRUÇÃO DE REDES  Versão  
+16 21/07/2025  
+ 
+ 
+ 
+Órgão Emissor: SED /DEPN Visto:  Aprovado:  
+ 
+4.18 – NUMERAÇÃO E IDENTIFICAÇÃO DA REDE  
+ITEM  ATIVIDADES  QUANTIDADE  
+US 
+MONTAGEM  QUANTIDADE  
+US 
+DESMONTAGEM  
+868 PINTURA DA NUMERAÇÃO  DE EQUIPAMENTO OU P OSTE, POR UNIDADE  
+Compreende a pintura de numeração no poste para identificar equipamento  ou o próprio  
+poste , utilizando tintas nas cores padronizadas. Inclui o tempo de espera para secagem de 
+fundo, o deslocamento entre estruturas e o fornecimento das tintas.  
+Quando houver necessidade de identificar equipamento e poste na mesma estrutura, o 
+pagamento da mão-de-obra deverá ser independente.  
+A remoção da pintura antiga de equipamento ou poste só será paga se não coincidir com a 
+nova pintura.  0,47 0,19 
+874 INSTALAÇÃO DE PLACA DE IDENTIFICAÇÃO, PO R PLACA  
+Compreende a instalação da placa de identificação de e quipamento.  0,17 0,07 
+ 
+ 
+4.19 – OPERAÇÃO E DESLIGAMENTOS DA REDE  
+ITEM  ATIVIDADES  QUANTIDADE  
+US 
+MONTAGEM  QUANTIDADE  
+US 
+DESMONTAGEM  
+777 OPERAÇÃO DE CHAVE DI STANTE DA OBRA EM AT É 15KM  
+Consiste na abertura de chave para desligamento e fechamento de chave para  energização 
+após a execução dos serviços,  distante do local da obra em até 15 km,  independentemente 
+do tipo de rede , monofásica, bifásica ou trifásica . 
+Esta atividade só deverá ser executada com a liberação da rede a ser trabalhada pela área 
+de operação d a COPEL.  2,00 - 
+881 OPERAÇÃO DE CHAVE NO  LOCAL DA OBRA  
+Consiste na abertura de chave para desligamento e fechamento de chave para energização 
+após a execução dos serviços  no local da obra , independentemente do tipo de rede , 
+monofásica, bifásica ou trifási ca.  
+Esta atividade só deverá ser executada com a liberação da rede a ser trabalhada pela área 
+de operação da COPEL.  0,50 - 
+887 AVISO DE DESLIGAMENT O AOS CONSUMIDORES, ATÉ 44 AVISOS  
+Consiste em retirar os avisos no local indicado pela COPEL, através de re presentante 
+credenciado,  e entregar as Unidades Consumidoras indicadas que serão afetadas pelo 
+desligamento.  
+Obs.: Quando a obra estiver localizada fora do município base do contrato, caberá também 
+remunerar a atividade 938, referente ao d eslocamento de 1  (um) elemento.  1,00 - 
+879 SERVIÇOS REALIZADOS EM DESLIGAMENTOS AOS  DOMINGOS OU FERIADO S 
+Esta atividade deve ser paga por ocasião de Construção de Redes de Distribuição com 
+desligamentos programados aos domingos ou feriados (somente os feriados do Estado do 
+Paraná ou nacionais) e o pagamento deverá ser cumulativamente com as demais atividades 
+de construção realizadas.  
+A quantidade de US deverá ser obtida em função do número de pessoas ( n) efetivamente 
+envolvido na obra (somente da turma de construção - motorista, encarregado, eletricistas e 
+ajudantes) e o tempo ( t) de desligamento (em horas) acrescido de 2 (duas) horas  para 
+mobilização e desmobilização da turma.  
+Obs.: Se houver atraso no desligamento atribuível à empreiteira, o período de 2 horas para 
+mobil ização e desmobilização não deve ser considerado.  ( t x n )  
+

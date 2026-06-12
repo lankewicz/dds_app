@@ -44,6 +44,9 @@ class ItemLote(BaseModel):
     codigo: int
     quantidade: float
     tipo: str
+    elementos: Optional[int] = None
+    distancia: Optional[float] = None
+    horas: Optional[float] = None
 
 class LancamentoLotePayload(BaseModel):
     equipe_numero: int
@@ -211,3 +214,117 @@ def editar_atividade_mit(codigo: int, payload: EditarMitPayload):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class ConfirmarMitPayload(BaseModel):
+    codigo: int
+    tarefa: str
+    categoria: str
+    forma_pagamento: str
+    descricao: str
+    us_montagem: float
+    us_desmontagem: float
+    calculo_dinamico: Optional[bool] = False
+    tipo_calculo: Optional[str] = None
+    ativo: Optional[bool] = True
+
+# 12. Rota HTML para revisão do MIT
+@router.get("/revisar-mit", response_class=HTMLResponse)
+def ver_revisao_mit(request: Request):
+    user_email = request.cookies.get("user_email")
+    return templates.TemplateResponse("revisar_mit.html", {
+        "request": request,
+        "user_email": user_email
+    })
+
+# 13. API para listar atividades pendentes e salvas
+@router.get("/api/mit-import/pendentes")
+def listar_mit_pendentes():
+    try:
+        import json
+        from controle_projetos.firestore_service import BASE_DOC_PATH
+        
+        # 1. Carregar atividades cadastradas no Firestore
+        cadastradas = {}
+        docs = BASE_DOC_PATH.collection("atividades_mit").stream()
+        for d in docs:
+            dict_data = d.to_dict()
+            cadastradas[dict_data["codigo"]] = dict_data
+            
+        # 2. Ler o JSON gerado pelo parser
+        json_path = r"d:\programas\DDS\parsed_mit_v2.json"
+        if not os.path.exists(json_path):
+            json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "parsed_mit_v2.json")
+        if not os.path.exists(json_path):
+            raise HTTPException(status_code=404, detail="Arquivo parsed_mit_v2.json não encontrado. Execute o script de parse primeiro.")
+            
+        with open(json_path, "r", encoding="utf-8") as f:
+            parsed_data = json.load(f)
+            
+        # 3. Anotar cada item com o estado de salvamento no Firestore
+        ret = []
+        codigos_processados = set()
+        for item in parsed_data:
+            cod = item["codigo"]
+            codigos_processados.add(cod)
+            if cod in cadastradas:
+                item["salvo"] = True
+                item["tarefa"] = cadastradas[cod].get("tarefa", item["tarefa"])
+                item["categoria"] = cadastradas[cod].get("categoria", item["categoria"])
+                item["forma_pagamento"] = cadastradas[cod].get("forma_pagamento", item["forma_pagamento"])
+                item["descricao_detalhada"] = cadastradas[cod].get("descricao", item["descricao_detalhada"])
+                item["us_montagem"] = cadastradas[cod].get("us_montagem", item["us_montagem"])
+                item["us_desmontagem"] = cadastradas[cod].get("us_desmontagem", item["us_desmontagem"])
+                item["calculo_dinamico"] = cadastradas[cod].get("calculo_dinamico", False)
+                item["tipo_calculo"] = cadastradas[cod].get("tipo_calculo", None)
+                item["ativo"] = cadastradas[cod].get("ativo", True)
+            else:
+                item["salvo"] = False
+                item["calculo_dinamico"] = False
+                item["tipo_calculo"] = None
+                item["ativo"] = True
+            ret.append(item)
+            
+        # Adicionar novos criados apenas no Firestore
+        for cod, cad in cadastradas.items():
+            if cod not in codigos_processados:
+                ret.append({
+                    "codigo": cod,
+                    "tarefa": cad.get("tarefa", ""),
+                    "categoria": cad.get("categoria", ""),
+                    "forma_pagamento": cad.get("forma_pagamento", "UNIDADE"),
+                    "descricao_detalhada": cad.get("descricao", ""),
+                    "us_montagem": cad.get("us_montagem", 0.0),
+                    "us_desmontagem": cad.get("us_desmontagem", 0.0),
+                    "calculo_dinamico": cad.get("calculo_dinamico", False),
+                    "tipo_calculo": cad.get("tipo_calculo", None),
+                    "ativo": cad.get("ativo", True),
+                    "salvo": True,
+                    "raw_text": "Item incluído manualmente"
+                })
+                
+        return ret
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 14. API para confirmar e salvar um item no Firestore
+@router.post("/api/mit-import/confirmar")
+def confirmar_item_mit(payload: ConfirmarMitPayload):
+    try:
+        from controle_projetos.firestore_service import atualizar_atividade_mit_db
+        atualizar_atividade_mit_db(payload.codigo, payload.dict())
+        return {"sucesso": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 15. API para excluir uma atividade do MIT
+@router.delete("/api/atividades/{codigo}")
+def deletar_atividade_mit(codigo: int):
+    try:
+        from controle_projetos.firestore_service import excluir_atividade_mit_db
+        excluir_atividade_mit_db(codigo)
+        return {"sucesso": True}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

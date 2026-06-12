@@ -145,7 +145,15 @@ class LoginPayload(BaseModel):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    public_paths = ["/login", "/api/login", "/static", "/favicon.ico", "/controle-projetos/static"]
+    public_paths = [
+        "/login",
+        "/api/login",
+        "/static",
+        "/favicon.ico",
+        "/controle-projetos/static",
+        "/controle-projetos/revisar-mit",
+        "/controle-projetos/api/mit-import"
+    ]
     if not any(request.url.path.startswith(p) for p in public_paths):
         user_email = request.cookies.get("user_email")
         if not user_email:

@@ -42,7 +42,10 @@ def _get_mit_info(codigo: int) -> dict:
             "descricao_detalhada": desc_detalhada,
             "forma_pagamento": raw_info.get("forma_pagamento", "UNIDADE"),
             "us_montagem": raw_info.get("us_montagem", 0.0),
-            "us_desmontagem": raw_info.get("us_desmontagem", 0.0)
+            "us_desmontagem": raw_info.get("us_desmontagem", 0.0),
+            "calculo_dinamico": raw_info.get("calculo_dinamico", False),
+            "tipo_calculo": raw_info.get("tipo_calculo", None),
+            "ativo": raw_info.get("ativo", True)
         }
         
     return {
@@ -51,7 +54,10 @@ def _get_mit_info(codigo: int) -> dict:
         "descricao": f"Atividade {codigo}",
         "descricao_detalhada": f"Atividade {codigo}",
         "us_montagem": 0.0,
-        "us_desmontagem": 0.0
+        "us_desmontagem": 0.0,
+        "calculo_dinamico": False,
+        "tipo_calculo": None,
+        "ativo": True
     }
 
 def _get_project_title(projeto_id: str) -> Optional[str]:
@@ -202,15 +208,22 @@ def lancar_poste_db(
     for t in tarefas:
         tipo = "MONTAGEM" if t["sinal"] == "+" else "DESMONTAGEM"
         l_ref = BASE_DOC_PATH.collection("lancamentos").document() # Auto UUID
+        codigo_mit = int(t["codigo"])
+        mit = _get_mit_info(codigo_mit)
+        qtde = float(t["quantidade"])
+        us_unitario = mit["us_montagem"] if tipo == "MONTAGEM" else mit["us_desmontagem"]
+        us_calculada = qtde * us_unitario
+        
         batch.set(l_ref, {
             "equipe_numero": int(equipe_numero),
             "data_execucao": data_execucao,
             "projeto_id": projeto_id,
             "estrutura_id": int(estrutura_id),
-            "atividade_codigo": int(t["codigo"]),
-            "quantidade": float(t["quantidade"]),
+            "atividade_codigo": codigo_mit,
+            "quantidade": qtde,
             "tipo": tipo,
-            "origem": "POSTE"
+            "origem": "POSTE",
+            "us_calculada": round(us_calculada, 4)
         })
         
     batch.commit()
@@ -235,16 +248,65 @@ def lancar_lote_db(
     batch = db.batch()
     for it in itens:
         l_ref = BASE_DOC_PATH.collection("lancamentos").document()
-        batch.set(l_ref, {
+        codigo_mit = int(it["codigo"])
+        mit = _get_mit_info(codigo_mit)
+        
+        # Obter parâmetros adicionais
+        elementos = it.get("elementos")
+        distancia = it.get("distancia")
+        horas = it.get("horas")
+        
+        # Converter para tipos corretos
+        elementos_val = int(elementos) if elementos is not None else None
+        distancia_val = float(distancia) if distancia is not None else None
+        horas_val = float(horas) if horas is not None else None
+        
+        is_dinamico = mit.get("calculo_dinamico", False)
+        tipo_calculo = mit.get("tipo_calculo")
+        tipo_lanc = it["tipo"].upper()
+        
+        if is_dinamico:
+            # Calcular US dinâmica
+            if tipo_calculo in ["deslocamento", "deslocamento_adicional", "deslocamento_cancelado"]:
+                # Formula: 0.045 * elementos * distancia
+                us_calculada = 0.045 * (elementos_val or 0) * (distancia_val or 0.0)
+            elif tipo_calculo == "deslocamento_simples":
+                # Formula: 0.045 * distancia
+                us_calculada = 0.045 * (distancia_val or 0.0)
+            elif tipo_calculo in ["hora_extra", "transporte_meios_alternativos"]:
+                # Formula: (horas + 2) * elementos
+                us_calculada = ((horas_val or 0.0) + 2.0) * (elementos_val or 0)
+            else:
+                # Fallback genérico para outros cálculos ou quantidade padrão
+                us_calculada = float(it["quantidade"])
+                
+            quantidade_final = us_calculada
+        else:
+            quantidade_final = float(it["quantidade"])
+            us_unitario = mit["us_montagem"] if tipo_lanc == "MONTAGEM" else mit["us_desmontagem"]
+            us_calculada = quantidade_final * us_unitario
+            
+        launch_doc = {
             "equipe_numero": int(equipe_numero),
             "data_execucao": data_execucao,
             "projeto_id": projeto_id,
             "estrutura_id": None,
-            "atividade_codigo": int(it["codigo"]),
-            "quantidade": float(it["quantidade"]),
-            "tipo": it["tipo"].upper(), # 'MONTAGEM' ou 'DESMONTAGEM'
-            "origem": "LOTE"
-        })
+            "atividade_codigo": codigo_mit,
+            "quantidade": quantidade_final,
+            "tipo": tipo_lanc,
+            "origem": "LOTE",
+            "us_calculada": round(us_calculada, 4)
+        }
+        
+        # Adicionar parâmetros de cálculo se existirem ou se for dinâmico
+        if elementos_val is not None:
+            launch_doc["elementos"] = elementos_val
+        if distancia_val is not None:
+            launch_doc["distancia"] = distancia_val
+        if horas_val is not None:
+            launch_doc["horas"] = horas_val
+            
+        batch.set(l_ref, launch_doc)
         
     batch.commit()
     return {"sucesso": True, "mensagem": f"{len(itens)} itens de lote registrados!"}
@@ -290,11 +352,14 @@ def obter_dashboard_semanal_db(semana: Optional[str] = None) -> dict:
         tipo = l.get("tipo")
         qtde = float(l.get("quantidade", 0.0))
         
+        # Obter US pre-calculada se disponível no documento
+        us_valor = l.get("us_calculada")
+        if us_valor is None:
+            us_valor = qtde * (mit["us_montagem"] if tipo == "MONTAGEM" else mit["us_desmontagem"])
+            
         if tipo == "MONTAGEM":
-            us_valor = qtde * mit["us_montagem"]
             resumo_equipes[eq]["montagem"] += us_valor
         else:
-            us_valor = qtde * mit["us_desmontagem"]
             resumo_equipes[eq]["desmontagem"] += us_valor
             
         resumo_equipes[eq]["total"] += us_valor
@@ -325,8 +390,10 @@ def listar_lancamentos_db(limite: int = 50) -> List[dict]:
         tipo = l.get("tipo")
         qtde = float(l.get("quantidade", 0.0))
         
-        # Calcular US individual
-        us_calculada = qtde * (mit["us_montagem"] if tipo == "MONTAGEM" else mit["us_desmontagem"])
+        # Calcular ou obter US individual
+        us_calculada = l.get("us_calculada")
+        if us_calculada is None:
+            us_calculada = qtde * (mit["us_montagem"] if tipo == "MONTAGEM" else mit["us_desmontagem"])
         
         historico.append({
             "id": doc.id,
@@ -927,16 +994,26 @@ def obter_resumo_projeto_db(projeto_id: str) -> dict:
     
     totais_realizados = {}
     itens_realizados = []
+    realizado_us_por_atividade = {}
+    
     for doc in lancamentos_query:
         l = doc.to_dict()
         cod = str(l["atividade_codigo"])
         tipo = l["tipo"].lower() # 'montagem' ou 'desmontagem'
         qtde = float(l.get("quantidade", 0.0))
         
+        # Obter US pré-calculada do lançamento
+        us_lanc = l.get("us_calculada")
+        if us_lanc is None:
+            mit_temp = _get_mit_info(int(l["atividade_codigo"]))
+            us_lanc = qtde * (mit_temp["us_montagem"] if tipo == "montagem" else mit_temp["us_desmontagem"])
+            
         if cod not in totais_realizados:
             totais_realizados[cod] = {"montagem": 0.0, "desmontagem": 0.0}
+            realizado_us_por_atividade[cod] = 0.0
             
         totais_realizados[cod][tipo] += qtde
+        realizado_us_por_atividade[cod] += us_lanc
         
         if l.get("estrutura_id") is not None:
             itens_realizados.append({
@@ -963,14 +1040,21 @@ def obter_resumo_projeto_db(projeto_id: str) -> dict:
         prev = totais_previstos.get(cod_str, {"montagem": 0.0, "desmontagem": 0.0})
         real = totais_realizados.get(cod_str, {"montagem": 0.0, "desmontagem": 0.0})
         
-        # Calcular US para essa atividade
+        # Calcular US prevista
         p_m_us = prev["montagem"] * mit["us_montagem"]
         p_d_us = prev["desmontagem"] * mit["us_desmontagem"]
         previsto_us += p_m_us + p_d_us
         
-        r_m_us = real["montagem"] * mit["us_montagem"]
-        r_d_us = real["desmontagem"] * mit["us_desmontagem"]
-        realizado_us += r_m_us + r_d_us
+        # Obter US realizada do acumulado pré-calculado
+        r_us_total = realizado_us_por_atividade.get(cod_str, 0.0)
+        realizado_us += r_us_total
+        
+        if mit.get("calculo_dinamico"):
+            r_m_us = r_us_total if real["montagem"] > 0 else 0.0
+            r_d_us = r_us_total if real["desmontagem"] > 0 and real["montagem"] == 0 else 0.0
+        else:
+            r_m_us = real["montagem"] * mit["us_montagem"]
+            r_d_us = real["desmontagem"] * mit["us_desmontagem"]
         
         atividades_resumo.append({
             "codigo": cod,
@@ -984,7 +1068,7 @@ def obter_resumo_projeto_db(projeto_id: str) -> dict:
             "us_montagem": mit["us_montagem"],
             "us_desmontagem": mit["us_desmontagem"],
             "previsto_us": round(p_m_us + p_d_us, 2),
-            "realizado_us": round(r_m_us + r_d_us, 2)
+            "realizado_us": round(r_us_total, 2)
         })
         
     progresso = (realizado_us / previsto_us * 100) if previsto_us > 0 else 0.0
@@ -1019,28 +1103,35 @@ def atualizar_titulo_projeto_db(projeto_id: str, novo_titulo: str):
 # 13. Salvar alterações em uma atividade do MIT no Firestore
 def atualizar_atividade_mit_db(codigo: int, payload: dict):
     doc_ref = BASE_DOC_PATH.collection("atividades_mit").document(str(codigo))
-    if not doc_ref.get().exists:
-        raise HTTPException(status_code=404, detail="Atividade não encontrada no MIT.")
     
-    # Atualizar no Firestore
-    doc_ref.update({
-        "tarefa": payload["tarefa"],
-        "forma_pagamento": payload["forma_pagamento"],
-        "descricao": payload["descricao"],
-        "us_montagem": float(payload["us_montagem"]),
-        "us_desmontagem": float(payload["us_desmontagem"])
-    })
+    data = {
+        "codigo": int(codigo),
+        "tarefa": payload.get("tarefa", ""),
+        "categoria": payload.get("categoria", ""),
+        "forma_pagamento": payload.get("forma_pagamento", "UNIDADE"),
+        "descricao": payload.get("descricao", ""),
+        "us_montagem": float(payload.get("us_montagem", 0.0)),
+        "us_desmontagem": float(payload.get("us_desmontagem", 0.0)),
+        "calculo_dinamico": bool(payload.get("calculo_dinamico", False)),
+        "tipo_calculo": payload.get("tipo_calculo") if payload.get("calculo_dinamico") else None,
+        "ativo": bool(payload.get("ativo", True))
+    }
+    
+    doc_ref.set(data)
     
     # Limpar/recarregar no cache local em memória
     global _mit_cache
     if _mit_cache:
-        _mit_cache[codigo] = {
-            "codigo": codigo,
-            "tarefa": payload["tarefa"],
-            "forma_pagamento": payload["forma_pagamento"],
-            "descricao": payload["descricao"],
-            "us_montagem": float(payload["us_montagem"]),
-            "us_desmontagem": float(payload["us_desmontagem"])
-        }
+        _mit_cache[codigo] = data
+
+def excluir_atividade_mit_db(codigo: int):
+    doc_ref = BASE_DOC_PATH.collection("atividades_mit").document(str(codigo))
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada no MIT.")
+    doc_ref.delete()
+    
+    global _mit_cache
+    if _mit_cache and codigo in _mit_cache:
+        del _mit_cache[codigo]
 
 

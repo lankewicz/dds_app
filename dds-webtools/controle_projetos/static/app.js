@@ -41,12 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Configurar botão de editar descrição do projeto
     document.getElementById("editProjTitleBtn").addEventListener("click", iniciarEdicaoTitulo);
     
-    // Configurar busca no manual MIT
-    document.getElementById("searchMitInput").addEventListener("input", filtrarAtividadesMit);
-    
-    // Configurar botões de salvamento/cancelamento do modal MIT
-    document.getElementById("cancelEditMitBtn").addEventListener("click", fecharModalEditarMit);
-    document.getElementById("saveEditMitBtn").addEventListener("click", salvarEdicaoMit);
 
     
     // Configurar colapso do card de importação
@@ -833,164 +827,418 @@ function iniciarEdicaoTitulo() {
 // =========================================================================
 // TABELA E EDITOR DO MANUAL MIT 163108
 // =========================================================================
-let mitAtividades = []; // Cache local da lista de atividades do MIT
+let mitAtividades = [];
+let mitSelectedItem = null;
+let mitIsCreationMode = false;
+let mitFilteredItens = [];
+
+// Elementos da UI
+const mitListContainer = document.getElementById("mitListContainer");
+const mitSearchInput = document.getElementById("mitSearchInput");
+const mitFilterPending = document.getElementById("mitFilterPending");
+const mitFilterInactive = document.getElementById("mitFilterInactive");
+
+const mitEditorNoSelection = document.getElementById("mitEditorNoSelection");
+const mitEditorContent = document.getElementById("mitEditorContent");
+const mitEditorTitle = document.getElementById("mitEditorTitle");
+
+// Form Fields
+const mitFormCodigo = document.getElementById("mitFormCodigo");
+const mitFormCategoria = document.getElementById("mitFormCategoria");
+const mitFormTarefa = document.getElementById("mitFormTarefa");
+const mitFormUnidade = document.getElementById("mitFormUnidade");
+const mitFormUsMontagem = document.getElementById("mitFormUsMontagem");
+const mitFormUsDesmontagem = document.getElementById("mitFormUsDesmontagem");
+const mitFormDescricao = document.getElementById("mitFormDescricao");
+const mitFormCalculoDinamico = document.getElementById("mitFormCalculoDinamico");
+const mitFormAtivo = document.getElementById("mitFormAtivo");
+const mitFormTipoCalculo = document.getElementById("mitFormTipoCalculo");
+const mitCalculoDinamicoGroup = document.getElementById("mitCalculoDinamicoGroup");
+
+// Buttons
+const mitBtnIncluir = document.getElementById("mitBtnIncluir");
+const mitBtnCancelar = document.getElementById("mitBtnCancelar");
+const mitBtnSalvar = document.getElementById("mitBtnSalvar");
+const mitBtnExcluir = document.getElementById("mitBtnExcluir");
+const mitBtnAnterior = document.getElementById("mitBtnAnterior");
+const mitBtnProximo = document.getElementById("mitBtnProximo");
+
+// Configura Listeners adicionais quando a página carrega
+function inicializarTabelaMit() {
+    mitSearchInput.addEventListener("input", filtrarAtividadesMit);
+    mitFilterPending.addEventListener("change", filtrarAtividadesMit);
+    mitFilterInactive.addEventListener("change", filtrarAtividadesMit);
+    
+    mitBtnIncluir.addEventListener("click", iniciarInclusaoMit);
+    mitBtnCancelar.addEventListener("click", cancelarEdicaoMit);
+    mitBtnSalvar.addEventListener("click", salvarAtividadeMit);
+    mitBtnExcluir.addEventListener("click", excluirAtividadeMit);
+    mitBtnAnterior.addEventListener("click", anteriorAtividadeMit);
+    mitBtnProximo.addEventListener("click", proximoAtividadeMit);
+    
+    mitFormCalculoDinamico.addEventListener("change", toggleCalculoDinamicoForm);
+}
+
+// Chamar inicialização
+document.addEventListener("DOMContentLoaded", () => {
+    inicializarTabelaMit();
+});
+
+function toggleCalculoDinamicoForm() {
+    const show = mitFormCalculoDinamico.checked;
+    mitCalculoDinamicoGroup.style.display = show ? "grid" : "none";
+}
 
 async function listarAtividadesMit() {
-    const tbody = document.getElementById("mitTableBody");
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Carregando manual de atividades...</td></tr>';
+    mitListContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-secondary);">Carregando catálogo de atividades...</div>';
     
     try {
-        const response = await fetch(`${API_URL}/api/atividades`);
+        const response = await fetch(`${API_URL}/api/mit-import/pendentes`);
         if (!response.ok) throw new Error("Erro ao carregar atividades do MIT.");
         
         mitAtividades = await response.json();
-        renderizarAtividadesMit(mitAtividades);
+        filtrarAtividadesMit();
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--error-color);">${err.message}</td></tr>`;
+        mitListContainer.innerHTML = `<div style="padding:20px; text-align:center; color:var(--error-color);">${err.message}</div>`;
     }
-}
-
-function renderizarAtividadesMit(itens) {
-    const tbody = document.getElementById("mitTableBody");
-    tbody.innerHTML = "";
-    
-    if (itens.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary);">Nenhuma atividade encontrada.</td></tr>';
-        return;
-    }
-    
-    itens.forEach(a => {
-        const tr = document.createElement("tr");
-        const descTexto = (a.descricao_detalhada && a.descricao_detalhada !== a.tarefa) ? a.descricao_detalhada : "-";
-        
-        tr.innerHTML = `
-            <td><strong>${a.codigo}</strong></td>
-            <td style="font-weight: 600;">${a.tarefa}</td>
-            <td><span class="badge" style="background-color:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color);">${a.forma_pagamento}</span></td>
-            <td style="color: var(--text-secondary); max-width: 400px; white-space: normal; line-height: 1.4; font-size: 0.8rem;">${descTexto}</td>
-            <td style="text-align: right; font-weight: 500;">${a.us_montagem.toFixed(4)} US</td>
-            <td style="text-align: right; font-weight: 500;">${a.us_desmontagem.toFixed(4)} US</td>
-            <td style="text-align: center;">
-                <button class="btn btn-secondary btn-icon" style="padding: 4px 8px; font-size: 0.8rem;" onclick="abrirModalEditarMit(${a.codigo})">✏️ Editar</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
 }
 
 function filtrarAtividadesMit() {
-    const query = document.getElementById("searchMitInput").value.trim().toLowerCase();
-    if (!query) {
-        renderizarAtividadesMit(mitAtividades);
+    const query = mitSearchInput.value.trim().toLowerCase();
+    const showOnlyPending = mitFilterPending.checked;
+    const hideInactive = mitFilterInactive.checked;
+    
+    let itens = [...mitAtividades];
+    
+    if (query) {
+        itens = itens.filter(a => 
+            a.codigo.toString().includes(query) || 
+            a.tarefa.toLowerCase().includes(query) || 
+            (a.descricao_detalhada && a.descricao_detalhada.toLowerCase().includes(query)) ||
+            (a.categoria && a.categoria.toLowerCase().includes(query))
+        );
+    }
+    
+    if (showOnlyPending) {
+        itens = itens.filter(a => !a.salvo);
+    }
+    
+    if (hideInactive) {
+        itens = itens.filter(a => a.ativo !== false);
+    }
+    
+    mitFilteredItens = itens;
+    renderizarListaMit(itens);
+}
+
+function renderizarListaMit(itens) {
+    mitListContainer.innerHTML = "";
+    
+    if (itens.length === 0) {
+        mitListContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-secondary);">Nenhuma atividade encontrada.</div>';
         return;
     }
     
-    const filtrados = mitAtividades.filter(a => 
-        a.codigo.toString().includes(query) || 
-        a.tarefa.toLowerCase().includes(query) || 
-        (a.descricao_detalhada && a.descricao_detalhada.toLowerCase().includes(query))
-    );
-    renderizarAtividadesMit(filtrados);
+    // Agrupar por categoria
+    const grupos = {};
+    itens.forEach(item => {
+        const cat = item.categoria || "Sem Categoria";
+        if (!grupos[cat]) grupos[cat] = [];
+        grupos[cat].push(item);
+    });
+    
+    // Ordenar categorias numericamente/alfabeticamente
+    const categoriasOrdenadas = Object.keys(grupos).sort((a, b) => {
+        const matchA = a.match(/^(\d+)\.(\d+)/);
+        const matchB = b.match(/^(\d+)\.(\d+)/);
+        if (matchA && matchB) {
+            const majorA = parseInt(matchA[1], 10);
+            const minorA = parseInt(matchA[2], 10);
+            const majorB = parseInt(matchB[1], 10);
+            const minorB = parseInt(matchB[2], 10);
+            if (majorA !== majorB) return majorA - majorB;
+            return minorA - minorB;
+        }
+        return a.localeCompare(b);
+    });
+    
+    categoriasOrdenadas.forEach(cat => {
+        // Cabeçalho da Categoria
+        const catDiv = document.createElement("div");
+        catDiv.className = "mit-list-category";
+        catDiv.textContent = cat;
+        mitListContainer.appendChild(catDiv);
+        
+        // Itens
+        grupos[cat].forEach(item => {
+            const itemDiv = document.createElement("div");
+            itemDiv.className = `mit-list-item ${mitSelectedItem && mitSelectedItem.codigo === item.codigo ? 'selected' : ''}`;
+            itemDiv.addEventListener("click", () => selecionarAtividadeMit(item));
+            
+            // Badge do status
+            let badgeClass = "salvo";
+            let badgeText = "Salvo";
+            if (item.ativo === false) {
+                badgeClass = "inativo";
+                badgeText = "Inativo";
+            } else if (!item.salvo) {
+                badgeClass = "pendente";
+                badgeText = "Revisar";
+            }
+            
+            itemDiv.innerHTML = `
+                <div class="mit-item-info">
+                    <div class="mit-item-code-row">
+                        <span class="mit-item-code">${item.codigo}</span>
+                        <span class="mit-item-badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    <div class="mit-item-title" title="${item.tarefa}">${item.tarefa}</div>
+                </div>
+            `;
+            mitListContainer.appendChild(itemDiv);
+        });
+    });
 }
 
-async function abrirModalEditarMit(codigo) {
-    if (!mitAtividades || mitAtividades.length === 0) {
-        try {
-            const response = await fetch(`${API_URL}/api/atividades`);
-            if (response.ok) {
-                mitAtividades = await response.json();
-            }
-        } catch (err) {
-            console.error("Erro ao carregar atividades do MIT:", err);
+function selecionarAtividadeMit(item) {
+    mitSelectedItem = item;
+    mitIsCreationMode = false;
+    
+    // Atualizar seleção visual
+    const items = mitListContainer.querySelectorAll(".mit-list-item");
+    items.forEach(div => div.classList.remove("selected"));
+    
+    // Preencher formulário
+    mitFormCodigo.value = item.codigo;
+    mitFormCodigo.disabled = true; // Não pode alterar código na edição
+    
+    mitFormCategoria.value = item.categoria || "4.1 - LEVANTAMENTO CADASTRAL";
+    mitFormTarefa.value = item.tarefa || "";
+    mitFormUnidade.value = item.forma_pagamento || "";
+    mitFormUsMontagem.value = item.us_montagem !== undefined ? item.us_montagem : "";
+    mitFormUsDesmontagem.value = item.us_desmontagem !== undefined ? item.us_desmontagem : "";
+    mitFormDescricao.value = item.descricao_detalhada || "";
+    
+    mitFormCalculoDinamico.checked = !!item.calculo_dinamico;
+    mitFormAtivo.checked = item.ativo !== false;
+    mitFormTipoCalculo.value = item.tipo_calculo || "";
+    
+    toggleCalculoDinamicoForm();
+    
+    mitEditorTitle.textContent = `Editar Atividade #${item.codigo}`;
+    mitBtnExcluir.style.display = "inline-flex";
+    
+    mitEditorNoSelection.style.display = "none";
+    mitEditorContent.style.display = "flex";
+    
+    // Adicionar classe selected ao item clicado
+    filtrarAtividadesMit();
+}
+
+function iniciarInclusaoMit() {
+    mitSelectedItem = null;
+    mitIsCreationMode = true;
+    
+    // Reset formulário
+    mitFormCodigo.value = "";
+    mitFormCodigo.disabled = false;
+    mitFormCategoria.selectedIndex = 0;
+    mitFormTarefa.value = "";
+    mitFormUnidade.value = "POR UNIDADE";
+    mitFormUsMontagem.value = "0.0";
+    mitFormUsDesmontagem.value = "0.0";
+    mitFormDescricao.value = "";
+    mitFormCalculoDinamico.checked = false;
+    mitFormAtivo.checked = true;
+    mitFormTipoCalculo.value = "";
+    
+    toggleCalculoDinamicoForm();
+    
+    mitEditorTitle.textContent = "Incluir Nova Atividade no MIT";
+    mitBtnExcluir.style.display = "none"; // Não pode excluir algo que ainda não existe
+    
+    mitEditorNoSelection.style.display = "none";
+    mitEditorContent.style.display = "flex";
+    
+    // Limpar seleções visuais
+    const items = mitListContainer.querySelectorAll(".mit-list-item");
+    items.forEach(div => div.classList.remove("selected"));
+}
+
+function cancelarEdicaoMit() {
+    mitSelectedItem = null;
+    mitIsCreationMode = false;
+    
+    mitEditorContent.style.display = "none";
+    mitEditorNoSelection.style.display = "flex";
+    
+    filtrarAtividadesMit();
+}
+
+async function salvarAtividadeMit() {
+    const codigo = parseInt(mitFormCodigo.value);
+    const tarefa = mitFormTarefa.value.trim();
+    const categoria = mitFormCategoria.value;
+    const forma_pagamento = mitFormUnidade.value.trim();
+    const us_montagem = parseFloat(mitFormUsMontagem.value);
+    const us_desmontagem = parseFloat(mitFormUsDesmontagem.value);
+    const descricao = mitFormDescricao.value.trim();
+    const calculo_dinamico = mitFormCalculoDinamico.checked;
+    const tipo_calculo = mitFormTipoCalculo.value;
+    const ativo = mitFormAtivo.checked;
+    
+    if (isNaN(codigo) || codigo <= 0) {
+        alert("O código da atividade deve ser um número inteiro positivo.");
+        return;
+    }
+    
+    if (!tarefa) {
+        alert("O nome da tarefa/serviço é obrigatório.");
+        return;
+    }
+    
+    if (isNaN(us_montagem) || isNaN(us_desmontagem)) {
+        alert("Os valores de US devem ser números válidos.");
+        return;
+    }
+    
+    // Validação na criação de código duplicado
+    if (mitIsCreationMode) {
+        const existe = mitAtividades.find(a => a.codigo === codigo);
+        if (existe) {
+            alert(`Erro: Já existe uma atividade com o código ${codigo} no catálogo.`);
+            return;
         }
     }
-    const a = mitAtividades.find(item => item.codigo === codigo);
-    if (!a) {
-        alert(`Atividade ${codigo} não encontrada no manual do MIT.`);
-        return;
-    }
     
-    document.getElementById("editMitCodeBadge").textContent = a.codigo;
-    document.getElementById("editMitTarefa").value = a.tarefa;
-    document.getElementById("editMitFormaPagamento").value = a.forma_pagamento;
-    document.getElementById("editMitUsMontagem").value = a.us_montagem;
-    document.getElementById("editMitUsDesmontagem").value = a.us_desmontagem;
-    document.getElementById("editMitDescricao").value = a.descricao_detalhada || "";
+    mitBtnSalvar.disabled = true;
+    mitBtnSalvar.textContent = "Salvando...";
     
-    document.getElementById("editMitModal").style.display = "flex";
-}
-
-function fecharModalEditarMit() {
-    document.getElementById("editMitModal").style.display = "none";
-}
-
-async function salvarEdicaoMit() {
-    const codigo = parseInt(document.getElementById("editMitCodeBadge").textContent);
-    const tarefa = document.getElementById("editMitTarefa").value.trim();
-    const forma_pagamento = document.getElementById("editMitFormaPagamento").value.trim();
-    const us_montagem = parseFloat(document.getElementById("editMitUsMontagem").value);
-    const us_desmontagem = parseFloat(document.getElementById("editMitUsDesmontagem").value);
-    const descricao = document.getElementById("editMitDescricao").value.trim();
-    
-    if (!tarefa || !forma_pagamento || isNaN(us_montagem) || isNaN(us_desmontagem)) {
-        alert("Por favor, preencha todos os campos obrigatórios corretamente.");
-        return;
-    }
-    
-    const saveBtn = document.getElementById("saveEditMitBtn");
-    const cancelBtn = document.getElementById("cancelEditMitBtn");
-    saveBtn.disabled = true;
-    cancelBtn.disabled = true;
-    saveBtn.textContent = "Salvando...";
+    const payload = {
+        codigo,
+        tarefa,
+        categoria,
+        forma_pagamento,
+        descricao,
+        us_montagem,
+        us_desmontagem,
+        calculo_dinamico,
+        tipo_calculo: calculo_dinamico ? tipo_calculo : null,
+        ativo
+    };
     
     try {
-        const response = await fetch(`${API_URL}/api/atividades/${codigo}`, {
-            method: "PUT",
+        const response = await fetch(`${API_URL}/api/mit-import/confirmar`, {
+            method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({
-                tarefa,
-                forma_pagamento,
-                descricao,
-                us_montagem,
-                us_desmontagem
-            })
+            body: JSON.stringify(payload)
         });
         
-        if (!response.ok) throw new Error("Erro ao salvar alterações no manual.");
+        if (!response.ok) throw new Error("Erro de comunicação com o servidor.");
         
-        // Atualizar cache local
-        const idx = mitAtividades.findIndex(item => item.codigo === codigo);
+        const resData = await response.json();
+        if (!resData.sucesso) throw new Error(resData.detail || "Erro desconhecido ao salvar.");
+        
+        // Atualizar lista local
+        const idx = mitAtividades.findIndex(a => a.codigo === codigo);
+        const localItem = {
+            codigo,
+            tarefa,
+            categoria,
+            forma_pagamento,
+            descricao_detalhada: descricao,
+            us_montagem,
+            us_desmontagem,
+            calculo_dinamico,
+            tipo_calculo,
+            ativo,
+            salvo: true,
+            raw_text: idx !== -1 ? mitAtividades[idx].raw_text : "Incluído manualmente"
+        };
+        
         if (idx !== -1) {
-            mitAtividades[idx].tarefa = tarefa;
-            mitAtividades[idx].descricao = tarefa;
-            mitAtividades[idx].forma_pagamento = forma_pagamento;
-            mitAtividades[idx].descricao_detalhada = descricao;
-            mitAtividades[idx].us_montagem = us_montagem;
-            mitAtividades[idx].us_desmontagem = us_desmontagem;
+            mitAtividades[idx] = localItem;
+        } else {
+            mitAtividades.push(localItem);
         }
         
-        renderizarAtividadesMit(mitAtividades);
+        alert("Atividade salva com sucesso!");
         
-        // Se estiver na tela de detalhes do projeto, recarrega os detalhes para atualizar faturamento e descrições
-        const tabDetalhes = document.getElementById("tab-detalhes");
-        if (tabDetalhes && tabDetalhes.classList.contains("active")) {
-            const projId = document.getElementById("detailProjId").textContent;
-            if (projId && projId !== "-") {
-                verDetalhesProjeto(projId);
-            }
-        }
+        // Mantém selecionado o item recém-salvo
+        mitSelectedItem = localItem;
+        mitIsCreationMode = false;
+        mitFormCodigo.disabled = true;
+        mitEditorTitle.textContent = `Editar Atividade #${codigo}`;
+        mitBtnExcluir.style.display = "inline-flex";
         
-        fecharModalEditarMit();
+        filtrarAtividadesMit();
     } catch (err) {
-        alert("Erro: " + err.message);
+        alert("Erro ao salvar atividade: " + err.message);
     } finally {
-        saveBtn.disabled = false;
-        cancelBtn.disabled = false;
-        saveBtn.textContent = "Salvar Alterações";
+        mitBtnSalvar.disabled = false;
+        mitBtnSalvar.textContent = "Salvar Atividade";
     }
 }
 
-// Expor para o escopo global (onclick no HTML deferido)
-window.abrirModalEditarMit = abrirModalEditarMit;
+async function excluirAtividadeMit() {
+    if (!mitSelectedItem) return;
+    
+    const confirmacao = confirm(`Deseja realmente EXCLUIR permanentemente a atividade ${mitSelectedItem.codigo} - "${mitSelectedItem.tarefa}"? Esta ação não pode ser desfeita.`);
+    if (!confirmacao) return;
+    
+    mitBtnExcluir.disabled = true;
+    mitBtnExcluir.textContent = "Excluindo...";
+    
+    try {
+        const response = await fetch(`${API_URL}/api/atividades/${mitSelectedItem.codigo}`, {
+            method: "DELETE"
+        });
+        
+        if (!response.ok) throw new Error("Erro de comunicação com o servidor.");
+        
+        const resData = await response.json();
+        if (!resData.sucesso) throw new Error(resData.detail || "Erro desconhecido ao excluir.");
+        
+        // Remover localmente
+        mitAtividades = mitAtividades.filter(a => a.codigo !== mitSelectedItem.codigo);
+        
+        alert("Atividade excluída com sucesso.");
+        cancelarEdicaoMit();
+    } catch (err) {
+        alert("Erro ao excluir: " + err.message);
+    } finally {
+        mitBtnExcluir.disabled = false;
+        mitBtnExcluir.textContent = "🗑️ Excluir Atividade";
+    }
+}
+
+async function anteriorAtividadeMit() {
+    if (!mitSelectedItem || mitFilteredItens.length === 0) return;
+    const currentIndex = mitFilteredItens.findIndex(a => a.codigo === mitSelectedItem.codigo);
+    if (currentIndex > 0) {
+        selecionarAtividadeMit(mitFilteredItens[currentIndex - 1]);
+        scrollSidebarToCode(mitFilteredItens[currentIndex - 1].codigo);
+    }
+}
+
+async function proximoAtividadeMit() {
+    if (!mitSelectedItem || mitFilteredItens.length === 0) return;
+    const currentIndex = mitFilteredItens.findIndex(a => a.codigo === mitSelectedItem.codigo);
+    if (currentIndex < mitFilteredItens.length - 1) {
+        selecionarAtividadeMit(mitFilteredItens[currentIndex + 1]);
+        scrollSidebarToCode(mitFilteredItens[currentIndex + 1].codigo);
+    }
+}
+
+function scrollSidebarToCode(codigo) {
+    const divs = mitListContainer.querySelectorAll(".mit-list-item");
+    for (let div of divs) {
+        const codeSpan = div.querySelector(".mit-item-code");
+        if (codeSpan && parseInt(codeSpan.textContent) === codigo) {
+            div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            break;
+        }
+    }
+}

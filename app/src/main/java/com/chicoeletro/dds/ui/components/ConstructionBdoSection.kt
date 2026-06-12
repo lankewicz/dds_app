@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.chicoeletro.dds.features.construcao.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -466,6 +468,7 @@ fun ModoLoteView(equipe: String, online: Boolean) {
 
     val itensLote = remember { mutableStateListOf<ItemLoteRequest>() }
     val descricoesLote = remember { mutableStateMapOf<Int, String>() }
+    val atividadesMapa = remember { mutableStateMapOf<Int, Atividade>() }
 
     var isSubmitting by remember { mutableStateOf(false) }
 
@@ -533,6 +536,7 @@ fun ModoLoteView(equipe: String, online: Boolean) {
                                         if (!itensLote.any { it.codigo == a.codigo }) {
                                             itensLote.add(ItemLoteRequest(codigo = a.codigo, quantidade = 1.0, tipo = "MONTAGEM"))
                                             descricoesLote[a.codigo] = a.descricao
+                                            atividadesMapa[a.codigo] = a
                                         }
                                         queryBusca = ""
                                         atividadesSugeridas = emptyList()
@@ -603,6 +607,10 @@ fun ModoLoteView(equipe: String, online: Boolean) {
                         Column(
                             modifier = Modifier.padding(10.dp)
                         ) {
+                            val atividade = atividadesMapa[item.codigo]
+                            val isDinamico = atividade?.calculo_dinamico == true
+                            val tipoCalculo = atividade?.tipo_calculo
+
                             Text(
                                 text = desc,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -670,52 +678,185 @@ fun ModoLoteView(equipe: String, online: Boolean) {
                                         )
                                         Text("D", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (item.tipo == "DESMONTAGEM") Color(0xFFC62828) else MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                }
-
-                                // Botões Incremento/Decremento
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
+                                  // Botões Incremento/Decremento ou Remover
+                                if (isDinamico) {
                                     IconButton(
                                         onClick = {
-                                            val idx = itensLote.indexOf(item)
-                                            if (idx != -1) {
-                                                if (item.quantidade > 1) {
-                                                    itensLote[idx] = item.copy(quantidade = item.quantidade - 1)
-                                                } else {
-                                                    itensLote.removeAt(idx)
-                                                }
-                                            }
+                                            itensLote.remove(item)
+                                            atividadesMapa.remove(item.codigo)
                                         },
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                        modifier = Modifier.size(28.dp)
                                     ) {
-                                        Text("-", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remover",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
                                     }
-                                    Text(
-                                        text = item.quantidade.toInt().toString(),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier.widthIn(min = 16.dp),
-                                        textAlign = TextAlign.Center
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            val idx = itensLote.indexOf(item)
-                                            if (idx != -1) {
-                                                itensLote[idx] = item.copy(quantidade = item.quantidade + 1)
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Text("+", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+                                        IconButton(
+                                            onClick = {
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    if (item.quantidade > 1) {
+                                                        itensLote[idx] = item.copy(quantidade = item.quantidade - 1)
+                                                    } else {
+                                                        itensLote.removeAt(idx)
+                                                        atividadesMapa.remove(item.codigo)
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                        ) {
+                                            Text("-", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+                                        }
+                                        Text(
+                                            text = item.quantidade.toInt().toString(),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.widthIn(min = 16.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    itensLote[idx] = item.copy(quantidade = item.quantidade + 1)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                        ) {
+                                            Text("+", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+                                        }
                                     }
                                 }
                             }
+                        }
+
+                            if (isDinamico) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (tipoCalculo in listOf("deslocamento", "deslocamento_adicional", "deslocamento_cancelado")) {
+                                        OutlinedTextField(
+                                            value = if (item.elementos != null) item.elementos.toString() else "",
+                                            onValueChange = { valText ->
+                                                val valInt = valText.filter { it.isDigit() }.toIntOrNull()
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    val dist = item.distancia ?: 0.0
+                                                    val elems = valInt ?: 0
+                                                    itensLote[idx] = item.copy(
+                                                        elementos = valInt,
+                                                        quantidade = 0.045 * elems * dist
+                                                    )
+                                                }
+                                            },
+                                            label = { Text("Elementos", fontSize = 10.sp) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f).height(52.dp)
+                                        )
+                                        OutlinedTextField(
+                                            value = if (item.distancia != null) item.distancia.toString() else "",
+                                            onValueChange = { valText ->
+                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    val dist = valDouble ?: 0.0
+                                                    val elems = item.elementos ?: 0
+                                                    itensLote[idx] = item.copy(
+                                                        distancia = valDouble,
+                                                        quantidade = 0.045 * elems * dist
+                                                    )
+                                                }
+                                            },
+                                            label = { Text("Distância (KM)", fontSize = 10.sp) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1.2f).height(52.dp)
+                                        )
+                                    } else if (tipoCalculo == "deslocamento_simples") {
+                                        OutlinedTextField(
+                                            value = if (item.distancia != null) item.distancia.toString() else "",
+                                            onValueChange = { valText ->
+                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    val dist = valDouble ?: 0.0
+                                                    itensLote[idx] = item.copy(
+                                                        distancia = valDouble,
+                                                        quantidade = 0.045 * dist
+                                                    )
+                                                }
+                                            },
+                                            label = { Text("Distância (KM)", fontSize = 10.sp) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        )
+                                    } else if (tipoCalculo in listOf("hora_extra", "transporte_meios_alternativos")) {
+                                        OutlinedTextField(
+                                            value = if (item.elementos != null) item.elementos.toString() else "",
+                                            onValueChange = { valText ->
+                                                val valInt = valText.filter { it.isDigit() }.toIntOrNull()
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    val hrs = item.horas ?: 0.0
+                                                    val elems = valInt ?: 0
+                                                    itensLote[idx] = item.copy(
+                                                        elementos = valInt,
+                                                        quantidade = (hrs + 2.0) * elems
+                                                    )
+                                                }
+                                            },
+                                            label = { Text("Elementos", fontSize = 10.sp) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f).height(52.dp)
+                                        )
+                                        OutlinedTextField(
+                                            value = if (item.horas != null) item.horas.toString() else "",
+                                            onValueChange = { valText ->
+                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
+                                                val idx = itensLote.indexOf(item)
+                                                if (idx != -1) {
+                                                    val hrs = valDouble ?: 0.0
+                                                    val elems = item.elementos ?: 0
+                                                    itensLote[idx] = item.copy(
+                                                        horas = valDouble,
+                                                        quantidade = (hrs + 2.0) * elems
+                                                    )
+                                                }
+                                            },
+                                            label = { Text("Tempo (Horas)", fontSize = 10.sp) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1.2f).height(52.dp)
+                                        )
+                                }
+                            }
+                        }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            val totalUs = item.quantidade
+                            Text(
+                                text = "Faturamento estimado: " + String.format(Locale.getDefault(), "%.3f", totalUs) + " US",
+                                color = Color(0xFF1B5E20),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.End
+                            )
                         }
                     }
                 }
