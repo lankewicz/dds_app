@@ -56,10 +56,14 @@ import com.chicoeletro.dds.ui.training.MonthParticipationDay
 
 
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+
 // Estado global para compartilhar partes do título entre módulos
 object HeaderBarState {
-    var datePart: String = ""
-    var titlePart: String = ""
+    var datePart by mutableStateOf("")
+    var titlePart by mutableStateOf("")
 }
 
 @Composable
@@ -89,14 +93,21 @@ fun HeaderBar(
     } else if (isInDdsModule) {
         "DDS - Diálogo Diário de Segurança"
     } else if (isInTurnoModule) {
-        "Controle de Turno (BDO)"
+        if (HeaderBarState.titlePart.isNotEmpty()) {
+            HeaderBarState.titlePart
+        } else {
+            "Controle de Turno (BDO)"
+        }
     } else {
         "GESTÃO CHICO ELETRO"
     }
     val context = LocalContext.current
 
     HeaderBarState.datePart = date
-    HeaderBarState.titlePart = title
+    // Evita loop de atualização se não tiver selection
+    if (hasSelection || isInDdsModule) {
+        HeaderBarState.titlePart = title
+    }
 
     Row(
         modifier = Modifier

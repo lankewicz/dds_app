@@ -51,7 +51,8 @@ data class LancamentoPosteRequest(
     val data_execucao: String,
     val projeto_id: String,
     val estrutura_id: Int,
-    val tarefas_completadas: List<Int>
+    val tarefas_completadas: List<Int>,
+    val tarefas_quantidades: Map<String, Double>? = null
 )
 
 @Serializable

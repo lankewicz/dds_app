@@ -11,15 +11,21 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.chicoeletro.dds.features.construcao.*
+import com.chicoeletro.dds.components.HeaderBarState
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,8 +52,67 @@ fun ConstructionBdoSection(
     online: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val repository = remember { ConstrucaoFirestoreRepository() }
+    val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
+
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Por Poste (Completo)", "Por Lote (Rápido)")
+
+    var projetos by remember { mutableStateOf(listOf<Projeto>()) }
+    var projetoSelecionado by remember { mutableStateOf<Projeto?>(null) }
+    var todasTarefasProjeto by remember { mutableStateOf(listOf<Tarefa>()) }
+    var lancamentosProjeto by remember { mutableStateOf<Map<Pair<Int, String>, Double>>(emptyMap()) }
+    var isLoadingProjetos by remember { mutableStateOf(false) }
+
+    // Carregar lista de Projetos na inicialização
+    LaunchedEffect(Unit) {
+        isLoadingProjetos = true
+        try {
+            projetos = repository.getProjetos()
+            val savedProjId = sharedPrefs.getString("ultimo_projeto_id", null)
+            if (!savedProjId.isNullOrBlank()) {
+                projetos.find { it.id == savedProjId }?.let {
+                    projetoSelecionado = it
+                    HeaderBarState.titlePart = "BDO - Proj: ${it.id}"
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao carregar projetos: ${e.message}", Toast.LENGTH_SHORT).show()
+        } finally {
+            isLoadingProjetos = false
+        }
+    }
+
+    // Carregar tarefas e lançamentos do projeto todo sempre que o projeto selecionado mudar
+    LaunchedEffect(projetoSelecionado) {
+        projetoSelecionado?.let { proj ->
+            sharedPrefs.edit().putString("ultimo_projeto_id", proj.id).apply()
+            HeaderBarState.titlePart = "BDO - Proj: ${proj.id}"
+            try {
+                todasTarefasProjeto = repository.getTodasTarefasProjeto(proj.id)
+                lancamentosProjeto = repository.getQuantidadesLancadasProjeto(proj.id)
+            } catch (e: Exception) {
+                todasTarefasProjeto = emptyList()
+                lancamentosProjeto = emptyMap()
+                Toast.makeText(context, "Erro ao carregar dados do projeto: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } ?: run {
+            HeaderBarState.titlePart = ""
+            todasTarefasProjeto = emptyList()
+            lancamentosProjeto = emptyMap()
+        }
+    }
+
+    val refreshLancamentosProjeto: suspend () -> Unit = {
+        projetoSelecionado?.let { proj ->
+            try {
+                lancamentosProjeto = repository.getQuantidadesLancadasProjeto(proj.id)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -82,29 +148,72 @@ fun ConstructionBdoSection(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            when (selectedTab) {
-                0 -> ModoPosteView(equipe = equipe, online = online)
-                1 -> ModoLoteView(equipe = equipe, online = online)
+            if (isLoadingProjetos) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                when (selectedTab) {
+                    0 -> ModoPosteView(
+                        equipe = equipe,
+                        online = online,
+                        projetos = projetos,
+                        projetoSelecionado = projetoSelecionado,
+                        onProjetoSelecionadoChange = { projetoSelecionado = it },
+                        todasTarefasProjeto = todasTarefasProjeto,
+                        lancamentosProjeto = lancamentosProjeto,
+                        onRefreshLancamentosProjeto = refreshLancamentosProjeto
+                    )
+                    1 -> ModoLoteView(
+                        equipe = equipe,
+                        online = online,
+                        projetos = projetos,
+                        projetoSelecionado = projetoSelecionado,
+                        onProjetoSelecionadoChange = { projetoSelecionado = it },
+                        todasTarefasProjeto = todasTarefasProjeto,
+                        lancamentosProjeto = lancamentosProjeto,
+                        onRefreshLancamentosProjeto = refreshLancamentosProjeto
+                    )
+                }
             }
         }
     }
-}
-
+}@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ModoPosteView(equipe: String, online: Boolean) {
+fun ModoPosteView(
+    equipe: String,
+    online: Boolean,
+    projetos: List<Projeto>,
+    projetoSelecionado: Projeto?,
+    onProjetoSelecionadoChange: (Projeto?) -> Unit,
+    todasTarefasProjeto: List<Tarefa>,
+    lancamentosProjeto: Map<Pair<Int, String>, Double>,
+    onRefreshLancamentosProjeto: suspend () -> Unit
+) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repository = remember { ConstrucaoFirestoreRepository() }
+    val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
 
-    var projetos by remember { mutableStateOf(listOf<Projeto>()) }
-    var projetoSelecionado by remember { mutableStateOf<Projeto?>(null) }
     var projExpanded by remember { mutableStateOf(false) }
 
     var estruturas by remember { mutableStateOf(listOf<Estrutura>()) }
     var estruturaSelecionada by remember { mutableStateOf<Estrutura?>(null) }
     var estExpanded by remember { mutableStateOf(false) }
+    var tipoSelecao by remember { mutableStateOf("POSTE") }
+
+    val filteredEstruturas = remember(estruturas, tipoSelecao) {
+        if (tipoSelecao == "POSTE") {
+            estruturas.filter { !it.identificador.contains("Trecho", ignoreCase = true) }
+        } else {
+            estruturas.filter { it.identificador.contains("Trecho", ignoreCase = true) }
+        }
+    }
 
     var tarefas by remember { mutableStateOf(listOf<Tarefa>()) }
     val tarefasSelecionadas = remember { mutableStateListOf<Int>() }
+    val quantidadesSelecionadas = remember { mutableStateMapOf<Int, Double>() }
+    var lancamentosRealizados by remember { mutableStateOf<Map<Pair<Int, String>, Double>>(emptyMap()) }
 
     var isLoading by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -116,43 +225,45 @@ fun ModoPosteView(equipe: String, online: Boolean) {
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     }
 
-    // Carregar lista de Projetos na inicialização
-    LaunchedEffect(Unit) {
-        isLoading = true
-        try {
-            projetos = ConstrucaoRetrofitClient.instance.getProjetos()
-        } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao carregar projetos: ${e.message}", Toast.LENGTH_SHORT).show()
-        } finally {
-            isLoading = false
-        }
-    }
-
     // Carregar Estruturas quando o projeto for alterado
     LaunchedEffect(projetoSelecionado) {
         projetoSelecionado?.let { proj ->
             try {
-                estruturas = ConstrucaoRetrofitClient.instance.getEstruturas(proj.id)
+                estruturas = repository.getEstruturas(proj.id)
                 estruturaSelecionada = null
                 tarefas = emptyList()
                 tarefasSelecionadas.clear()
+                quantidadesSelecionadas.clear()
+                lancamentosRealizados = emptyMap()
             } catch (e: Exception) {
                 estruturas = emptyList()
                 Toast.makeText(context, "Erro ao carregar estruturas: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        } ?: run {
+            estruturas = emptyList()
+            estruturaSelecionada = null
+            tarefas = emptyList()
+            tarefasSelecionadas.clear()
+            quantidadesSelecionadas.clear()
+            lancamentosRealizados = emptyMap()
         }
     }
 
-    // Carregar Tarefas quando a estrutura for alterada
+    // Carregar Tarefas e Lançamentos anteriores quando a estrutura for alterada
     LaunchedEffect(estruturaSelecionada) {
         estruturaSelecionada?.let { est ->
             try {
-                tarefas = ConstrucaoRetrofitClient.instance.getTarefas(est.id)
+                tarefas = repository.getTarefas(est.id)
                 tarefasSelecionadas.clear()
-                // Pré-seleciona todas como facilitador
-                tarefas.forEach { t -> tarefasSelecionadas.add(t.id) }
+                quantidadesSelecionadas.clear()
+
+                projetoSelecionado?.let { proj ->
+                    val realizadosMap = repository.getQuantidadesLancadas(proj.id, est.id)
+                    lancamentosRealizados = realizadosMap
+                }
             } catch (e: Exception) {
                 tarefas = emptyList()
+                lancamentosRealizados = emptyMap()
                 Toast.makeText(context, "Erro ao carregar tarefas: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
@@ -208,7 +319,7 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                                 DropdownMenuItem(
                                     text = { Text("[${p.id}] ${p.titulo}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     onClick = {
-                                        projetoSelecionado = p
+                                        onProjetoSelecionadoChange(p)
                                         projExpanded = false
                                     }
                                 )
@@ -217,14 +328,63 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                     }
                 }
 
-                // Dropdown de Estrutura
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Poste / Estrutura (PS)",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Estrutura",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    if (tipoSelecao != "POSTE") {
+                                        tipoSelecao = "POSTE"
+                                        estruturaSelecionada = null
+                                    }
+                                }
+                            ) {
+                                RadioButton(
+                                    selected = tipoSelecao == "POSTE",
+                                    onClick = {
+                                        tipoSelecao = "POSTE"
+                                        estruturaSelecionada = null
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text("PS", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    if (tipoSelecao != "TRECHO") {
+                                        tipoSelecao = "TRECHO"
+                                        estruturaSelecionada = null
+                                    }
+                                }
+                            ) {
+                                RadioButton(
+                                    selected = tipoSelecao == "TRECHO",
+                                    onClick = {
+                                        tipoSelecao = "TRECHO"
+                                        estruturaSelecionada = null
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text("Trecho", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
@@ -253,14 +413,21 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                             onDismissRequest = { estExpanded = false },
                             modifier = Modifier.fillMaxWidth(0.45f)
                         ) {
-                            estruturas.forEach { e ->
+                            if (filteredEstruturas.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text(e.identificador) },
-                                    onClick = {
-                                        estruturaSelecionada = e
-                                        estExpanded = false
-                                    }
+                                    text = { Text("Nenhum item disponível") },
+                                    onClick = {}
                                 )
+                            } else {
+                                filteredEstruturas.forEach { e ->
+                                    DropdownMenuItem(
+                                        text = { Text(e.identificador) },
+                                        onClick = {
+                                            estruturaSelecionada = e
+                                            estExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -270,13 +437,123 @@ fun ModoPosteView(equipe: String, online: Boolean) {
             Spacer(modifier = Modifier.height(16.dp))
 
             // Checklist de Tarefas
-            Text(
-                text = "Marque os itens executados:",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+            val sortedTarefas = remember(tarefas, lancamentosRealizados) {
+                tarefas.sortedBy { t ->
+                    val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                    val realizado = lancamentosRealizados[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                    val isCompleted = realizado >= t.quantidade
+                    if (isCompleted) 1 else 0
+                }
+            }
+
+            val groupedTarefasProjeto = remember(todasTarefasProjeto, lancamentosProjeto) {
+                todasTarefasProjeto.groupBy { Pair(it.atividade_codigo, it.sinal) }
+                    .map { (key, list) ->
+                        val code = key.first
+                        val sinal = key.second
+                        val totalQty = list.sumOf { it.quantidade }
+                        val desc = list.firstOrNull()?.descricao ?: "Atividade $code"
+                        val usMontagem = list.firstOrNull()?.us_montagem ?: 0.0
+                        val usDesmontagem = list.firstOrNull()?.us_desmontagem ?: 0.0
+                        
+                        Tarefa(
+                            id = -code,
+                            estrutura_id = -1,
+                            atividade_codigo = code,
+                            quantidade = totalQty,
+                            sinal = sinal,
+                            descricao = desc,
+                            us_montagem = usMontagem,
+                            us_desmontagem = usDesmontagem
+                        )
+                    }
+                    .sortedBy { t ->
+                        val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                        val realizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                        val isCompleted = realizado >= t.quantidade
+                        if (isCompleted) 1 else 0
+                    }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Marque os itens executados:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                if (projetoSelecionado != null && estruturaSelecionada != null && sortedTarefas.isNotEmpty()) {
+                    val incompletes = sortedTarefas.filter { t ->
+                        val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                        
+                        val tProjTotalQty = todasTarefasProjeto.filter { it.atividade_codigo == t.atividade_codigo && it.sinal == t.sinal }.sumOf { it.quantidade }
+                        val tProjTotalRealizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                        val tIsProjectCompleted = tProjTotalRealizado >= tProjTotalQty && tProjTotalQty > 0.0
+
+                        val realizado = lancamentosRealizados[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                        val tIsCompleted = tIsProjectCompleted || realizado >= t.quantidade
+                        !tIsCompleted
+                    }
+                    val allSelected = incompletes.isNotEmpty() && incompletes.all { tarefasSelecionadas.contains(it.id) }
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            if (allSelected) {
+                                incompletes.forEach { t ->
+                                    tarefasSelecionadas.remove(t.id)
+                                    quantidadesSelecionadas.remove(t.id)
+                                }
+                            } else {
+                                incompletes.forEach { t ->
+                                    val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                                    val realizado = lancamentosRealizados[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                                    val falta = maxOf(0.0, t.quantidade - realizado)
+                                    if (!tarefasSelecionadas.contains(t.id)) {
+                                        tarefasSelecionadas.add(t.id)
+                                    }
+                                    quantidadesSelecionadas[t.id] = falta
+                                }
+                            }
+                        }
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = { checked ->
+                                if (checked == true) {
+                                    incompletes.forEach { t ->
+                                        val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                                        val realizado = lancamentosRealizados[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                                        val falta = maxOf(0.0, t.quantidade - realizado)
+                                        if (!tarefasSelecionadas.contains(t.id)) {
+                                            tarefasSelecionadas.add(t.id)
+                                        }
+                                        quantidadesSelecionadas[t.id] = falta
+                                    }
+                                } else {
+                                    incompletes.forEach { t ->
+                                        tarefasSelecionadas.remove(t.id)
+                                        quantidadesSelecionadas.remove(t.id)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Marcar todos",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             LazyColumn(
                 modifier = Modifier
@@ -300,16 +577,92 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                         )
                     }
                 } else if (estruturaSelecionada == null) {
-                    item {
-                        Text(
-                            text = "Selecione uma estrutura/poste para visualizar as tarefas.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp)
-                        )
+                    if (groupedTarefasProjeto.isEmpty()) {
+                        item {
+                            Text(
+                                text = "Nenhuma tarefa cadastrada neste projeto.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp)
+                            )
+                        }
+                    } else {
+                        items(groupedTarefasProjeto) { t ->
+                            val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                            val realizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                            val falta = maxOf(0.0, t.quantidade - realizado)
+                            val isCompleted = realizado >= t.quantidade
+
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isCompleted) {
+                                        Color.LightGray.copy(alpha = 0.2f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    }
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        val cleanDesc = t.descricao.removePrefix("Atividade ${t.atividade_codigo}").removePrefix("Atividade").trim().removePrefix("-").trim().ifEmpty { "Serviço ${t.atividade_codigo}" }
+                                        Text(
+                                            text = "${t.atividade_codigo} - $cleanDesc",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        val tipoLabel = if (t.sinal == "+") "Montagem" else "Desmontagem"
+                                        val tipoColor = if (t.sinal == "+") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                        
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = "$tipoLabel: ${if (t.quantidade % 1.0 == 0.0) t.quantidade.toInt().toString() else t.quantidade.toString()}",
+                                                fontWeight = FontWeight.Bold,
+                                                color = tipoColor,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            
+                                            Text(
+                                                text = "•",
+                                                color = Color.LightGray,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = "Total Lançado: ${if (realizado % 1.0 == 0.0) realizado.toInt().toString() else realizado.toString()}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (realizado > 0.0) Color(0xFF1976D2) else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            
+                                            Text(
+                                                text = "•",
+                                                color = Color.LightGray,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = "Saldo: ${if (falta % 1.0 == 0.0) falta.toInt().toString() else falta.toString()}",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (falta > 0.0) Color(0xFFD32F2F) else Color(0xFF388E3C)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else if (tarefas.isEmpty()) {
                     item {
@@ -324,11 +677,23 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                         )
                     }
                 } else {
-                    items(tarefas) { t ->
+                    items(sortedTarefas) { t ->
+                        val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                        
+                        // Check if project-wide total is reached
+                        val projTotalQty = todasTarefasProjeto.filter { it.atividade_codigo == t.atividade_codigo && it.sinal == t.sinal }.sumOf { it.quantidade }
+                        val projTotalRealizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                        val isProjectCompleted = projTotalRealizado >= projTotalQty && projTotalQty > 0.0
+
+                        val realizado = lancamentosRealizados[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                        val falta = if (isProjectCompleted) 0.0 else maxOf(0.0, t.quantidade - realizado)
+                        val isCompleted = isProjectCompleted || realizado >= t.quantidade
                         val isChecked = tarefasSelecionadas.contains(t.id)
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isChecked) {
+                                containerColor = if (isCompleted) {
+                                    Color.LightGray.copy(alpha = 0.2f)
+                                } else if (isChecked) {
                                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                                 } else {
                                     MaterialTheme.colorScheme.surface
@@ -337,13 +702,38 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    if (isChecked) {
-                                        tarefasSelecionadas.remove(t.id)
-                                    } else {
-                                        tarefasSelecionadas.add(t.id)
+                                .combinedClickable(
+                                    enabled = !isCompleted,
+                                    onClick = {
+                                        if (isChecked) {
+                                            tarefasSelecionadas.remove(t.id)
+                                            quantidadesSelecionadas.remove(t.id)
+                                        } else {
+                                            tarefasSelecionadas.add(t.id)
+                                            quantidadesSelecionadas[t.id] = falta
+                                        }
+                                    },
+                                    onDoubleClick = {
+                                        tarefas.forEach { task ->
+                                            val tTipo = if (task.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                                            
+                                            val tProjTotalQty = todasTarefasProjeto.filter { it.atividade_codigo == task.atividade_codigo && it.sinal == task.sinal }.sumOf { it.quantidade }
+                                            val tProjTotalRealizado = lancamentosProjeto[Pair(task.atividade_codigo, tTipo)] ?: 0.0
+                                            val tIsProjectCompleted = tProjTotalRealizado >= tProjTotalQty && tProjTotalQty > 0.0
+
+                                            val tRealizado = lancamentosRealizados[Pair(task.atividade_codigo, tTipo)] ?: 0.0
+                                            val tFalta = if (tIsProjectCompleted) 0.0 else maxOf(0.0, task.quantidade - tRealizado)
+                                            val tIsCompleted = tIsProjectCompleted || tRealizado >= task.quantidade
+                                            
+                                            if (!tIsCompleted) {
+                                                if (!tarefasSelecionadas.contains(task.id)) {
+                                                    tarefasSelecionadas.add(task.id)
+                                                }
+                                                quantidadesSelecionadas[task.id] = tFalta
+                                            }
+                                        }
                                     }
-                                }
+                                  )
                         ) {
                             Row(
                                 modifier = Modifier
@@ -352,37 +742,151 @@ fun ModoPosteView(equipe: String, online: Boolean) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
-                                    checked = isChecked,
+                                    checked = isChecked || isCompleted,
+                                    enabled = !isCompleted,
                                     onCheckedChange = { checked ->
-                                        if (checked == true) {
-                                            tarefasSelecionadas.add(t.id)
-                                        } else {
-                                            tarefasSelecionadas.remove(t.id)
+                                        if (!isCompleted) {
+                                            if (checked == true) {
+                                                tarefasSelecionadas.add(t.id)
+                                                quantidadesSelecionadas[t.id] = falta
+                                            } else {
+                                                tarefasSelecionadas.remove(t.id)
+                                                quantidadesSelecionadas.remove(t.id)
+                                            }
                                         }
                                     }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
+                                    val cleanDesc = t.descricao.removePrefix("Atividade ${t.atividade_codigo}").removePrefix("Atividade").trim().removePrefix("-").trim().ifEmpty { "Serviço ${t.atividade_codigo}" }
                                     Text(
-                                        text = t.descricao,
+                                        text = "${t.atividade_codigo} - $cleanDesc",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val tipoColor = if (t.sinal == "+") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    val tipoLabel = if (t.sinal == "+") "Montagem" else "Desmontagem"
+                                    
                                     Row(
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
+                                        val showEditor = isChecked && !isCompleted && falta > 1.0
+                                        
+                                        if (showEditor) {
+                                            val currentQty = quantidadesSelecionadas[t.id] ?: falta
+                                            Text(
+                                                text = "$tipoLabel:",
+                                                fontWeight = FontWeight.Bold,
+                                                color = tipoColor,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .size(20.dp)
+                                                        .background(Color(0xFFFEEBEE), RoundedCornerShape(4.dp))
+                                                        .clickable {
+                                                            val newVal = maxOf(1.0, currentQty - 1.0)
+                                                            quantidadesSelecionadas[t.id] = newVal
+                                                        }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Remove,
+                                                        contentDescription = "Subtrair",
+                                                        tint = Color(0xFFC62828),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                                
+                                                androidx.compose.foundation.text.BasicTextField(
+                                                    value = if (currentQty % 1.0 == 0.0) currentQty.toInt().toString() else currentQty.toString(),
+                                                    onValueChange = { valText ->
+                                                        val valDouble = valText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                                                        quantidadesSelecionadas[t.id] = minOf(falta, maxOf(0.0, valDouble))
+                                                    },
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    singleLine = true,
+                                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                                        fontSize = 12.sp,
+                                                        textAlign = TextAlign.Center,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    ),
+                                                    modifier = Modifier
+                                                        .width(36.dp)
+                                                        .height(20.dp)
+                                                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                                                        .background(Color.Transparent)
+                                                )
+                                                
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .size(20.dp)
+                                                        .background(Color(0xFFE8F5E9), RoundedCornerShape(4.dp))
+                                                        .clickable {
+                                                            val newVal = minOf(falta, currentQty + 1.0)
+                                                            quantidadesSelecionadas[t.id] = newVal
+                                                        }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = "Somar",
+                                                        tint = Color(0xFF2E7D32),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "de ${if (t.quantidade % 1.0 == 0.0) t.quantidade.toInt().toString() else t.quantidade.toString()}",
+                                                fontWeight = FontWeight.Bold,
+                                                color = tipoColor,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "$tipoLabel ${if (t.quantidade % 1.0 == 0.0) t.quantidade.toInt().toString() else t.quantidade.toString()}",
+                                                fontWeight = FontWeight.Bold,
+                                                color = tipoColor,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        
                                         Text(
-                                            text = "Código: ${t.atividade_codigo}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = "•",
+                                            color = Color.LightGray,
+                                            style = MaterialTheme.typography.bodySmall
                                         )
                                         Text(
-                                            text = if (t.sinal == "+") "Montagem" else "Desmontagem",
-                                            color = if (t.sinal == "+") Color(0xFF2E7D32) else Color(0xFFC62828),
+                                            text = "Lançado: ${if (realizado % 1.0 == 0.0) realizado.toInt().toString() else realizado.toString()}",
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold
+                                            color = if (realizado > 0.0) Color(0xFF1976D2) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        
+                                        if (!showEditor) {
+                                            Text(
+                                                text = "•",
+                                                color = Color.LightGray,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = "Saldo: ${if (falta % 1.0 == 0.0) falta.toInt().toString() else falta.toString()}",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (falta > 0.0) Color(0xFFD32F2F) else Color(0xFF388E3C)
+                                            )
+                                        }
+                                        
+                                        Text(
+                                            text = "•",
+                                            color = Color.LightGray,
+                                            style = MaterialTheme.typography.bodySmall
                                         )
                                         Text(
                                             text = "US: ${if (t.sinal == "+") t.us_montagem else t.us_desmontagem}",
@@ -399,59 +903,111 @@ fun ModoPosteView(equipe: String, online: Boolean) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Botão Confirmar Lançamento do Poste
-            Button(
-                onClick = {
-                    val proj = projetoSelecionado ?: return@Button
-                    val est = estruturaSelecionada ?: return@Button
-                    if (tarefasSelecionadas.isEmpty()) return@Button
-
-                    isSubmitting = true
-                    coroutineScope.launch {
-                        try {
-                            val response = ConstrucaoRetrofitClient.instance.lancarPoste(
-                                LancamentoPosteRequest(
-                                    equipe_numero = equipeNumero,
-                                    data_execucao = dataExecucao,
-                                    projeto_id = proj.id,
-                                    estrutura_id = est.id,
-                                    tarefas_completadas = tarefasSelecionadas.toList()
-                                )
-                            )
-                            if (response.sucesso) {
-                                Toast.makeText(context, response.mensagem ?: "Poste lançado com sucesso!", Toast.LENGTH_LONG).show()
-                                // Reseta seleções de tarefas e avança estrutura para facilitar fluxo
-                                tarefasSelecionadas.clear()
-                                val currentIndex = estruturas.indexOf(est)
-                                if (currentIndex != -1 && currentIndex < estruturas.lastIndex) {
-                                    estruturaSelecionada = estruturas[currentIndex + 1]
-                                } else {
-                                    estruturaSelecionada = null
-                                }
-                            } else {
-                                Toast.makeText(context, response.detail ?: "Erro ao lançar: ${response.mensagem}", Toast.LENGTH_LONG).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Erro na conexão: ${e.message}", Toast.LENGTH_LONG).show()
-                        } finally {
-                            isSubmitting = false
-                        }
-                    }
-                },
+            // Controles de Navegação e Confirmação
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
-                enabled = !isSubmitting && projetoSelecionado != null && estruturaSelecionada != null && tarefasSelecionadas.isNotEmpty(),
-                shape = RoundedCornerShape(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
+                val currentIndex = estruturaSelecionada?.let { filteredEstruturas.indexOf(it) } ?: -1
+                val hasPrevious = currentIndex > 0
+                val hasNext = currentIndex != -1 && currentIndex < filteredEstruturas.lastIndex
+
+                // Botão Anterior
+                OutlinedButton(
+                    onClick = {
+                        if (hasPrevious) {
+                            estruturaSelecionada = filteredEstruturas[currentIndex - 1]
+                        }
+                    },
+                    modifier = Modifier.fillMaxHeight(),
+                    enabled = hasPrevious,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Anterior"
                     )
-                } else {
-                    Text("Confirmar Lançamento do Poste")
+                }
+
+                // Botão Confirmar Lançamento do Poste
+                Button(
+                    onClick = {
+                        val proj = projetoSelecionado ?: return@Button
+                        val est = estruturaSelecionada ?: return@Button
+                        if (tarefasSelecionadas.isEmpty()) return@Button
+
+                        isSubmitting = true
+                        coroutineScope.launch {
+                            try {
+                                val response = repository.lancarPoste(
+                                    LancamentoPosteRequest(
+                                        equipe_numero = equipeNumero,
+                                        data_execucao = dataExecucao,
+                                        projeto_id = proj.id,
+                                        estrutura_id = est.id,
+                                        tarefas_completadas = tarefasSelecionadas.toList(),
+                                        tarefas_quantidades = quantidadesSelecionadas.mapKeys { it.key.toString() }
+                                    )
+                                )
+                                if (response.sucesso) {
+                                    Toast.makeText(context, response.mensagem ?: "Poste lançado com sucesso!", Toast.LENGTH_LONG).show()
+                                    // Reseta seleções de tarefas e avança estrutura para facilitar fluxo
+                                    tarefasSelecionadas.clear()
+                                    quantidadesSelecionadas.clear()
+                                    val nextIndex = filteredEstruturas.indexOf(est)
+                                    if (nextIndex != -1 && nextIndex < filteredEstruturas.lastIndex) {
+                                        estruturaSelecionada = filteredEstruturas[nextIndex + 1]
+                                    } else {
+                                        // Se for a última estrutura, atualiza localmente para refletir os novos totais de lançamentos
+                                        lancamentosRealizados = repository.getQuantidadesLancadas(proj.id, est.id)
+                                    }
+                                } else {
+                                    Toast.makeText(context, response.detail ?: "Erro ao lançar: ${response.mensagem}", Toast.LENGTH_LONG).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Erro na conexão: ${e.message}", Toast.LENGTH_LONG).show()
+                            } finally {
+                                isSubmitting = false
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    enabled = !isSubmitting && projetoSelecionado != null && estruturaSelecionada != null && tarefasSelecionadas.isNotEmpty(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Confirmar Lançamento do Poste")
+                    }
+                }
+
+                // Botão Próximo
+                OutlinedButton(
+                    onClick = {
+                        if (hasNext) {
+                            estruturaSelecionada = filteredEstruturas[currentIndex + 1]
+                        }
+                    },
+                    modifier = Modifier.fillMaxHeight(),
+                    enabled = hasNext,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Próximo"
+                    )
                 }
             }
         }
@@ -459,16 +1015,63 @@ fun ModoPosteView(equipe: String, online: Boolean) {
 }
 
 @Composable
-fun ModoLoteView(equipe: String, online: Boolean) {
+fun ModoLoteView(
+    equipe: String,
+    online: Boolean,
+    projetos: List<Projeto>,
+    projetoSelecionado: Projeto?,
+    onProjetoSelecionadoChange: (Projeto?) -> Unit,
+    todasTarefasProjeto: List<Tarefa>,
+    lancamentosProjeto: Map<Pair<Int, String>, Double>,
+    onRefreshLancamentosProjeto: suspend () -> Unit
+) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repository = remember { ConstrucaoFirestoreRepository() }
 
+    val groupedTarefasProjeto = remember(todasTarefasProjeto, lancamentosProjeto) {
+        todasTarefasProjeto.groupBy { Pair(it.atividade_codigo, it.sinal) }
+            .map { (key, list) ->
+                val code = key.first
+                val sinal = key.second
+                val totalQty = list.sumOf { it.quantidade }
+                val desc = list.firstOrNull()?.descricao ?: "Atividade $code"
+                val usMontagem = list.firstOrNull()?.us_montagem ?: 0.0
+                val usDesmontagem = list.firstOrNull()?.us_desmontagem ?: 0.0
+                
+                Tarefa(
+                    id = Pair(code, sinal).hashCode(),
+                    estrutura_id = -1,
+                    atividade_codigo = code,
+                    quantidade = totalQty,
+                    sinal = sinal,
+                    descricao = desc,
+                    us_montagem = usMontagem,
+                    us_desmontagem = usDesmontagem
+                )
+            }
+            .sortedBy { t ->
+                val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                val realizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                val isCompleted = realizado >= t.quantidade
+                if (isCompleted) 1 else 0
+            }
+    }
+
+    val tarefasSelecionadas = remember { mutableStateListOf<Int>() }
+    val quantidadesSelecionadas = remember { mutableStateMapOf<Int, Double>() }
     var queryBusca by remember { mutableStateOf("") }
-    var atividadesSugeridas by remember { mutableStateOf(listOf<Atividade>()) }
 
-    val itensLote = remember { mutableStateListOf<ItemLoteRequest>() }
-    val descricoesLote = remember { mutableStateMapOf<Int, String>() }
-    val atividadesMapa = remember { mutableStateMapOf<Int, Atividade>() }
+    val filteredGroupedTarefas = remember(groupedTarefasProjeto, queryBusca) {
+        if (queryBusca.isBlank()) {
+            groupedTarefasProjeto
+        } else {
+            val cleanQuery = queryBusca.trim().lowercase()
+            groupedTarefasProjeto.filter { t ->
+                t.atividade_codigo.toString().contains(cleanQuery) || t.descricao.lowercase().contains(cleanQuery)
+            }
+        }
+    }
 
     var isSubmitting by remember { mutableStateOf(false) }
 
@@ -479,21 +1082,8 @@ fun ModoLoteView(equipe: String, online: Boolean) {
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     }
 
-    // Busca de atividades (debounced simulado)
-    LaunchedEffect(queryBusca) {
-        if (queryBusca.length >= 2) {
-            try {
-                atividadesSugeridas = ConstrucaoRetrofitClient.instance.buscarAtividades(queryBusca)
-            } catch (e: Exception) {
-                atividadesSugeridas = emptyList()
-            }
-        } else {
-            atividadesSugeridas = emptyList()
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
-        // Campo de Pesquisa MIT
+        // Campo de Pesquisa para filtrar a lista do lote
         OutlinedTextField(
             value = queryBusca,
             onValueChange = { queryBusca = it },
@@ -511,64 +1101,10 @@ fun ModoLoteView(equipe: String, online: Boolean) {
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Requadro de Sugestões de Pesquisa
-        Box(modifier = Modifier.fillMaxWidth()) {
-            if (atividadesSugeridas.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 200.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                ) {
-                    LazyColumn(
-                        modifier = Modifier.padding(6.dp)
-                    ) {
-                        items(atividadesSugeridas) { a ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (!itensLote.any { it.codigo == a.codigo }) {
-                                            itensLote.add(ItemLoteRequest(codigo = a.codigo, quantidade = 1.0, tipo = "MONTAGEM"))
-                                            descricoesLote[a.codigo] = a.descricao
-                                            atividadesMapa[a.codigo] = a
-                                        }
-                                        queryBusca = ""
-                                        atividadesSugeridas = emptyList()
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "[${a.codigo}] ",
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 14.sp
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = a.descricao,
-                                    fontSize = 14.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Lista do Lote Atual
         Text(
-            text = "Lote de Produção Acumulado:",
+            text = "Marque os itens do lote executados:",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -584,279 +1120,236 @@ fun ModoLoteView(equipe: String, online: Boolean) {
             contentPadding = PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (itensLote.isEmpty()) {
+            if (projetoSelecionado == null) {
                 item {
                     Text(
-                        text = "Use o campo de busca acima para adicionar itens ao lote.",
+                        text = "Por favor, selecione um projeto na aba Por Poste para começar.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 48.dp)
+                            .padding(vertical = 32.dp)
+                    )
+                }
+            } else if (filteredGroupedTarefas.isEmpty()) {
+                item {
+                    Text(
+                        text = if (queryBusca.isEmpty()) "Nenhuma tarefa cadastrada neste projeto." else "Nenhuma tarefa corresponde à pesquisa.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp)
                     )
                 }
             } else {
-                items(itensLote) { item ->
-                    val desc = descricoesLote[item.codigo] ?: "MIT ${item.codigo}"
+                items(filteredGroupedTarefas) { t ->
+                    val tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                    val realizado = lancamentosProjeto[Pair(t.atividade_codigo, tipo)] ?: 0.0
+                    val falta = maxOf(0.0, t.quantidade - realizado)
+                    val isCompleted = realizado >= t.quantidade
+                    val isChecked = tarefasSelecionadas.contains(t.id)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isCompleted) {
+                                Color.LightGray.copy(alpha = 0.2f)
+                            } else if (isChecked) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp)
-                        ) {
-                            val atividade = atividadesMapa[item.codigo]
-                            val isDinamico = atividade?.calculo_dinamico == true
-                            val tipoCalculo = atividade?.tipo_calculo
-
-                            Text(
-                                text = desc,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                enabled = !isCompleted,
+                                onClick = {
+                                    if (isChecked) {
+                                        tarefasSelecionadas.remove(t.id)
+                                        quantidadesSelecionadas.remove(t.id)
+                                    } else {
+                                        tarefasSelecionadas.add(t.id)
+                                        quantidadesSelecionadas[t.id] = minOf(falta, 1.0)
+                                    }
+                                },
+                                onDoubleClick = {
+                                    filteredGroupedTarefas.forEach { task ->
+                                        val tTipo = if (task.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                                        val tRealizado = lancamentosProjeto[Pair(task.atividade_codigo, tTipo)] ?: 0.0
+                                        val tFalta = maxOf(0.0, task.quantidade - tRealizado)
+                                        if (tRealizado < task.quantidade) {
+                                            if (!tarefasSelecionadas.contains(task.id)) {
+                                                tarefasSelecionadas.add(task.id)
+                                            }
+                                            quantidadesSelecionadas[task.id] = minOf(tFalta, 1.0)
+                                        }
+                                    }
+                                }
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isChecked || isCompleted,
+                                enabled = !isCompleted,
+                                onCheckedChange = { checked ->
+                                    if (!isCompleted) {
+                                        if (checked == true) {
+                                            tarefasSelecionadas.add(t.id)
+                                            quantidadesSelecionadas[t.id] = minOf(falta, 1.0)
+                                        } else {
+                                            tarefasSelecionadas.remove(t.id)
+                                            quantidadesSelecionadas.remove(t.id)
+                                        }
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                val cleanDesc = t.descricao.removePrefix("Atividade ${t.atividade_codigo}").removePrefix("Atividade").trim().removePrefix("-").trim().ifEmpty { "Serviço ${t.atividade_codigo}" }
                                 Text(
-                                    text = "Cód: ${item.codigo}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "${t.atividade_codigo} - $cleanDesc",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
                                 )
-
-                                // Seletor M (Montagem) / D (Desmontagem)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val tipoColor = if (t.sinal == "+") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                val tipoLabel = if (t.sinal == "+") "Montagem" else "Desmontagem"
+                                
                                 Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable {
-                                            val idx = itensLote.indexOf(item)
-                                            if (idx != -1) {
-                                                itensLote[idx] = item.copy(tipo = "MONTAGEM")
-                                            }
-                                        }
-                                    ) {
-                                        RadioButton(
-                                            selected = item.tipo == "MONTAGEM",
-                                            onClick = {
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    itensLote[idx] = item.copy(tipo = "MONTAGEM")
-                                                }
-                                            },
-                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF2E7D32))
+                                    val showEditor = isChecked && !isCompleted && falta > 1.0
+                                    
+                                    if (showEditor) {
+                                        val currentQty = quantidadesSelecionadas[t.id] ?: falta
+                                        Text(
+                                            text = "$tipoLabel:",
+                                            fontWeight = FontWeight.Bold,
+                                            color = tipoColor,
+                                            style = MaterialTheme.typography.bodySmall
                                         )
-                                        Text("M", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (item.tipo == "MONTAGEM") Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable {
-                                            val idx = itensLote.indexOf(item)
-                                            if (idx != -1) {
-                                                itensLote[idx] = item.copy(tipo = "DESMONTAGEM")
-                                            }
-                                        }
-                                    ) {
-                                        RadioButton(
-                                            selected = item.tipo == "DESMONTAGEM",
-                                            onClick = {
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    itensLote[idx] = item.copy(tipo = "DESMONTAGEM")
-                                                }
-                                            },
-                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFC62828))
-                                        )
-                                        Text("D", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (item.tipo == "DESMONTAGEM") Color(0xFFC62828) else MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                  // Botões Incremento/Decremento ou Remover
-                                if (isDinamico) {
-                                    IconButton(
-                                        onClick = {
-                                            itensLote.remove(item)
-                                            atividadesMapa.remove(item.codigo)
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Remover",
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                } else {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        IconButton(
-                                            onClick = {
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    if (item.quantidade > 1) {
-                                                        itensLote[idx] = item.copy(quantidade = item.quantidade - 1)
-                                                    } else {
-                                                        itensLote.removeAt(idx)
-                                                        atividadesMapa.remove(item.codigo)
-                                                    }
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            Text("-", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(Color(0xFFFEEBEE), RoundedCornerShape(4.dp))
+                                                    .clickable {
+                                                        val newVal = maxOf(1.0, currentQty - 1.0)
+                                                        quantidadesSelecionadas[t.id] = newVal
+                                                    }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Remove,
+                                                    contentDescription = "Subtrair",
+                                                    tint = Color(0xFFC62828),
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                            
+                                            androidx.compose.foundation.text.BasicTextField(
+                                                value = if (currentQty % 1.0 == 0.0) currentQty.toInt().toString() else currentQty.toString(),
+                                                onValueChange = { valText ->
+                                                    val valDouble = valText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                                                    quantidadesSelecionadas[t.id] = minOf(falta, maxOf(0.0, valDouble))
+                                                },
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                singleLine = true,
+                                                textStyle = androidx.compose.ui.text.TextStyle(
+                                                    fontSize = 12.sp,
+                                                    textAlign = TextAlign.Center,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                ),
+                                                modifier = Modifier
+                                                    .width(36.dp)
+                                                    .height(20.dp)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                                                    .background(Color.Transparent)
+                                            )
+                                            
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(Color(0xFFE8F5E9), RoundedCornerShape(4.dp))
+                                                    .clickable {
+                                                        val newVal = minOf(falta, currentQty + 1.0)
+                                                        quantidadesSelecionadas[t.id] = newVal
+                                                    }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Add,
+                                                    contentDescription = "Somar",
+                                                    tint = Color(0xFF2E7D32),
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
                                         }
                                         Text(
-                                            text = item.quantidade.toInt().toString(),
+                                            text = "de ${if (t.quantidade % 1.0 == 0.0) t.quantidade.toInt().toString() else t.quantidade.toString()}",
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            modifier = Modifier.widthIn(min = 16.dp),
-                                            textAlign = TextAlign.Center
+                                            color = tipoColor,
+                                            style = MaterialTheme.typography.bodySmall
                                         )
-                                        IconButton(
-                                            onClick = {
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    itensLote[idx] = item.copy(quantidade = item.quantidade + 1)
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
-                                        ) {
-                                            Text("+", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
-                                        }
+                                    } else {
+                                        Text(
+                                            text = "$tipoLabel ${if (t.quantidade % 1.0 == 0.0) t.quantidade.toInt().toString() else t.quantidade.toString()}",
+                                            fontWeight = FontWeight.Bold,
+                                            color = tipoColor,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
                                     }
+                                    
+                                    Text(
+                                        text = "•",
+                                        color = Color.LightGray,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "Lançado: ${if (realizado % 1.0 == 0.0) realizado.toInt().toString() else realizado.toString()}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (realizado > 0.0) Color(0xFF1976D2) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    
+                                    if (!showEditor) {
+                                        Text(
+                                            text = "•",
+                                            color = Color.LightGray,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Text(
+                                            text = "Saldo: ${if (falta % 1.0 == 0.0) falta.toInt().toString() else falta.toString()}",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (falta > 0.0) Color(0xFFD32F2F) else Color(0xFF388E3C)
+                                        )
+                                    }
+                                    
+                                    Text(
+                                        text = "•",
+                                        color = Color.LightGray,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "US: ${if (t.sinal == "+") t.us_montagem else t.us_desmontagem}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
-                        }
-
-                            if (isDinamico) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (tipoCalculo in listOf("deslocamento", "deslocamento_adicional", "deslocamento_cancelado")) {
-                                        OutlinedTextField(
-                                            value = if (item.elementos != null) item.elementos.toString() else "",
-                                            onValueChange = { valText ->
-                                                val valInt = valText.filter { it.isDigit() }.toIntOrNull()
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    val dist = item.distancia ?: 0.0
-                                                    val elems = valInt ?: 0
-                                                    itensLote[idx] = item.copy(
-                                                        elementos = valInt,
-                                                        quantidade = 0.045 * elems * dist
-                                                    )
-                                                }
-                                            },
-                                            label = { Text("Elementos", fontSize = 10.sp) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f).height(52.dp)
-                                        )
-                                        OutlinedTextField(
-                                            value = if (item.distancia != null) item.distancia.toString() else "",
-                                            onValueChange = { valText ->
-                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    val dist = valDouble ?: 0.0
-                                                    val elems = item.elementos ?: 0
-                                                    itensLote[idx] = item.copy(
-                                                        distancia = valDouble,
-                                                        quantidade = 0.045 * elems * dist
-                                                    )
-                                                }
-                                            },
-                                            label = { Text("Distância (KM)", fontSize = 10.sp) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1.2f).height(52.dp)
-                                        )
-                                    } else if (tipoCalculo == "deslocamento_simples") {
-                                        OutlinedTextField(
-                                            value = if (item.distancia != null) item.distancia.toString() else "",
-                                            onValueChange = { valText ->
-                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    val dist = valDouble ?: 0.0
-                                                    itensLote[idx] = item.copy(
-                                                        distancia = valDouble,
-                                                        quantidade = 0.045 * dist
-                                                    )
-                                                }
-                                            },
-                                            label = { Text("Distância (KM)", fontSize = 10.sp) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth().height(52.dp)
-                                        )
-                                    } else if (tipoCalculo in listOf("hora_extra", "transporte_meios_alternativos")) {
-                                        OutlinedTextField(
-                                            value = if (item.elementos != null) item.elementos.toString() else "",
-                                            onValueChange = { valText ->
-                                                val valInt = valText.filter { it.isDigit() }.toIntOrNull()
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    val hrs = item.horas ?: 0.0
-                                                    val elems = valInt ?: 0
-                                                    itensLote[idx] = item.copy(
-                                                        elementos = valInt,
-                                                        quantidade = (hrs + 2.0) * elems
-                                                    )
-                                                }
-                                            },
-                                            label = { Text("Elementos", fontSize = 10.sp) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f).height(52.dp)
-                                        )
-                                        OutlinedTextField(
-                                            value = if (item.horas != null) item.horas.toString() else "",
-                                            onValueChange = { valText ->
-                                                val valDouble = valText.replace(",", ".").toDoubleOrNull()
-                                                val idx = itensLote.indexOf(item)
-                                                if (idx != -1) {
-                                                    val hrs = valDouble ?: 0.0
-                                                    val elems = item.elementos ?: 0
-                                                    itensLote[idx] = item.copy(
-                                                        horas = valDouble,
-                                                        quantidade = (hrs + 2.0) * elems
-                                                    )
-                                                }
-                                            },
-                                            label = { Text("Tempo (Horas)", fontSize = 10.sp) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1.2f).height(52.dp)
-                                        )
-                                }
-                            }
-                        }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val totalUs = item.quantidade
-                            Text(
-                                text = "Faturamento estimado: " + String.format(Locale.getDefault(), "%.3f", totalUs) + " US",
-                                color = Color(0xFF1B5E20),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.End
-                            )
                         }
                     }
                 }
@@ -868,23 +1361,32 @@ fun ModoLoteView(equipe: String, online: Boolean) {
         // Botão Enviar Lote Diário
         Button(
             onClick = {
-                if (itensLote.isEmpty()) return@Button
+                if (tarefasSelecionadas.isEmpty()) return@Button
 
                 isSubmitting = true
                 coroutineScope.launch {
                     try {
-                        val response = ConstrucaoRetrofitClient.instance.lancarLote(
+                        val response = repository.lancarLote(
                             LancamentoLoteRequest(
                                 equipe_numero = equipeNumero,
                                 data_execucao = dataExecucao,
-                                projeto_id = null,
-                                itens = itensLote.toList()
+                                projeto_id = projetoSelecionado?.id,
+                                itens = tarefasSelecionadas.map { id ->
+                                    val t = groupedTarefasProjeto.find { it.id == id }!!
+                                    val qty = quantidadesSelecionadas[id] ?: t.quantidade
+                                    ItemLoteRequest(
+                                        codigo = t.atividade_codigo,
+                                        quantidade = qty,
+                                        tipo = if (t.sinal == "+") "MONTAGEM" else "DESMONTAGEM"
+                                    )
+                                }
                             )
                         )
                         if (response.sucesso) {
                             Toast.makeText(context, response.mensagem ?: "Lote enviado com sucesso!", Toast.LENGTH_LONG).show()
-                            itensLote.clear()
-                            descricoesLote.clear()
+                            tarefasSelecionadas.clear()
+                            quantidadesSelecionadas.clear()
+                            onRefreshLancamentosProjeto()
                         } else {
                             Toast.makeText(context, response.detail ?: "Erro ao enviar: ${response.mensagem}", Toast.LENGTH_LONG).show()
                         }
@@ -898,7 +1400,7 @@ fun ModoLoteView(equipe: String, online: Boolean) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
-            enabled = !isSubmitting && itensLote.isNotEmpty(),
+            enabled = !isSubmitting && tarefasSelecionadas.isNotEmpty(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
             shape = RoundedCornerShape(8.dp)
         ) {
