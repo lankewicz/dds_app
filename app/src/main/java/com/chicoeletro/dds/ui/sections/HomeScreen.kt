@@ -8,6 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
@@ -81,7 +84,7 @@ fun HomeScreen(
             icon = Icons.Default.People,
             color = Color(0xFF00ACC1),
             onClick = onClickEquipe,
-            subtitle = null
+            subtitle = if (eletricistas.isNotEmpty()) eletricistas.joinToString("\n") else null
         )
     )
 
@@ -129,7 +132,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(spacing)
             ) {
                 options.drop(3).take(3).forEach { option ->
-                    val maxLines = if (option.title == equipe || option.title == "Equipe") subtitleMaxLines else 1
+                    val maxLines = if (option.title == equipe || option.title == "Equipe" || option.title == "Definir equipe") 10 else 1
                     Box(modifier = Modifier.weight(1f)) {
                         HomeCard(
                             option = option,
@@ -220,9 +223,8 @@ fun HomeCard(
                             Spacer(modifier = Modifier.height(if (isCompactHeight) 1.dp else 2.dp))
                             
                             val last15Days = participationDays
-
-                            val squareSize = if (isCompactHeight) 4.dp else 5.dp
-                            val isSelectedSize = if (isCompactHeight) 5.5.dp else 7.dp
+                             val sphereSize = if (isCompactHeight) 11.dp else 14.dp
+                             val isSelectedSize = if (isCompactHeight) 14.dp else 16.dp
                             val dayFontSize = if (isCompactHeight) 6.sp else 8.sp
 
                             Row(
@@ -231,11 +233,11 @@ fun HomeCard(
                                 verticalAlignment = Alignment.Top
                             ) {
                                 last15Days.forEach { day ->
-                                    val color = when {
-                                        day.isPresent -> Color(0xFF2E7D32)
-                                        day.isAbsent -> Color(0xFFC62828)
-                                        day.hasTraining -> Color(0xFFFFA000)
-                                        else -> Color.LightGray.copy(alpha = 0.4f)
+                                    val gradientColors = when {
+                                        day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
+                                        day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))
+                                        day.hasTraining -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B), Color(0xFFB45309))
+                                        else -> listOf(Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF334155))
                                     }
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -243,8 +245,20 @@ fun HomeCard(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(if (day.isSelected) isSelectedSize else squareSize)
-                                                .background(color, RoundedCornerShape(1.dp))
+                                                .size(if (day.isSelected) isSelectedSize else sphereSize)
+                                                .drawBehind {
+                                                    val radius = size.minDimension / 2
+                                                    val brush = Brush.radialGradient(
+                                                        colors = gradientColors,
+                                                        center = Offset(size.width * 0.3f, size.height * 0.3f),
+                                                        radius = size.minDimension * 0.75f
+                                                    )
+                                                    drawCircle(
+                                                        brush = brush,
+                                                        radius = radius,
+                                                        center = Offset(size.width / 2, size.height / 2)
+                                                    )
+                                                }
                                         )
                                         Text(
                                             text = day.dayNumber.toString(),

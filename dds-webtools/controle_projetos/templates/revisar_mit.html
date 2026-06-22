@@ -729,7 +729,7 @@
         }
 
         function applyFilters() {
-            const q = searchInput.value.toLowerCase().strip();
+            const q = searchInput.value.toLowerCase().trim();
             const onlyPending = document.getElementById('filterPending').checked;
             
             let temp = [...allItems];

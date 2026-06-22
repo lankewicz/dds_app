@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const yearInput = document.getElementById('importYearInput');
     const executeBtn = document.getElementById('importExecuteBtn');
     const lastJobDiv = document.getElementById('importLastJob');
+    const modalMeta = document.getElementById('importModalMeta');
 
     // State
     let currentFile = null;
@@ -15,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Open/Close
     openBtn.addEventListener('click', () => {
         importModal.hidden = false;
+        if (modalMeta) modalMeta.textContent = 'Aguardando arquivo...';
         loadLastJob();
     });
 
@@ -64,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (yearInput.value) formData.append('year', yearInput.value);
 
         showNotice('Analisando arquivo...', 'info');
+        if (modalMeta) modalMeta.textContent = 'Analisando arquivo...';
         executeBtn.disabled = true;
 
         try {
@@ -77,9 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderAnalysis(data);
             executeBtn.disabled = false;
+            if (modalMeta) modalMeta.textContent = 'Pronto para importar';
             hideNotice();
         } catch (e) {
             showNotice(e.message, 'error');
+            if (modalMeta) modalMeta.textContent = 'Erro na análise';
         }
     }
 
@@ -125,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         executeBtn.disabled = true;
         showNotice('Importando dados...', 'info');
+        if (modalMeta) modalMeta.textContent = 'Importando...';
 
         try {
             const res = await fetch('/api/producao/import/execute', {
@@ -136,12 +142,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error(data.detail || 'Erro na importação');
 
             showNotice('Importação concluída com sucesso!', 'success');
+            if (modalMeta) modalMeta.textContent = 'Concluído!';
             setTimeout(() => {
                 importModal.hidden = true;
                 window.location.reload(); // Refresh to show new data
             }, 2000);
         } catch (e) {
             showNotice(e.message, 'error');
+            if (modalMeta) modalMeta.textContent = 'Erro na importação';
             executeBtn.disabled = false;
         }
     });

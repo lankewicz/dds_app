@@ -61,6 +61,7 @@ def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
         "ddsHistory": dds_data["ddsHistory"],
         "ddsDays": dds_data["ddsDays"],
         "ddsTimes": dds_data["ddsTimes"],
+        "ddsPhotos": dds_data["ddsPhotos"],
         "ddsToday": dds_data["ddsToday"],
     }
 

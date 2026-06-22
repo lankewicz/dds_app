@@ -419,7 +419,7 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
 
 def get_team_dds_data(empresa: str, team_key: str) -> dict[str, Any]:
     """
-    Retorna ddsHistory, ddsDays e ddsTimes para uma equipe específica,
+    Retorna ddsHistory, ddsDays, ddsTimes e ddsPhotos para uma equipe específica,
     buscando do cache do monitor. Usado pelo team_form_service para enriquecer
     a resposta do /api/team-form com dados de presença no DDS.
     """
@@ -432,9 +432,10 @@ def get_team_dds_data(empresa: str, team_key: str) -> dict[str, Any]:
                     "ddsHistory": it.get("ddsHistory") or [],
                     "ddsDays": it.get("ddsDays") or [],
                     "ddsTimes": it.get("ddsTimes") or {},
+                    "ddsPhotos": it.get("ddsPhotos") or {},
                     "ddsToday": it.get("ddsToday") or "neutral",
                 }
-    return {"ddsHistory": [], "ddsDays": [], "ddsTimes": {}, "ddsToday": "neutral"}
+    return {"ddsHistory": [], "ddsDays": [], "ddsTimes": {}, "ddsPhotos": {}, "ddsToday": "neutral"}
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
@@ -946,6 +947,7 @@ def _serialize_day_cache(day: str, entry: dict[str, Any]) -> dict[str, Any]:
         "has_any": bool(entry.get("has_any")),
         "teams_executed": sorted(str(team).strip() for team in (entry.get("present") or set()) if str(team).strip()),
         "team_timestamps": {k: (v.isoformat() if hasattr(v, "isoformat") else str(v)) for k, v in (entry.get("team_timestamps") or {}).items()},
+        "team_photos": {k: str(v) for k, v in (entry.get("team_photos") or {}).items() if v},
     }
 
 
@@ -957,10 +959,12 @@ def _deserialize_day_cache(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
     teams_executed = {str(team).strip() for team in (payload.get("teams_executed") or []) if str(team).strip()}
     team_timestamps = {k: _parse_iso_datetime(v) for k, v in (payload.get("team_timestamps") or {}).items()}
+    team_photos = {k: str(v) for k, v in (payload.get("team_photos") or {}).items() if v}
     return {
         "date": day,
         "present": teams_executed,
         "team_timestamps": team_timestamps,
+        "team_photos": team_photos,
         "has_any": bool(payload.get("has_any")) or bool(teams_executed),
         "fetched_at": _parse_iso_datetime(payload.get("updated_at")),
         "frozen": bool(payload.get("frozen")),
@@ -1015,11 +1019,13 @@ def _build_day_cache_entry(
     team_timestamps: dict[str, Any],
     has_any: bool,
     frozen: bool,
+    team_photos: dict[str, Any] = None,
 ) -> dict[str, Any]:
     return {
         "date": day,
         "present": set(present or set()),
         "team_timestamps": dict(team_timestamps or {}),
+        "team_photos": dict(team_photos or {}),
         "has_any": bool(has_any),
         "fetched_at": _utc_now(),
         "frozen": bool(frozen),
@@ -1055,7 +1061,7 @@ def _load_day_presence_with_cache(
 
     if is_non_business:
         if entry is None or entry.get("has_any") or entry.get("present"):
-            entry = _build_day_cache_entry(day, present=set(), team_timestamps={}, has_any=False, frozen=True)
+            entry = _build_day_cache_entry(day, present=set(), team_timestamps={}, team_photos={}, has_any=False, frozen=True)
             with _cache_lock:
                 _DDS_DAY_CACHE[day] = entry
             _save_storage_day_cache(day, entry)
@@ -1068,9 +1074,10 @@ def _load_day_presence_with_cache(
         return entry
 
     carry_present = set(entry.get("present") or set()) if entry else set()
-    present, has_any_dds, team_timestamps = _load_dds_presence_for_day(day, carry_present)
+    carry_photos = dict(entry.get("team_photos") or {}) if entry else {}
+    present, has_any_dds, team_timestamps, team_photos = _load_dds_presence_for_day(day, carry_present, carry_photos)
     frozen = day not in mutable_days
-    entry = _build_day_cache_entry(day, present=present, team_timestamps=team_timestamps, has_any=has_any_dds or bool(carry_present), frozen=frozen)
+    entry = _build_day_cache_entry(day, present=present, team_timestamps=team_timestamps, team_photos=team_photos, has_any=has_any_dds or bool(carry_present), frozen=frozen)
     with _cache_lock:
         _DDS_DAY_CACHE[day] = entry
     _save_storage_day_cache(day, entry)
@@ -1147,9 +1154,14 @@ def _latest_dds_ts_for_aliases(
     return latest_ts
 
 
-def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) -> tuple[set[str], bool, dict[str, Any]]:
+def _load_dds_presence_for_day(
+    day: str,
+    carry_present: set[str] | None = None,
+    carry_photos: dict[str, Any] | None = None,
+) -> tuple[set[str], bool, dict[str, Any], dict[str, Any]]:
     present = set(carry_present or set())
     team_timestamps: dict[str, Any] = {}
+    team_photos: dict[str, Any] = dict(carry_photos or {})
     has_any_dds = False
     end_key = f"{day}\uf8ff"
 
@@ -1172,21 +1184,24 @@ def _load_dds_presence_for_day(day: str, carry_present: set[str] | None = None) 
         has_any_dds = True
         equipe = _normalize_text(data.get("equipe") or data.get("teamName") or data.get("teamKey"))
         ts = _extract_dds_timestamp(data, snap_day)
+        photo_url = data.get("fotoUrl") or data.get("thumbUrl") or data.get("photoUrl")
         if equipe:
             present.add(equipe)
             if ts:
                 current_ts = to_utc_dt(team_timestamps.get(equipe))
                 if not current_ts or ts > current_ts:
                     team_timestamps[equipe] = ts
+            if photo_url:
+                team_photos[equipe] = photo_url
 
-    return present, has_any_dds, team_timestamps
+    return present, has_any_dds, team_timestamps, team_photos
 
 
 def _load_recent_dds_presence(
     days: int = DDS_HISTORY_DAYS,
     *,
     manual_refresh: bool = False,
-) -> tuple[list[str], dict[str, set[str]], set[str], set[str], set[str] | None, dict[str, dict[str, Any]]]:
+) -> tuple[list[str], dict[str, set[str]], set[str], set[str], set[str] | None, dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
 
     """
     Retorna:
@@ -1196,6 +1211,7 @@ def _load_recent_dds_presence(
       - mutable_days: dias que ainda podem ser atualizados (hoje e último dia útil)
       - calendar_days: conjunto de dias válidos vindos do calendário persistente, quando disponível
       - dds_timestamps_by_day: mapa de dia -> {equipe -> timestamp}
+      - dds_photos_by_day: mapa de dia -> {equipe -> photo_url}
     """
     recent_days = _recent_history_days(days)
     mutable_days = _mutable_dds_days(recent_days)
@@ -1207,6 +1223,7 @@ def _load_recent_dds_presence(
     calendar_days = _load_dds_calendar_days(force_refresh=False)
     present_by_day: dict[str, set[str]] = {day: set() for day in recent_days}
     dds_timestamps_by_day: dict[str, dict[str, Any]] = {day: {} for day in recent_days}
+    dds_photos_by_day: dict[str, dict[str, Any]] = {day: {} for day in recent_days}
     days_with_any_dds: set[str] = set()
 
     for day in recent_days:
@@ -1218,10 +1235,11 @@ def _load_recent_dds_presence(
         )
         present_by_day[day] = set(entry.get("present") or set())
         dds_timestamps_by_day[day] = dict(entry.get("team_timestamps") or {})
+        dds_photos_by_day[day] = dict(entry.get("team_photos") or {})
         if entry.get("has_any"):
             days_with_any_dds.add(day)
 
-    return recent_days, present_by_day, days_with_any_dds, mutable_days, calendar_days, dds_timestamps_by_day
+    return recent_days, present_by_day, days_with_any_dds, mutable_days, calendar_days, dds_timestamps_by_day, dds_photos_by_day
 
 
 def _turno_doc_ref(empresa: str, team_key: str):
@@ -1391,7 +1409,14 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
     col_ref = db.collection("turno").document(empresa).collection("equipes")
     turno_docs = {doc.id: (doc.to_dict() or {}) for doc in col_ref.stream()}
     teams_map = list_teams_map(active=None)
-    recent_dds_days, dds_present_by_day, dds_days_with_any, mutable_dds_days, calendar_days, dds_timestamps_by_day = _load_recent_dds_presence(manual_refresh=manual_refresh)
+    recent_days_res = _load_recent_dds_presence(manual_refresh=manual_refresh)
+    recent_dds_days = recent_days_res[0]
+    dds_present_by_day = recent_days_res[1]
+    dds_days_with_any = recent_days_res[2]
+    mutable_dds_days = recent_days_res[3]
+    calendar_days = recent_days_res[4]
+    dds_timestamps_by_day = recent_days_res[5]
+    dds_photos_by_day = recent_days_res[6]
 
     unread_counts = get_unread_counts(setor=setor)
     unread_map_global = get_all_unread_counts_map()
@@ -1415,6 +1440,7 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
             mutable_dds_days=mutable_dds_days,
             calendar_days=calendar_days,
             dds_timestamps_by_day=dds_timestamps_by_day,
+            dds_photos_by_day=dds_photos_by_day,
             unread_counts=unread_counts,
             unread_map_global=unread_map_global,
             last_messages_map=last_messages_map,
@@ -1467,7 +1493,7 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
 
 
 # Campos de histórico DDS que são carregados separadamente via /api/turnos/dds
-_DDS_HEAVY_FIELDS = {"ddsHistory", "ddsDays", "ddsTimes"}
+_DDS_HEAVY_FIELDS = {"ddsHistory", "ddsDays", "ddsTimes", "ddsPhotos"}
 
 
 def _strip_dds_history(item: dict[str, Any]) -> dict[str, Any]:
@@ -1494,6 +1520,7 @@ def list_turnos_dds(empresa: str, active: bool | None = None) -> dict[str, Any]:
             "ddsHistory": it.get("ddsHistory") or [],
             "ddsDays": it.get("ddsDays") or [],
             "ddsTimes": it.get("ddsTimes") or {},
+            "ddsPhotos": it.get("ddsPhotos") or {},
             "ddsToday": it.get("ddsToday") or "neutral",
             "lastContact": it.get("lastContact"),
             "lastContactSource": it.get("lastContactSource"),
@@ -1519,6 +1546,7 @@ def _process_single_team(
     mutable_dds_days: set[str],
     calendar_days: set[str] | None,
     dds_timestamps_by_day: dict[str, dict[str, Any]],
+    dds_photos_by_day: dict[str, dict[str, Any]],
     unread_counts: dict[str, int],
     unread_map_global: dict[str, dict[str, int]],
     last_messages_map: dict[str, datetime],
@@ -1820,6 +1848,7 @@ def _process_single_team(
 
     dds_history: list[str] = []
     dds_times: dict[str, str] = {}
+    dds_photos: dict[str, str] = {}
     for day in recent_dds_days:
         from datetime import datetime
         is_weekend = False
@@ -1872,6 +1901,21 @@ def _process_single_team(
                 except Exception:
                     pass
 
+            day_photo_map = dds_photos_by_day.get(day) or {}
+            day_photo = None
+            for alias in aliases:
+                day_photo = day_photo_map.get(alias)
+                if not day_photo:
+                    for present_name, p_url in day_photo_map.items():
+                        if _normalized_alias_matches(present_name, alias):
+                            day_photo = p_url
+                            if day_photo:
+                                break
+                if day_photo:
+                    break
+            if day_photo:
+                dds_photos[day] = day_photo
+
     dds_today = dds_history[-1] if dds_history else "neutral"
     unread_map = unread_map_global.get(team_key) or unread_map_global.get(equipe) or {}
     last_was_descanso_semanal = bool(data.get("lastWasDescansoSemanal", False))
@@ -1896,6 +1940,7 @@ def _process_single_team(
         "ddsToday": dds_today,
         "ddsDays": recent_dds_days,
         "ddsTimes": dds_times,
+        "ddsPhotos": dds_photos,
         "unreadMessages": unread_counts.get(equipe, 0) or unread_counts.get(team_key, 0),
         "unreadMap": unread_map,
         "lastWasDescansoSemanal": last_was_descanso_semanal,

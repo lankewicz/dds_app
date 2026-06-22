@@ -152,17 +152,19 @@ async def auth_middleware(request: Request, call_next):
         "/favicon.ico",
         "/controle-projetos/static",
         "/controle-projetos/revisar-mit",
-        "/controle-projetos/api/mit-import"
+        "/controle-projetos/api/mit-import",
+        "/controle-projetos/estruturas",
+        "/controle-projetos/api/estruturas"
     ]
     if not any(request.url.path.startswith(p) for p in public_paths):
-        user_email = request.cookies.get("user_email")
+        user_email = request.cookies.get("__session")
         if not user_email:
             return RedirectResponse(url="/login")
     return await call_next(request)
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    user_email = request.cookies.get("user_email")
+    user_email = request.cookies.get("__session")
     revision = os.environ.get("K_REVISION", "local")
     if "-" in revision:
         parts = revision.split("-")
@@ -198,7 +200,7 @@ async def api_login(payload: LoginPayload):
         
         if user_doc.exists and user_doc.to_dict().get("active"):
             response = JSONResponse(content={"ok": True})
-            response.set_cookie(key="user_email", value=email, max_age=604800, httponly=True)
+            response.set_cookie(key="__session", value=email, max_age=604800, httponly=True)
             return response
         
         return JSONResponse(content={"ok": False, "message": "E-mail não autorizado"}, status_code=401)
@@ -209,7 +211,7 @@ async def api_login(payload: LoginPayload):
 @app.get("/logout")
 async def logout():
     response = RedirectResponse(url="/login")
-    response.delete_cookie("user_email")
+    response.delete_cookie("__session")
     return response
 
 # O Monitor vai ficar em /monitor, mas as APIs podem continuar em /api

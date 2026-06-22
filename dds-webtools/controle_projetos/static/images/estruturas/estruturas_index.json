@@ -1,0 +1,355 @@
+{
+    "RDA": [
+        {
+            "estrutura": "B1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/B1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/B1_titulo.png"
+        },
+        {
+            "estrutura": "B3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/B3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/B3_titulo.png"
+        },
+        {
+            "estrutura": "B4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/B4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/B4_titulo.png"
+        },
+        {
+            "estrutura": "C4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/C4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/C4_titulo.png"
+        },
+        {
+            "estrutura": "DN3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/DN3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/DN3_titulo.png"
+        },
+        {
+            "estrutura": "HTE-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/HTE-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/HTE-PR_titulo.png"
+        },
+        {
+            "estrutura": "HTE",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/HTE_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/HTE_titulo.png"
+        },
+        {
+            "estrutura": "N1-SPCF-TMPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/N1-SPCF-TMPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/N1-SPCF-TMPR_titulo.png"
+        },
+        {
+            "estrutura": "N1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/N1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/N1_titulo.png"
+        },
+        {
+            "estrutura": "N3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/N3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/N3_titulo.png"
+        },
+        {
+            "estrutura": "N4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/N4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/N4_titulo.png"
+        },
+        {
+            "estrutura": "P1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/P1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/P1_titulo.png"
+        },
+        {
+            "estrutura": "S1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/S1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/S1_titulo.png"
+        },
+        {
+            "estrutura": "S13",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/S13_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/S13_titulo.png"
+        },
+        {
+            "estrutura": "S3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/S3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/S3_titulo.png"
+        },
+        {
+            "estrutura": "S4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/S4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/S4_titulo.png"
+        },
+        {
+            "estrutura": "T1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/T1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/T1_titulo.png"
+        },
+        {
+            "estrutura": "T4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/T4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/T4_titulo.png"
+        },
+        {
+            "estrutura": "TE1-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/TE1-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/TE1-PR_titulo.png"
+        },
+        {
+            "estrutura": "TE1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/TE1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/TE1_titulo.png"
+        },
+        {
+            "estrutura": "TE4-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/TE4-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/TE4-PR_titulo.png"
+        },
+        {
+            "estrutura": "TE4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/TE4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/TE4_titulo.png"
+        },
+        {
+            "estrutura": "U1-SPCF-TMPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/U1-SPCF-TMPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/U1-SPCF-TMPR_titulo.png"
+        },
+        {
+            "estrutura": "U1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/U1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/U1_titulo.png"
+        },
+        {
+            "estrutura": "U3-SPCF-TMPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/U3-SPCF-TMPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/U3-SPCF-TMPR_titulo.png"
+        },
+        {
+            "estrutura": "U3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/U3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/U3_titulo.png"
+        },
+        {
+            "estrutura": "U4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDA/U4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDA/U4_titulo.png"
+        }
+    ],
+    "RDC": [
+        {
+            "estrutura": "C1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C1_titulo.png"
+        },
+        {
+            "estrutura": "C2",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C2_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C2_titulo.png"
+        },
+        {
+            "estrutura": "C3-MSCF-TTPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C3-MSCF-TTPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C3-MSCF-TTPR_titulo.png"
+        },
+        {
+            "estrutura": "C3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C3_titulo.png"
+        },
+        {
+            "estrutura": "C4-CF",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C4-CF_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C4-CF_titulo.png"
+        },
+        {
+            "estrutura": "C4-SU",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C4-SU_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C4-SU_titulo.png"
+        },
+        {
+            "estrutura": "C4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/C4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/C4_titulo.png"
+        },
+        {
+            "estrutura": "CH-NSCF-TTPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/CH-NSCF-TTPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/CH-NSCF-TTPR_titulo.png"
+        },
+        {
+            "estrutura": "CH",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/CH_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/CH_titulo.png"
+        },
+        {
+            "estrutura": "CS",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/CS_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/CS_titulo.png"
+        },
+        {
+            "estrutura": "DC3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/DC3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/DC3_titulo.png"
+        },
+        {
+            "estrutura": "DCS",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/DCS_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/DCS_titulo.png"
+        },
+        {
+            "estrutura": "N-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/N-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/N-PR_titulo.png"
+        },
+        {
+            "estrutura": "N3C3-NSCF",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/N3C3-NSCF_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/N3C3-NSCF_titulo.png"
+        },
+        {
+            "estrutura": "N3C3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDC/N3C3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDC/N3C3_titulo.png"
+        }
+    ],
+    "RDP": [
+        {
+            "estrutura": "B1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/B1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/B1_titulo.png"
+        },
+        {
+            "estrutura": "B3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/B3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/B3_titulo.png"
+        },
+        {
+            "estrutura": "B4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/B4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/B4_titulo.png"
+        },
+        {
+            "estrutura": "DN3-CF",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/DN3-CF_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/DN3-CF_titulo.png"
+        },
+        {
+            "estrutura": "DN3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/DN3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/DN3_titulo.png"
+        },
+        {
+            "estrutura": "N-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N-PR_titulo.png"
+        },
+        {
+            "estrutura": "N1-NSCF-TTPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N1-NSCF-TTPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N1-NSCF-TTPR_titulo.png"
+        },
+        {
+            "estrutura": "N1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N1_titulo.png"
+        },
+        {
+            "estrutura": "N2",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N2_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N2_titulo.png"
+        },
+        {
+            "estrutura": "N3-MSCF-TTPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N3-MSCF-TTPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N3-MSCF-TTPR_titulo.png"
+        },
+        {
+            "estrutura": "N3-NSCF-TTPR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N3-NSCF-TTPR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N3-NSCF-TTPR_titulo.png"
+        },
+        {
+            "estrutura": "N3",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N3_titulo.png"
+        },
+        {
+            "estrutura": "N4-CF",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N4-CF_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N4-CF_titulo.png"
+        },
+        {
+            "estrutura": "N4-SU",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N4-SU_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N4-SU_titulo.png"
+        },
+        {
+            "estrutura": "N4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/N4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/N4_titulo.png"
+        },
+        {
+            "estrutura": "T1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/T1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/T1_titulo.png"
+        },
+        {
+            "estrutura": "T4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/T4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/T4_titulo.png"
+        },
+        {
+            "estrutura": "TE1-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/TE1-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/TE1-PR_titulo.png"
+        },
+        {
+            "estrutura": "TE1",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/TE1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/TE1_titulo.png"
+        },
+        {
+            "estrutura": "TE4-PR",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/TE4-PR_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/TE4-PR_titulo.png"
+        },
+        {
+            "estrutura": "TE4",
+            "desenho": "/controle-projetos/static/images/estruturas/RDP/TE4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RDP/TE4_titulo.png"
+        }
+    ],
+    "RSI": [
+        {
+            "estrutura": "SI-1",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-1_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-1_titulo.png"
+        },
+        {
+            "estrutura": "SI-13",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-13_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-13_titulo.png"
+        },
+        {
+            "estrutura": "SI-3",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-3_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-3_titulo.png"
+        },
+        {
+            "estrutura": "SI-3T",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-3T_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-3T_titulo.png"
+        },
+        {
+            "estrutura": "SI-4",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-4_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-4_titulo.png"
+        },
+        {
+            "estrutura": "SI-4T",
+            "desenho": "/controle-projetos/static/images/estruturas/RSI/SI-4T_desenho.png",
+            "titulo": "/controle-projetos/static/images/estruturas/RSI/SI-4T_titulo.png"
+        }
+    ]
+}

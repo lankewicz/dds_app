@@ -173,7 +173,7 @@ function syncBodyModalState() {
 function setBusy(isBusy, message = '') {
   if (teamFormSave) {
     teamFormSave.disabled = isBusy;
-    teamFormSave.textContent = isBusy ? 'Salvando...' : 'Salvar';
+    teamFormSave.textContent = isBusy ? 'Salvando...' : (currentDirty ? 'Salvar' : 'Fechar');
   }
   if (teamFormCancel) teamFormCancel.disabled = isBusy;
   if (teamFormClose) teamFormClose.disabled = isBusy;
@@ -615,7 +615,7 @@ function createFormSignature(payload) {
 
 function updatePrimaryActionState() {
   if (teamFormSave && !saveInFlight) {
-    teamFormSave.textContent = 'Salvar';
+    teamFormSave.textContent = currentDirty ? 'Salvar' : 'Fechar';
   }
   if (teamFormCancel && !saveInFlight) {
     teamFormCancel.hidden = !currentDirty;
@@ -777,6 +777,7 @@ async function openTeamForm(teamKey) {
       ddsHistory: hasApiDds ? data.ddsHistory : (currentItem?.ddsHistory || []),
       ddsDays: (Array.isArray(data.ddsDays) && data.ddsDays.length > 0) ? data.ddsDays : (currentItem?.ddsDays || []),
       ddsTimes: (data.ddsTimes && Object.keys(data.ddsTimes).length > 0) ? data.ddsTimes : (currentItem?.ddsTimes || {}),
+      ddsPhotos: (data.ddsPhotos && Object.keys(data.ddsPhotos).length > 0) ? data.ddsPhotos : (currentItem?.ddsPhotos || {}),
       ddsToday: (data.ddsToday && data.ddsToday !== 'neutral') ? data.ddsToday : (currentItem?.ddsToday || 'neutral'),
     };
     updateHeader(liveItem, teamKey);
@@ -805,6 +806,10 @@ function closeTeamForm() {
 
 async function saveTeamForm() {
   if (saveInFlight) return;
+  if (!currentDirty) {
+    closeTeamForm();
+    return;
+  }
   const payload = collectPayload();
   if (!payload.team.teamKey) {
     setNotice('teamKey não localizado para salvar.', 'error');

@@ -98,9 +98,20 @@
                 <button class="nav-item" data-tab="historico">
                     <span class="icon">📜</span> Histórico
                 </button>
-                <button class="nav-item" data-tab="mit">
-                    <span class="icon">📖</span> Tabela MIT
-                </button>
+                <!-- Menu de Estruturas com Subcategorias -->
+                <div class="nav-group" style="display: flex; flex-direction: column;">
+                    <button class="nav-item nav-parent" id="btnEstruturasGroup" style="width: 100%;">
+                        <span class="icon">📐</span> Estruturas <span class="arrow" id="arrowEstruturas" style="margin-left: auto; font-size: 0.8rem; transition: transform 0.2s;">▼</span>
+                    </button>
+                    <div class="nav-submenu" id="submenuEstruturas" style="display: flex; flex-direction: column; gap: 4px; padding-left: 16px; margin-top: 4px; transition: max-height 0.3s ease, opacity 0.3s ease; max-height: 200px; overflow: hidden; opacity: 1;">
+                        <a href="/controle-projetos/estruturas" class="nav-item submenu-item" style="padding: 10px 14px; font-size: 0.9rem; text-decoration: none; border-left: 2px solid var(--border-color); border-radius: 0 var(--border-radius) var(--border-radius) 0; display: flex; align-items: center; gap: 12px; transition: all 0.2s ease;">
+                            <span class="icon">📂</span> Catálogo
+                        </a>
+                        <button class="nav-item submenu-item" data-tab="mit" style="padding: 10px 14px; font-size: 0.9rem; border-left: 2px solid var(--border-color); border-radius: 0 var(--border-radius) var(--border-radius) 0; width: 100%; display: flex; align-items: center; gap: 12px; transition: all 0.2s ease;">
+                            <span class="icon">📖</span> Tabela MIT
+                        </button>
+                    </div>
+                </div>
                 
                 <!-- Voltar ao Portal link -->
                 <a href="/" class="nav-item" style="text-decoration: none; margin-top: auto; border-top: 1px solid var(--border-color); padding-top: 20px; border-radius: 0;">
@@ -725,5 +736,50 @@
             </section>
         </main>
     </div>
+    
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const btnEstruturasGroup = document.getElementById("btnEstruturasGroup");
+            const submenuEstruturas = document.getElementById("submenuEstruturas");
+            const arrowEstruturas = document.getElementById("arrowEstruturas");
+
+            // Toggle do submenu colapsavel
+            btnEstruturasGroup.addEventListener("click", (e) => {
+                const isCollapsed = submenuEstruturas.style.maxHeight === "0px";
+                if (isCollapsed) {
+                    submenuEstruturas.style.maxHeight = "200px";
+                    submenuEstruturas.style.opacity = "1";
+                    arrowEstruturas.style.transform = "rotate(0deg)";
+                } else {
+                    submenuEstruturas.style.maxHeight = "0px";
+                    submenuEstruturas.style.opacity = "0";
+                    arrowEstruturas.style.transform = "rotate(-90deg)";
+                }
+            });
+
+            // Se o usuario clicar em outras abas, desativa classe ativa dos itens do submenu
+            const otherTabs = document.querySelectorAll(".nav-item[data-tab]:not([data-tab='mit'])");
+            otherTabs.forEach(tab => {
+                tab.addEventListener("click", () => {
+                    document.querySelectorAll(".submenu-item").forEach(item => {
+                        item.classList.remove("active");
+                    });
+                });
+            });
+
+            // Ao clicar em Tabela MIT no submenu, sincroniza status e remove ativo dos outros botoes principais
+            const tabMitBtn = document.querySelector(".submenu-item[data-tab='mit']");
+            if (tabMitBtn) {
+                tabMitBtn.addEventListener("click", () => {
+                    document.querySelectorAll(".nav-item").forEach(item => {
+                        if (item !== tabMitBtn) {
+                            item.classList.remove("active");
+                        }
+                    });
+                    tabMitBtn.classList.add("active");
+                });
+            }
+        });
+    </script>
 </body>
 </html>

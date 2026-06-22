@@ -1,5 +1,7 @@
 import os
 import shutil
+import fitz
+import re
 from typing import List, Optional
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -58,7 +60,7 @@ class LancamentoLotePayload(BaseModel):
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def ver_controle_projetos(request: Request):
-    user_email = request.cookies.get("user_email")
+    user_email = request.cookies.get("__session")
     return templates.TemplateResponse("index_projetos.html", {
         "request": request,
         "user_email": user_email
@@ -230,7 +232,7 @@ class ConfirmarMitPayload(BaseModel):
 # 12. Rota HTML para revisão do MIT
 @router.get("/revisar-mit", response_class=HTMLResponse)
 def ver_revisao_mit(request: Request):
-    user_email = request.cookies.get("user_email")
+    user_email = request.cookies.get("__session")
     return templates.TemplateResponse("revisar_mit.html", {
         "request": request,
         "user_email": user_email
@@ -250,12 +252,23 @@ def listar_mit_pendentes():
             dict_data = d.to_dict()
             cadastradas[dict_data["codigo"]] = dict_data
             
-        # 2. Ler o JSON gerado pelo parser
-        json_path = r"d:\programas\DDS\parsed_mit_v2.json"
-        if not os.path.exists(json_path):
-            json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "parsed_mit_v2.json")
-        if not os.path.exists(json_path):
-            raise HTTPException(status_code=404, detail="Arquivo parsed_mit_v2.json não encontrado. Execute o script de parse primeiro.")
+        # 2. Ler o JSON gerado pelo parser (tentando múltiplos caminhos possíveis)
+        caminhos_tentados = [
+            r"d:\programas\DDS\parsed_mit_v2.json",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "parsed_mit_v2.json"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "parsed_mit_v2.json"),
+            os.path.join(os.getcwd(), "parsed_mit_v2.json"),
+            os.path.abspath("parsed_mit_v2.json")
+        ]
+        
+        json_path = None
+        for path in caminhos_tentados:
+            if os.path.exists(path):
+                json_path = path
+                break
+                
+        if not json_path:
+            raise HTTPException(status_code=404, detail=f"Arquivo parsed_mit_v2.json nao encontrado nos caminhos buscados: {caminhos_tentados}. Execute o script de parse primeiro.")
             
         with open(json_path, "r", encoding="utf-8") as f:
             parsed_data = json.load(f)
@@ -327,4 +340,695 @@ def deletar_atividade_mit(codigo: int):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ROTAS PARA O CATÁLOGO DE ESTRUTURAS PADRÃO
+# ==========================================
+
+class EstruturaAtividadesPayload(BaseModel):
+    atividades: List[int]
+
+# 16. Rota HTML para gerenciar o catálogo de estruturas padrão
+@router.get("/estruturas", response_class=HTMLResponse)
+def ver_catalogo_estruturas(request: Request):
+    user_email = request.cookies.get("__session")
+    return templates.TemplateResponse("revisar_estruturas.html", {
+        "request": request,
+        "user_email": user_email
+    })
+
+# 17. API para listar todas as estruturas padrão
+@router.get("/api/estruturas")
+def listar_estruturas_padrao(q: Optional[str] = None, rede: Optional[str] = None):
+    try:
+        estruturas = []
+        docs = BASE_DOC_PATH.collection("estruturas_padrao").stream()
+        for doc in docs:
+            est = doc.to_dict()
+            estruturas.append(est)
+            
+        # Filtros
+        if rede:
+            estruturas = [e for e in estruturas if e.get("tipo_rede") == rede]
+        if q:
+            q_clean = q.strip().lower()
+            estruturas = [e for e in estruturas if q_clean in e.get("nome", "").lower() or q_clean in e.get("tipo_rede", "").lower()]
+            
+        # Ordenação por tipo de rede e nome
+        estruturas = sorted(estruturas, key=lambda x: (x.get("tipo_rede", ""), x.get("nome", "")))
+        return estruturas
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 18. API para obter detalhes de uma estrutura padrão e suas atividades do MIT
+@router.get("/api/estruturas/{doc_id}")
+def obter_detalhes_estrutura_padrao(doc_id: str):
+    try:
+        doc = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id).get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Estrutura padrão não encontrada.")
+            
+        est = doc.to_dict()
+        
+        # Carregar detalhes de cada atividade do MIT associada
+        atividades_detalhes = []
+        for cod in est.get("atividades", []):
+            mit_info = _get_mit_info(cod)
+            atividades_detalhes.append(mit_info)
+            
+        est["atividades_detalhes"] = atividades_detalhes
+        return est
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 19. API para atualizar as atividades MIT de uma estrutura padrão
+@router.post("/api/estruturas/{doc_id}/atividades")
+def atualizar_atividades_estrutura_padrao(doc_id: str, payload: EstruturaAtividadesPayload):
+    try:
+        doc_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        if not doc_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Estrutura padrão não encontrada.")
+            
+        doc_ref.update({
+            "atividades": payload.atividades
+        })
+        return {"sucesso": True}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 20. API para excluir uma estrutura padrão
+@router.delete("/api/estruturas/{doc_id}")
+def deletar_estrutura_padrao(doc_id: str):
+    try:
+        doc_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        if not doc_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Estrutura padrão não encontrada.")
+        doc_ref.delete()
+        return {"sucesso": True}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+import unicodedata
+import json
+
+# Conjuntos padrão caso o arquivo JSON de configuração não seja encontrado
+PALAVRAS_TITULO = {
+    "ESTRUTURA", "ESTRUTURAS", "TRANSFORMADOR", "TRANSFORMADORES",
+    "MONOFASICO", "MONOFÁSICO", "TRIFASICO", "TRIFÁSICO",
+    "CONVENCIONAL", "AUTOPROTEGIDO", "PARA", "RAIOS",
+    "PARA-RAIOS", "SECCIONADORA", "FACA", "UNIPOLAR",
+    "REDE", "LONGO", "COM", "DE", "DA", "DO", "AO",
+    "AEREA", "AÉREA", "COMPACTA", "PROTEGIDA",
+    "SECUNDARIA", "SECUNDÁRIA", "ISOLADA", "DISTRIBUICAO",
+    "DISTRIBUIÇÃO", "MONTAGEM"
+}
+
+PALAVRAS_DESCARTE = {
+    "COPEL", "COMPANHIA", "PARANAENSE", "ENERGIA", "PARANA",
+    "PARANÁ", "GOVERNO", "NTC", "PAGINA", "PÁGINA", "PAGE",
+    "JANEIRO", "JAN", "FEVEREIRO", "FEV", "MARCO", "MARÇO", "MAR",
+    "ABRIL", "ABR", "MAIO", "MAI", "JUNHO", "JUN", "JULHO", "JUL",
+    "AGOSTO", "AGO", "SETEMBRO", "SET", "OUTUBRO", "OUT", "NOVEMBRO",
+    "NOV", "DEZEMBRO", "DEZ", "EXCLUSIVO", "MANUTENCAO", "MANUTENÇÃO"
+}
+
+# Tentar carregar as configurações do arquivo JSON externo para facilitar manutenção
+CONFIG_WORDS_PATH = os.path.join(base_dir, "controle_projetos", "config_palavras.json")
+if os.path.exists(CONFIG_WORDS_PATH):
+    try:
+        with open(CONFIG_WORDS_PATH, "r", encoding="utf-8") as f:
+            wdata = json.load(f)
+            if "palavras_titulo" in wdata:
+                PALAVRAS_TITULO = set(wdata["palavras_titulo"])
+            if "palavras_descarte" in wdata:
+                PALAVRAS_DESCARTE = set(wdata["palavras_descarte"])
+    except Exception as e:
+        print(f"Aviso: erro ao carregar {CONFIG_WORDS_PATH}: {e}")
+
+def remover_acentos(texto: str) -> str:
+    texto = unicodedata.normalize("NFD", texto)
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
+def limpar_linha(texto: str) -> str:
+    texto = texto.replace("\x00", " ")
+    texto = texto.replace("\n", " ")
+    texto = texto.replace("–", "-").replace("—", "-").replace("\x13", "-").replace("\x96", "-")
+    texto = re.sub(r"\s+", " ", texto)
+    return texto.strip()
+
+def normalizar_texto_base(texto: str) -> str:
+    texto = limpar_linha(texto).upper()
+    texto = remover_acentos(texto)
+    texto = re.sub(r"\s+", " ", texto)
+    return texto.strip()
+
+def normalizar_codigo_estrutura(texto: str) -> str:
+    texto = normalizar_texto_base(texto)
+    texto = re.sub(r"[^A-Z0-9\-/ ]", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    partes = re.split(r"\s*-\s*", texto)
+    partes = [re.sub(r"\s+", "", p.strip()) for p in partes if p.strip()]
+    return "-".join(partes)
+
+def linha_eh_ruido(linha: str) -> bool:
+    l = normalizar_texto_base(linha)
+    if not l or len(l) <= 1:
+        return True
+    if re.fullmatch(r"\d+", l):
+        return True
+    if re.fullmatch(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", l):
+        return True
+    if any(p in l.split() for p in PALAVRAS_DESCARTE):
+        if not re.search(r"\b[A-Z]{1,4}\d+[A-Z0-9]*\b", l) and "-" not in l:
+            return True
+    return False
+
+def candidato_tem_palavra_de_titulo(codigo: str) -> bool:
+    partes = re.split(r"[- ]+", normalizar_texto_base(codigo))
+    partes = [p for p in partes if p]
+    return any(p in PALAVRAS_TITULO for p in partes)
+
+def extrair_candidatos_estrutura(texto: str) -> List[tuple]:
+    linhas = [limpar_linha(l) for l in texto.splitlines()]
+    linhas = [l for l in linhas if l.strip()]
+
+    padrao_composto = re.compile(
+        r"\b[A-Z]{1,4}\d*[A-Z0-9]*"
+        r"(?:\s*[-–—]\s*[A-Z0-9]{1,8}(?:\s+[A-Z0-9]{1,8})*)+\b",
+        re.I,
+    )
+
+    padrao_simples = re.compile(
+        r"\b[A-Z]{1,4}\d+[A-Z0-9]*\b",
+        re.I,
+    )
+
+    candidatos = []
+
+    for i, linha in enumerate(linhas):
+        linha_norm = normalizar_texto_base(linha)
+        for palavra in PALAVRAS_DESCARTE:
+            linha_norm = re.sub(rf"\b{re.escape(remover_acentos(palavra.upper()))}\b", " ", linha_norm)
+        linha_norm = re.sub(r"\s+", " ", linha_norm).strip()
+
+        # Primeiro tenta códigos compostos
+        for m in padrao_composto.finditer(linha_norm):
+            bruto = m.group(0)
+            codigo = normalizar_codigo_estrutura(bruto)
+            if not codigo or candidato_tem_palavra_de_titulo(codigo) or len(codigo) > 35:
+                continue
+            pontuacao = 100 + i
+            if "-" in codigo:
+                pontuacao += 40
+            if re.search(r"\d", codigo):
+                pontuacao += 20
+            candidatos.append((codigo, i, pontuacao))
+
+        # Códigos simples
+        for m in padrao_simples.finditer(linha_norm):
+            bruto = m.group(0)
+            codigo = normalizar_codigo_estrutura(bruto)
+            if not codigo or candidato_tem_palavra_de_titulo(codigo) or codigo.startswith("NTC") or len(codigo) > 12:
+                continue
+            if codigo in {"13", "34", "138", "345", "2011", "2012", "2013", "2014", "2018", "2019", "2020"}:
+                continue
+            pontuacao = 80 + i
+            if re.search(r"\d", codigo):
+                pontuacao += 20
+            candidatos.append((codigo, i, pontuacao))
+
+    melhores = {}
+    for codigo, idx, score in candidatos:
+        if codigo not in melhores or score > melhores[codigo][1]:
+            melhores[codigo] = (idx, score)
+
+    return [(codigo, idx_score[0], idx_score[1]) for codigo, idx_score in melhores.items()]
+
+def extrair_ntc(texto: str) -> Optional[str]:
+    texto_norm = normalizar_texto_base(texto)
+    m = re.search(r"\bNTC\s*(\d{3})\s*[- ]?\s*(\d{3})\b", texto_norm)
+    if m:
+        return f"{m.group(1)} {m.group(2)}"
+    m = re.search(r"\b(\d{3})\s*[- ]\s*(\d{3})\b", texto_norm)
+    if m:
+        return f"{m.group(1)} {m.group(2)}"
+    return None
+
+def escolher_melhor_estrutura(texto: str) -> Optional[str]:
+    candidatos = extrair_candidatos_estrutura(texto)
+    if not candidatos:
+        return None
+    candidatos.sort(key=lambda x: (x[2], x[1]), reverse=True)
+    return candidatos[0][0]
+
+def retangulos_cabecalho_direito(page) -> List[fitz.Rect]:
+    w = page.rect.width
+    h = page.rect.height
+    proporcoes = [
+        (0.55, 0.00, 1.00, 0.16),
+        (0.58, 0.00, 1.00, 0.18),
+        (0.60, 0.02, 1.00, 0.17),
+        (0.52, 0.00, 1.00, 0.18),
+        (0.50, 0.00, 1.00, 0.20),
+    ]
+    return [fitz.Rect(w * x0, h * y0, w * x1, h * y1) for x0, y0, x1, y1 in proporcoes]
+
+def extract_name_and_ntc(doc, filename=""):
+    import re
+    import os
+    if len(doc) == 0:
+        return None, None
+    page = doc[0]
+    
+    # 1. Tentar ler texto direto do cabeçalho direito usando retângulos dinâmicos
+    textos_cabecalho = []
+    for rect in retangulos_cabecalho_direito(page):
+        t = page.get_text("text", clip=rect) or ""
+        if t.strip():
+            textos_cabecalho.append(t)
+            
+    texto_direto = "\n".join(textos_cabecalho)
+    
+    # Verificar se o texto obtido parece saudável/legível (ASCII/Unicode normal)
+    ntc_val = extrair_ntc(texto_direto)
+    if ntc_val and not any(c in texto_direto for c in "□■●"):
+        estrutura = escolher_melhor_estrutura(texto_direto)
+        if estrutura:
+            return estrutura, ntc_val
+            
+    # 2. Fallback para fontes customizadas Type3 (ex: B1.pdf antigo)
+    ntc_blocks = page.get_text("blocks", clip=(400, 50, 580, 80))
+    if not ntc_blocks:
+        ntc_blocks = page.get_text("blocks", clip=(380, 40, 590, 85))
+        
+    struct_blocks = page.get_text("blocks", clip=(400, 80, 580, 115))
+    if not struct_blocks:
+        struct_blocks = page.get_text("blocks", clip=(380, 80, 590, 120))
+        
+    ntc_blocks = [b for b in ntc_blocks if b[4].strip()]
+    struct_blocks = [b for b in struct_blocks if b[4].strip()]
+    
+    if not ntc_blocks:
+        return None, None
+        
+    if not struct_blocks:
+        struct_blocks = page.get_text("blocks", clip=(350, 80, 590, 130))
+        struct_blocks = [b for b in struct_blocks if b[4].strip()]
+        
+    if not struct_blocks:
+        return None, None
+        
+    ntc_raw = ntc_blocks[0][4].replace("\n", "").strip()
+    struct_raw = struct_blocks[-1][4].replace("\n", "").strip()
+    
+    mapping = {}
+    unique_chars = []
+    for char in ntc_raw:
+        if char not in unique_chars:
+            unique_chars.append(char)
+            
+    standard_prefix = "NTC 856 "
+    for i, char in enumerate(unique_chars):
+        if i < len(standard_prefix):
+            mapping[char] = standard_prefix[i]
+            
+    ntc_decoded = "".join(mapping.get(c, "?") for c in ntc_raw).strip()
+    
+    struct_decoded_chars = []
+    for c in struct_raw:
+        struct_decoded_chars.append(mapping.get(c, None))
+        
+    filename_clean = re.sub(r'[^a-zA-Z0-9-]', '', os.path.splitext(filename)[0]).upper()
+    if len(struct_decoded_chars) == len(filename_clean):
+        for i, decoded in enumerate(struct_decoded_chars):
+            if decoded is None:
+                mapping[struct_raw[i]] = filename_clean[i]
+                struct_decoded_chars[i] = filename_clean[i]
+                
+    struct_name = "".join(c if c is not None else "?" for c in struct_decoded_chars).strip()
+    struct_name = re.sub(r'[^a-zA-Z0-9-]', '', struct_name)
+    ntc_decoded = re.sub(r'[^a-zA-Z0-9\s-]', '', ntc_decoded)
+    
+    return struct_name, ntc_decoded
+
+def aparar_margens_brancas(img, tolerancia: int = 245, margem: int = 35):
+    from PIL import Image, ImageChops
+    img = img.convert("RGB")
+    fundo = Image.new("RGB", img.size, (255, 255, 255))
+    diff = ImageChops.difference(img, fundo)
+    gray = diff.convert("L")
+    mask = gray.point(lambda p: 255 if p > (255 - tolerancia) else 0)
+    bbox = mask.getbbox()
+    if not bbox:
+        return img
+    left, top, right, bottom = bbox
+    left = max(0, left - margem)
+    top = max(0, top - margem)
+    right = min(img.width, right + margem)
+    bottom = min(img.height, bottom + margem)
+    return img.crop((left, top, right, bottom))
+
+# 21. API para ANALISAR padrão de estrutura em PDF (extrair metadados e gerar imagens temporárias)
+@router.post("/api/estruturas/analisar")
+async def analisar_estrutura_pdf(tipo_rede: str = Form(...), file: UploadFile = File(...)):
+    try:
+        import fitz
+        import uuid
+        
+        pdf_bytes = await file.read()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if len(doc) == 0:
+            raise HTTPException(status_code=400, detail="PDF inválido ou vazio.")
+            
+        # Extrair nome e NTC do conteúdo do PDF usando nossa lógica avançada
+        estrutura_nome, ntc_decoded = extract_name_and_ntc(doc, file.filename)
+        
+        if not estrutura_nome:
+            estrutura_nome = os.path.splitext(file.filename)[0]
+            ntc_decoded = ""
+            
+        imagens_temp_urls = []
+        temp_id = str(uuid.uuid4())
+        
+        # Percorrer todas as páginas do PDF e renderizar em alta resolução, removendo cabeçalho e rodapé
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            
+            # Renderizar página a 300 DPI
+            zoom = 300 / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            
+            from PIL import Image
+            import io
+            img_data = pix.tobytes("png")
+            img = Image.open(io.BytesIO(img_data))
+            
+            width, height = img.size
+            top_crop = int(height * 0.13) # Remove o quadro superior do logotipo e NTC
+            bottom_crop = int(height * 0.10) # Remove a linha preta inferior e rodapé de metadados
+            
+            cropped_img = img.crop((0, top_crop, width, height - bottom_crop))
+            cropped_img = aparar_margens_brancas(cropped_img, tolerancia=245, margem=45)
+            
+            img_byte_arr = io.BytesIO()
+            cropped_img.save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
+            
+            temp_filename = f"temp_{temp_id}_{page_idx + 1}.png"
+            
+            from monitor.services.turnos_service import DDS_BUCKET_NAME, _storage_bucket
+            gcs_success = False
+            temp_url = None
+            if DDS_BUCKET_NAME:
+                try:
+                    bucket = _storage_bucket()
+                    blob_name = f"estruturas/temp/{temp_filename}"
+                    blob = bucket.blob(blob_name)
+                    blob.upload_from_string(img_bytes, content_type="image/png")
+                    try:
+                        blob.make_public()
+                    except Exception:
+                        pass
+                    temp_url = f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/{blob_name}"
+                    gcs_success = True
+                except Exception as e:
+                    print(f"Erro ao salvar desenho temporario no GCS: {e}")
+                    
+            if not gcs_success:
+                local_dir = os.path.join(base_dir, "controle_projetos", "static", "images", "temp")
+                os.makedirs(local_dir, exist_ok=True)
+                out_path = os.path.join(local_dir, temp_filename)
+                with open(out_path, "wb") as f:
+                    f.write(img_bytes)
+                temp_url = f"/controle-projetos/static/images/temp/{temp_filename}"
+                
+            imagens_temp_urls.append(temp_url)
+            
+        doc.close()
+        
+        return {
+            "sucesso": True,
+            "nome_sugerido": estrutura_nome,
+            "ntc_sugerido": ntc_decoded,
+            "tipo_rede_sugerido": tipo_rede,
+            "imagens_temp": imagens_temp_urls
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ConfirmarEstruturaPayload(BaseModel):
+    nome: str
+    ntc: str
+    tipo_rede: str
+    imagens_temp: List[str]
+    override: bool = False
+
+# 21.1 API para CONFIRMAR a gravação final da estrutura padrão
+@router.post("/api/estruturas/confirmar")
+def confirmar_estrutura_pdf(payload: ConfirmarEstruturaPayload):
+    try:
+        estrutura_nome = re.sub(r'[^a-zA-Z0-9-]', '', payload.nome).strip()
+        ntc_decoded = re.sub(r'[^a-zA-Z0-9\s-]', '', payload.ntc).strip()
+        tipo_rede = payload.tipo_rede.strip().upper()
+        
+        doc_id = f"{tipo_rede}_{estrutura_nome}"
+        doc_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        doc_snap = doc_ref.get()
+        
+        if doc_snap.exists and not payload.override:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "exists",
+                    "message": f"A estrutura '{estrutura_nome}' ja existe na categoria '{tipo_rede}'. Deseja substituir?",
+                    "id": doc_id,
+                    "nome": estrutura_nome,
+                    "tipo_rede": tipo_rede
+                }
+            )
+            
+        from monitor.services.turnos_service import DDS_BUCKET_NAME, _storage_bucket
+        imagens_urls = []
+        
+        for idx, temp_url in enumerate(payload.imagens_temp, start=1):
+            desenho_filename = f"{estrutura_nome}_desenho_{idx}.png"
+            final_url = None
+            
+            # Se for GCS
+            if DDS_BUCKET_NAME and temp_url.startswith("https://storage.googleapis.com/"):
+                try:
+                    bucket = _storage_bucket()
+                    prefix_url = f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/"
+                    source_blob_name = temp_url.replace(prefix_url, "")
+                    dest_blob_name = f"estruturas/{tipo_rede}/{desenho_filename}"
+                    
+                    source_blob = bucket.blob(source_blob_name)
+                    if source_blob.exists():
+                        new_blob = bucket.copy_blob(source_blob, bucket, dest_blob_name)
+                        try:
+                            new_blob.make_public()
+                        except Exception:
+                            pass
+                        final_url = f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/{dest_blob_name}"
+                        # Deletar original temporário
+                        source_blob.delete()
+                    else:
+                        final_url = temp_url
+                except Exception as e:
+                    print(f"Erro ao mover blob temporario GCS: {e}")
+                    final_url = temp_url
+            else:
+                # Local fallback
+                try:
+                    temp_filename = os.path.basename(temp_url)
+                    source_path = os.path.join(base_dir, "controle_projetos", "static", "images", "temp", temp_filename)
+                    
+                    local_dir = os.path.join(base_dir, "controle_projetos", "static", "images", "estruturas", tipo_rede)
+                    os.makedirs(local_dir, exist_ok=True)
+                    dest_path = os.path.join(local_dir, desenho_filename)
+                    
+                    if os.path.exists(source_path):
+                        import shutil
+                        shutil.copy(source_path, dest_path)
+                        os.remove(source_path)
+                        
+                    final_url = f"/controle-projetos/static/images/estruturas/{tipo_rede}/{desenho_filename}"
+                except Exception as e:
+                    print(f"Erro ao mover arquivo temporario local: {e}")
+                    final_url = temp_url
+                    
+            imagens_urls.append(final_url)
+            
+        # Gravar no Firestore
+        payload_db = {
+            "id": doc_id,
+            "nome": estrutura_nome,
+            "tipo_rede": tipo_rede,
+            "imagens": imagens_urls,
+            "ativo": True,
+            "ntc": ntc_decoded
+        }
+        
+        if doc_snap.exists:
+            existing_data = doc_snap.to_dict()
+            payload_db["atividades"] = existing_data.get("atividades", [])
+            existing_imgs = existing_data.get("imagens", [])
+            merged_imgs = list(set(existing_imgs + imagens_urls))
+            payload_db["imagens"] = merged_imgs
+            doc_ref.update(payload_db)
+        else:
+            payload_db["atividades"] = []
+            doc_ref.set(payload_db)
+            
+        return {
+            "sucesso": True,
+            "id": doc_id,
+            "nome": estrutura_nome,
+            "tipo_rede": tipo_rede,
+            "imagens": payload_db["imagens"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 22. API para fazer upload manual de imagem para uma estrutura padrão
+@router.post("/api/estruturas/{doc_id}/imagens")
+async def upload_imagem_estrutura(doc_id: str, file: UploadFile = File(...)):
+    try:
+        doc_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        doc_snap = doc_ref.get()
+        if not doc_snap.exists:
+            raise HTTPException(status_code=404, detail="Estrutura padrão não encontrada.")
+            
+        est = doc_snap.to_dict()
+        tipo_rede = est.get("tipo_rede", "RDA")
+        nome_estrutura = est.get("nome", "ESTRUTURA")
+        
+        # O nome da imagem deve ser baseado na estrutura e um sequencial
+        # Ex: RDC-C1-01.png, RDC-C1-02.jpg
+        # Vamos substituir sublinhados por hifens no prefixo
+        prefixo = f"{tipo_rede}-{nome_estrutura}".replace("_", "-")
+        
+        # Calcular o proximo sequencial
+        imagens_atuais = est.get("imagens", [])
+        
+        max_seq = 0
+        for img_url in imagens_atuais:
+            fname = os.path.basename(img_url)
+            if fname.startswith(prefixo):
+                parts = os.path.splitext(fname)[0].split('-')
+                if len(parts) >= 3:
+                    try:
+                        seq_val = int(parts[-1])
+                        if seq_val > max_seq:
+                            max_seq = seq_val
+                    except ValueError:
+                        pass
+        
+        next_seq = max_seq + 1
+        ext = os.path.splitext(file.filename)[1].lower() or ".png"
+        new_filename = f"{prefixo}-{next_seq:02d}{ext}"
+        
+        # Ler bytes da imagem
+        file_bytes = await file.read()
+        
+        # Gravação no GCS ou Local
+        from monitor.services.turnos_service import DDS_BUCKET_NAME, _storage_bucket
+        gcs_success = False
+        img_url = None
+        if DDS_BUCKET_NAME:
+            try:
+                bucket = _storage_bucket()
+                blob_name = f"estruturas/{tipo_rede}/{new_filename}"
+                blob = bucket.blob(blob_name)
+                blob.upload_from_string(file_bytes, content_type=file.content_type)
+                try:
+                    blob.make_public()
+                except Exception as pe:
+                    print(f"Aviso: nao foi possivel tornar o blob publico: {pe}")
+                img_url = f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/{blob_name}"
+                gcs_success = True
+            except Exception as e:
+                print(f"Erro ao salvar imagem manual no GCS: {e}")
+                
+        if not gcs_success:
+            local_dir = os.path.join(base_dir, "controle_projetos", "static", "images", "estruturas", tipo_rede)
+            os.makedirs(local_dir, exist_ok=True)
+            out_path = os.path.join(local_dir, new_filename)
+            with open(out_path, "wb") as f:
+                f.write(file_bytes)
+            img_url = f"/controle-projetos/static/images/estruturas/{tipo_rede}/{new_filename}"
+            
+        # Atualizar array de imagens no Firestore
+        imagens_atuais.append(img_url)
+        doc_ref.update({"imagens": imagens_atuais})
+        
+        return {"sucesso": True, "url": img_url}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 23. API para deletar uma imagem de uma estrutura padrão
+class DeletarImagemPayload(BaseModel):
+    url: str
+
+@router.delete("/api/estruturas/{doc_id}/imagens")
+def deletar_imagem_estrutura(doc_id: str, payload: DeletarImagemPayload):
+    try:
+        doc_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        doc_snap = doc_ref.get()
+        if not doc_snap.exists:
+            raise HTTPException(status_code=404, detail="Estrutura padrão não encontrada.")
+            
+        est = doc_snap.to_dict()
+        imagens_atuais = est.get("imagens", [])
+        
+        target_url = payload.url
+        if target_url not in imagens_atuais:
+            raise HTTPException(status_code=404, detail="Imagem não associada a esta estrutura.")
+            
+        # Remover da lista
+        imagens_atuais.remove(target_url)
+        doc_ref.update({"imagens": imagens_atuais})
+        
+        # Opcional: Deletar o arquivo do GCS ou Local
+        if not target_url.startswith("http"):
+            rel_path = target_url.replace("/controle-projetos/static", "")
+            rel_path = rel_path.lstrip("/").lstrip("\\")
+            local_path = os.path.join(base_dir, "controle_projetos", "static", rel_path)
+            if os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except Exception as e:
+                    print(f"Erro ao excluir arquivo físico: {e}")
+        else:
+            from monitor.services.turnos_service import DDS_BUCKET_NAME, _storage_bucket
+            if DDS_BUCKET_NAME and target_url.startswith(f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/"):
+                try:
+                    bucket = _storage_bucket()
+                    blob_name = target_url.replace(f"https://storage.googleapis.com/{DDS_BUCKET_NAME}/", "")
+                    blob = bucket.blob(blob_name)
+                    if blob.exists():
+                        blob.delete()
+                except Exception as e:
+                    print(f"Erro ao deletar blob do GCS: {e}")
+                    
+        return {"sucesso": True}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 

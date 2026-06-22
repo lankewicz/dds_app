@@ -15,6 +15,24 @@
   ],
   "firestore": {
     "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "site": "chicoeletro",
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "dds-admin-site",
+          "region": "us-central1"
+        }
+      }
+    ]
   }
 }
 

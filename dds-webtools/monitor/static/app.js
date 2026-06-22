@@ -532,8 +532,11 @@ function ddsSequenceHtml(item, options = {}) {
       const tooltip = `${formatDdsFullDate(dateStr)} • ${statusText}${timeStr}`;
       const isToday = dateStr === todayStr;
 
+      const photoUrl = (status === "ok" && item.ddsPhotos && item.ddsPhotos[dateStr]) ? item.ddsPhotos[dateStr] : "";
+      const hasPhotoClass = photoUrl ? " has-photo" : "";
+
       calendarDots.push(`
-        <span class="ddsDayDot" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">
+        <span class="ddsDayDot${hasPhotoClass}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" ${photoUrl ? `data-photo="${escapeHtml(photoUrl)}"` : ""}>
           <span class="ddsDayLabel">${escapeHtml(dayLabel)}</span>
           <span class="ddsDotWrap${isToday ? " isCurrent" : ""}">
             <span class="ddsDot ddsDot--${status}${isToday ? " ddsDot--current" : ""}"></span>
@@ -558,8 +561,11 @@ function ddsSequenceHtml(item, options = {}) {
       const timeStr = (status === "ok" && day && item.ddsTimes && item.ddsTimes[day]) ? ` (${item.ddsTimes[day]})` : "";
       const tooltip = day ? `${formatDdsFullDate(day)} • ${statusText}${timeStr}` : statusText;
 
+      const photoUrl = (status === "ok" && day && item.ddsPhotos && item.ddsPhotos[day]) ? item.ddsPhotos[day] : "";
+      const hasPhotoClass = photoUrl ? " has-photo" : "";
+
       return `
-        <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}">
+        <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}${hasPhotoClass}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" ${photoUrl ? `data-photo="${escapeHtml(photoUrl)}"` : ""}>
           <span class="ddsDot ddsDot--${status}${isCurrent ? " ddsDot--current" : ""}"></span>
         </span>
       `;
@@ -1564,6 +1570,138 @@ function triggerFullDailyReset() {
   }
   localStorage.setItem('dds_monitor_last_reset_day', today);
 }
+
+// Estilos dinâmicos para hover e cursor nas bolinhas com fotos
+(() => {
+  const style = document.createElement("style");
+  style.textContent = `
+    .has-photo {
+      cursor: pointer !important;
+    }
+    .has-photo:hover .ddsDot {
+      transform: scale(1.3);
+      filter: brightness(1.2);
+      box-shadow: 0 0 8px var(--green, #22c55e);
+      transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
+    }
+    @keyframes ddsModalSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+function showDdsPhotoModal(photoUrl) {
+  let modal = document.getElementById("ddsPhotoModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "ddsPhotoModal";
+    modal.style.position = "fixed";
+    modal.style.top = "0";
+    modal.style.left = "0";
+    modal.style.width = "100%";
+    modal.style.height = "100%";
+    modal.style.backgroundColor = "rgba(10, 15, 30, 0.9)";
+    modal.style.display = "none";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = "4000";
+    modal.style.opacity = "0";
+    modal.style.transition = "opacity 0.2s ease";
+    modal.style.cursor = "pointer";
+
+    // Loader spinner
+    const loader = document.createElement("div");
+    loader.id = "ddsPhotoModalLoader";
+    loader.style.border = "4px solid rgba(255, 255, 255, 0.1)";
+    loader.style.borderTop = "4px solid var(--green, #22c55e)";
+    loader.style.borderRadius = "50%";
+    loader.style.width = "45px";
+    loader.style.height = "45px";
+    loader.style.position = "absolute";
+    loader.style.animation = "ddsModalSpin 1s linear infinite";
+    loader.style.display = "none";
+    loader.style.zIndex = "4001";
+
+    const img = document.createElement("img");
+    img.id = "ddsPhotoModalImg";
+    img.style.maxWidth = "85%";
+    img.style.maxHeight = "85%";
+    img.style.borderRadius = "12px";
+    img.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+    img.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.7)";
+    img.style.cursor = "default";
+    img.style.transition = "transform 0.2s ease";
+    img.style.transform = "scale(0.95)";
+    
+    img.addEventListener("click", (e) => e.stopPropagation());
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "×";
+    closeBtn.style.position = "absolute";
+    closeBtn.style.top = "20px";
+    closeBtn.style.right = "30px";
+    closeBtn.style.background = "none";
+    closeBtn.style.border = "none";
+    closeBtn.style.color = "rgba(255, 255, 255, 0.8)";
+    closeBtn.style.fontSize = "48px";
+    closeBtn.style.cursor = "pointer";
+    closeBtn.style.lineHeight = "1";
+    
+    closeBtn.addEventListener("mouseenter", () => closeBtn.style.color = "#fff");
+    closeBtn.addEventListener("mouseleave", () => closeBtn.style.color = "rgba(255, 255, 255, 0.8)");
+
+    modal.appendChild(loader);
+    modal.appendChild(img);
+    modal.appendChild(closeBtn);
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", () => {
+      modal.style.opacity = "0";
+      img.style.transform = "scale(0.95)";
+      setTimeout(() => {
+        modal.style.display = "none";
+      }, 200);
+    });
+  }
+
+  const img = document.getElementById("ddsPhotoModalImg");
+  const loader = document.getElementById("ddsPhotoModalLoader");
+  
+  // Oculta a imagem anterior e exibe o loader
+  img.style.display = "none";
+  if (loader) loader.style.display = "block";
+
+  img.onload = () => {
+    if (loader) loader.style.display = "none";
+    img.style.display = "block";
+  };
+  img.onerror = () => {
+    if (loader) loader.style.display = "none";
+  };
+
+  img.src = photoUrl;
+  
+  modal.style.display = "flex";
+  // Forçar reflow
+  modal.offsetHeight;
+  modal.style.opacity = "1";
+  img.style.transform = "scale(1)";
+}
+
+// Listener de clique global para bolinhas com fotos
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-photo]");
+  if (target) {
+    const photoUrl = target.getAttribute("data-photo");
+    if (photoUrl) {
+      event.preventDefault();
+      event.stopPropagation();
+      showDdsPhotoModal(photoUrl);
+    }
+  }
+});
 
 (async () => {
   try {
