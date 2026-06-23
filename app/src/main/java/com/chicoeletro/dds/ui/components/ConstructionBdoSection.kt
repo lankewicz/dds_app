@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.chicoeletro.dds.features.construcao.*
 import com.chicoeletro.dds.components.HeaderBarState
 import kotlinx.coroutines.launch
@@ -57,7 +59,7 @@ fun ConstructionBdoSection(
     val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Por Poste (Completo)", "Por Lote (Rápido)")
+    val tabs = listOf("Por Poste (Completo)", "Por Lote (Rápido)", "Simplificado")
 
     var projetos by remember { mutableStateOf(listOf<Projeto>()) }
     var projetoSelecionado by remember { mutableStateOf<Projeto?>(null) }
@@ -173,6 +175,12 @@ fun ConstructionBdoSection(
                         todasTarefasProjeto = todasTarefasProjeto,
                         lancamentosProjeto = lancamentosProjeto,
                         onRefreshLancamentosProjeto = refreshLancamentosProjeto
+                    )
+                    2 -> ModoSimplificadoView(
+                        equipe = equipe,
+                        projetoSelecionado = projetoSelecionado,
+                        projetos = projetos,
+                        onProjetoSelecionadoChange = { projetoSelecionado = it }
                     )
                 }
             }
@@ -1412,6 +1420,502 @@ fun ModoLoteView(
                 )
             } else {
                 Text("Enviar Lote Diário")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModoSimplificadoView(
+    equipe: String,
+    projetoSelecionado: Projeto?,
+    projetos: List<Projeto>,
+    onProjetoSelecionadoChange: (Projeto?) -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val repository = remember { ConstrucaoFirestoreRepository() }
+
+    // Form states
+    var locacao by remember { mutableStateOf("") }
+    var cava by remember { mutableStateOf("") }
+
+    // Pole dimensions
+    var comprimentoExpanded by remember { mutableStateOf(false) }
+    var selectedComprimento by remember { mutableStateOf<Double?>(null) }
+    val comprimentos = listOf(12.0, 13.5, 15.0, 18.0)
+
+    var cargaExpanded by remember { mutableStateOf(false) }
+    var selectedCarga by remember { mutableStateOf<Int?>(null) }
+    val cargas = when (selectedComprimento) {
+        12.0, 13.5 -> listOf(600, 1000, 2000, 3000)
+        15.0, 18.0 -> listOf(600)
+        else -> listOf(600, 1000, 2000, 3000)
+    }
+
+    // Auto-select or reset carga when length limits it
+    LaunchedEffect(selectedComprimento) {
+        if (selectedComprimento == 15.0 || selectedComprimento == 18.0) {
+            selectedCarga = 600
+        } else if (selectedCarga != null && selectedCarga !in cargas) {
+            selectedCarga = null
+        }
+    }
+
+    // Estruturas Padrão
+    var estruturasPadrao by remember { mutableStateOf(listOf<EstruturaPadrao>()) }
+    var isLoadingEstruturas by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isLoadingEstruturas = true
+        try {
+            estruturasPadrao = repository.getEstruturasPadrao()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao carregar estruturas padrão: ${e.message}", Toast.LENGTH_SHORT).show()
+        } finally {
+            isLoadingEstruturas = false
+        }
+    }
+
+    var selectedCategory by remember { mutableStateOf("RDC") }
+    val categories = listOf("RDC", "RDA", "RDP", "RSI")
+
+    // Filter structures by category
+    val filteredEstruturas = remember(estruturasPadrao, selectedCategory) {
+        estruturasPadrao.filter {
+            it.tipo_rede.contains(selectedCategory, ignoreCase = true)
+        }
+    }
+
+    var estPadraoExpanded by remember { mutableStateOf(false) }
+    var selectedEstruturaPadrao by remember { mutableStateOf<EstruturaPadrao?>(null) }
+
+    // Reset selected structure if it doesn't belong to the category
+    LaunchedEffect(selectedCategory) {
+        if (selectedEstruturaPadrao != null && !selectedEstruturaPadrao!!.tipo_rede.contains(selectedCategory, ignoreCase = true)) {
+            selectedEstruturaPadrao = null
+        }
+    }
+
+    // Cabo
+    var caboExpanded by remember { mutableStateOf(false) }
+    var selectedCabo by remember { mutableStateOf("") }
+    var customCabo by remember { mutableStateOf("") }
+    val cabos = listOf(
+        "Multiplexado 1x1x35+35 mm²",
+        "Multiplexado 3x1x35+35 mm²",
+        "Multiplexado 3x1x70+70 mm²",
+        "Protegido 35 mm²",
+        "Protegido 70 mm²",
+        "Protegido 150 mm²",
+        "Nu 1/0 AWG CAA",
+        "Nu 4/0 AWG CAA",
+        "Outro..."
+    )
+
+    var projExpanded by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    val equipeNumero = remember(equipe) {
+        equipe.filter { it.isDigit() }.toIntOrNull() ?: 1
+    }
+    val dataExecucao = remember {
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Projeto Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Projeto",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { projExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = projetoSelecionado?.let { "[${it.id}] ${it.titulo}" } ?: "Selecionar Projeto...",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (projetoSelecionado != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = projExpanded,
+                        onDismissRequest = { projExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        projetos.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text("[${p.id}] ${p.titulo}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                onClick = {
+                                    onProjetoSelecionadoChange(p)
+                                    projExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Poste Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Dados do Poste",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = locacao,
+                        onValueChange = { locacao = it },
+                        label = { Text("Locação") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = cava,
+                        onValueChange = { cava = it },
+                        label = { Text("Cava") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Comprimento Dropdown
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = selectedComprimento?.let { "${it}m" } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Comprimento") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = { comprimentoExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { comprimentoExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = comprimentoExpanded,
+                            onDismissRequest = { comprimentoExpanded = false }
+                        ) {
+                            comprimentos.forEach { comp ->
+                                DropdownMenuItem(
+                                    text = { Text("${comp}m") },
+                                    onClick = {
+                                        selectedComprimento = comp
+                                        comprimentoExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Carga Dropdown
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = selectedCarga?.let { "${it} daN" } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Carga") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = { cargaExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { cargaExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = cargaExpanded,
+                            onDismissRequest = { cargaExpanded = false }
+                        ) {
+                            cargas.forEach { cg ->
+                                DropdownMenuItem(
+                                    text = { Text("${cg} daN") },
+                                    onClick = {
+                                        selectedCarga = cg
+                                        cargaExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Estrutura Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Estrutura Padronizada",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // Category Filter Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(cat) }
+                        )
+                    }
+                }
+
+                if (isLoadingEstruturas) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = selectedEstruturaPadrao?.nome ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Selecionar Estrutura") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = { estPadraoExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { estPadraoExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = estPadraoExpanded,
+                            onDismissRequest = { estPadraoExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            if (filteredEstruturas.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("Nenhuma estrutura nesta categoria") },
+                                    onClick = {}
+                                )
+                            } else {
+                                filteredEstruturas.forEach { est ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (est.ntc.isNotEmpty()) "${est.nome} (${est.ntc})" else est.nome) },
+                                        onClick = {
+                                            selectedEstruturaPadrao = est
+                                            estPadraoExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cabo Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Condutor (Cabo)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedCabo,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Selecionar Cabo") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        trailingIcon = {
+                            IconButton(onClick = { caboExpanded = true }) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                        }
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { caboExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = caboExpanded,
+                        onDismissRequest = { caboExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        cabos.forEach { cb ->
+                            DropdownMenuItem(
+                                text = { Text(cb) },
+                                onClick = {
+                                    selectedCabo = cb
+                                    caboExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (selectedCabo == "Outro...") {
+                    OutlinedTextField(
+                        value = customCabo,
+                        onValueChange = { customCabo = it },
+                        label = { Text("Especifique o Cabo") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
+        }
+
+        // Botão Salvar
+        Button(
+            onClick = {
+                if (locacao.isBlank() || cava.isBlank() || selectedComprimento == null || selectedCarga == null || selectedEstruturaPadrao == null || selectedCabo.isBlank()) {
+                    Toast.makeText(context, "Por favor, preencha todos os campos obrigatórios.", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                val finalCabo = if (selectedCabo == "Outro...") customCabo else selectedCabo
+                if (selectedCabo == "Outro..." && finalCabo.isBlank()) {
+                    Toast.makeText(context, "Por favor, especifique o cabo.", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                isSubmitting = true
+                coroutineScope.launch {
+                    try {
+                        val response = repository.lancarSimplificado(
+                            LancamentoSimplificadoRequest(
+                                equipe_numero = equipeNumero,
+                                data_execucao = dataExecucao,
+                                projeto_id = projetoSelecionado?.id,
+                                locacao = locacao,
+                                cava = cava,
+                                poste_comprimento = selectedComprimento!!,
+                                poste_carga = selectedCarga!!,
+                                estrutura_categoria = selectedCategory,
+                                estrutura_nome = selectedEstruturaPadrao!!.nome,
+                                cabo = finalCabo
+                            )
+                        )
+                        if (response.sucesso) {
+                            Toast.makeText(context, response.mensagem ?: "Lançamento registrado com sucesso!", Toast.LENGTH_LONG).show()
+                            // Clear form fields
+                            locacao = ""
+                            cava = ""
+                            selectedComprimento = null
+                            selectedCarga = null
+                            selectedEstruturaPadrao = null
+                            selectedCabo = ""
+                            customCabo = ""
+                        } else {
+                            Toast.makeText(context, response.detail ?: "Erro ao registrar: ${response.mensagem}", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Erro na conexão: ${e.message}", Toast.LENGTH_LONG).show()
+                    } finally {
+                        isSubmitting = false
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            enabled = !isSubmitting,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text("Salvar Lançamento Simplificado")
             }
         }
     }

@@ -79,3 +79,27 @@ data class ConstrucaoApiResponse(
     val detail: String? = null,
     val mensagem: String? = null
 )
+
+@Serializable
+data class EstruturaPadrao(
+    val id: String,
+    val nome: String,
+    val tipo_rede: String,
+    val imagens: List<String> = emptyList(),
+    val ativo: Boolean = true,
+    val ntc: String = ""
+)
+
+@Serializable
+data class LancamentoSimplificadoRequest(
+    val equipe_numero: Int,
+    val data_execucao: String,
+    val projeto_id: String?,
+    val locacao: String,
+    val cava: String,
+    val poste_comprimento: Double,
+    val poste_carga: Int,
+    val estrutura_categoria: String,
+    val estrutura_nome: String,
+    val cabo: String
+)

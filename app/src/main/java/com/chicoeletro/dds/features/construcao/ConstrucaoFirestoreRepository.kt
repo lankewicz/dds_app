@@ -363,4 +363,51 @@ class ConstrucaoFirestoreRepository(
             emptyMap()
         }
     }
+
+    /**
+     * Busca todas as estruturas padrão da coleção "estruturas_padrao" no Firestore.
+     */
+    suspend fun getEstruturasPadrao(): List<EstruturaPadrao> {
+        val snapshot = baseDoc.collection("estruturas_padrao")
+            .whereEqualTo("ativo", true)
+            .get()
+            .await()
+
+        return snapshot.documents.mapNotNull { doc ->
+            val id = doc.id
+            val nome = doc.getString("nome") ?: return@mapNotNull null
+            val tipoRede = doc.getString("tipo_rede") ?: return@mapNotNull null
+            val imagens = doc.get("imagens") as? List<String> ?: emptyList()
+            val ativo = doc.getBoolean("ativo") ?: true
+            val ntc = doc.getString("ntc") ?: ""
+
+            EstruturaPadrao(id, nome, tipoRede, imagens, ativo, ntc)
+        }.sortedBy { it.nome }
+    }
+
+    /**
+     * Registra o lançamento simplificado no Firestore.
+     */
+    suspend fun lancarSimplificado(request: LancamentoSimplificadoRequest): ConstrucaoApiResponse {
+        return try {
+            val newDocRef = baseDoc.collection("lancamentos_simplificados").document()
+            val data = mapOf(
+                "equipe_numero" to request.equipe_numero,
+                "data_execucao" to request.data_execucao,
+                "projeto_id" to request.projeto_id,
+                "locacao" to request.locacao,
+                "cava" to request.cava,
+                "poste_comprimento" to request.poste_comprimento,
+                "poste_carga" to request.poste_carga,
+                "estrutura_categoria" to request.estrutura_categoria,
+                "estrutura_nome" to request.estrutura_nome,
+                "cabo" to request.cabo,
+                "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            )
+            newDocRef.set(data).await()
+            ConstrucaoApiResponse(sucesso = true, mensagem = "Lançamento simplificado registrado com sucesso!")
+        } catch (e: Exception) {
+            ConstrucaoApiResponse(sucesso = false, detail = e.message ?: "Erro desconhecido ao lançar simplificado")
+        }
+    }
 }
