@@ -121,47 +121,130 @@ fun ConstructionBdoSection(
             .fillMaxSize()
             .padding(top = 4.dp)
     ) {
-        // TabRow elegante para alternar entre Poste e Lote
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp)
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 14.sp
+        if (projetoSelecionado == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Selecione o Projeto de Trabalho",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                if (isLoadingProjetos) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (projetos.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Text("Nenhum projeto cadastrado.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(projetos) { p ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { projetoSelecionado = p },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = p.id,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = p.titulo,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Selecionar",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = {
+                        projetoSelecionado = null
+                        sharedPrefs.edit().remove("ultimo_projeto_id").apply()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Trocar Projeto",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = 12.dp)
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = {
+                                Text(
+                                    text = title,
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 14.sp
+                                )
+                            }
                         )
                     }
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            if (isLoadingProjetos) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
                 }
-            } else {
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 when (selectedTab) {
                     0 -> ModoPosteView(
                         equipe = equipe,
                         online = online,
-                        projetos = projetos,
                         projetoSelecionado = projetoSelecionado,
-                        onProjetoSelecionadoChange = { projetoSelecionado = it },
                         todasTarefasProjeto = todasTarefasProjeto,
                         lancamentosProjeto = lancamentosProjeto,
                         onRefreshLancamentosProjeto = refreshLancamentosProjeto
@@ -169,18 +252,14 @@ fun ConstructionBdoSection(
                     1 -> ModoLoteView(
                         equipe = equipe,
                         online = online,
-                        projetos = projetos,
                         projetoSelecionado = projetoSelecionado,
-                        onProjetoSelecionadoChange = { projetoSelecionado = it },
                         todasTarefasProjeto = todasTarefasProjeto,
                         lancamentosProjeto = lancamentosProjeto,
                         onRefreshLancamentosProjeto = refreshLancamentosProjeto
                     )
                     2 -> ModoSimplificadoView(
                         equipe = equipe,
-                        projetoSelecionado = projetoSelecionado,
-                        projetos = projetos,
-                        onProjetoSelecionadoChange = { projetoSelecionado = it }
+                        projetoSelecionado = projetoSelecionado
                     )
                 }
             }
@@ -191,9 +270,7 @@ fun ConstructionBdoSection(
 fun ModoPosteView(
     equipe: String,
     online: Boolean,
-    projetos: List<Projeto>,
     projetoSelecionado: Projeto?,
-    onProjetoSelecionadoChange: (Projeto?) -> Unit,
     todasTarefasProjeto: List<Tarefa>,
     lancamentosProjeto: Map<Pair<Int, String>, Double>,
     onRefreshLancamentosProjeto: suspend () -> Unit
@@ -202,8 +279,6 @@ fun ModoPosteView(
     val coroutineScope = rememberCoroutineScope()
     val repository = remember { ConstrucaoFirestoreRepository() }
     val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
-
-    var projExpanded by remember { mutableStateOf(false) }
 
     var estruturas by remember { mutableStateOf(listOf<Estrutura>()) }
     var estruturaSelecionada by remember { mutableStateOf<Estrutura?>(null) }
@@ -283,159 +358,106 @@ fun ModoPosteView(
                 CircularProgressIndicator()
             }
         } else {
-            // Dropdowns de Projeto e Estrutura
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Dropdown de Projeto
-                Column(modifier = Modifier.weight(1f)) {
+            // Dropdown de Estrutura em largura total
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "Projeto",
+                        text = "Estrutura",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { projExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = projetoSelecionado?.titulo ?: "Selecionar...",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (projetoSelecionado != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                if (tipoSelecao != "POSTE") {
+                                    tipoSelecao = "POSTE"
+                                    estruturaSelecionada = null
+                                }
                             }
+                        ) {
+                            RadioButton(
+                                selected = tipoSelecao == "POSTE",
+                                onClick = {
+                                    tipoSelecao = "POSTE"
+                                    estruturaSelecionada = null
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text("PS", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
                         }
-                        DropdownMenu(
-                            expanded = projExpanded,
-                            onDismissRequest = { projExpanded = false },
-                            modifier = Modifier.fillMaxWidth(0.45f)
-                        ) {
-                            projetos.forEach { p ->
-                                DropdownMenuItem(
-                                    text = { Text("[${p.id}] ${p.titulo}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    onClick = {
-                                        onProjetoSelecionadoChange(p)
-                                        projExpanded = false
-                                    }
-                                )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                if (tipoSelecao != "TRECHO") {
+                                    tipoSelecao = "TRECHO"
+                                    estruturaSelecionada = null
+                                }
                             }
+                        ) {
+                            RadioButton(
+                                selected = tipoSelecao == "TRECHO",
+                                onClick = {
+                                    tipoSelecao = "TRECHO"
+                                    estruturaSelecionada = null
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text("Trecho", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
                         }
                     }
                 }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { estExpanded = true },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        enabled = projetoSelecionado != null,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                     ) {
-                        Text(
-                            text = "Estrutura",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable {
-                                    if (tipoSelecao != "POSTE") {
-                                        tipoSelecao = "POSTE"
-                                        estruturaSelecionada = null
-                                    }
-                                }
-                            ) {
-                                RadioButton(
-                                    selected = tipoSelecao == "POSTE",
-                                    onClick = {
-                                        tipoSelecao = "POSTE"
-                                        estruturaSelecionada = null
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text("PS", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable {
-                                    if (tipoSelecao != "TRECHO") {
-                                        tipoSelecao = "TRECHO"
-                                        estruturaSelecionada = null
-                                    }
-                                }
-                            ) {
-                                RadioButton(
-                                    selected = tipoSelecao == "TRECHO",
-                                    onClick = {
-                                        tipoSelecao = "TRECHO"
-                                        estruturaSelecionada = null
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text("Trecho", style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
-                            }
+                            Text(
+                                text = estruturaSelecionada?.identificador ?: "Selecionar...",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (estruturaSelecionada != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { estExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = projetoSelecionado != null,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = estruturaSelecionada?.identificador ?: "Selecionar...",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (estruturaSelecionada != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                            }
-                        }
-                        DropdownMenu(
-                            expanded = estExpanded,
-                            onDismissRequest = { estExpanded = false },
-                            modifier = Modifier.fillMaxWidth(0.45f)
-                        ) {
-                            if (filteredEstruturas.isEmpty()) {
+                    DropdownMenu(
+                        expanded = estExpanded,
+                        onDismissRequest = { estExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        if (filteredEstruturas.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Nenhum item disponível") },
+                                onClick = {}
+                            )
+                        } else {
+                            filteredEstruturas.forEach { e ->
                                 DropdownMenuItem(
-                                    text = { Text("Nenhum item disponível") },
-                                    onClick = {}
+                                    text = { Text(e.identificador) },
+                                    onClick = {
+                                        estruturaSelecionada = e
+                                        estExpanded = false
+                                    }
                                 )
-                            } else {
-                                filteredEstruturas.forEach { e ->
-                                    DropdownMenuItem(
-                                        text = { Text(e.identificador) },
-                                        onClick = {
-                                            estruturaSelecionada = e
-                                            estExpanded = false
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
@@ -1026,9 +1048,7 @@ fun ModoPosteView(
 fun ModoLoteView(
     equipe: String,
     online: Boolean,
-    projetos: List<Projeto>,
     projetoSelecionado: Projeto?,
-    onProjetoSelecionadoChange: (Projeto?) -> Unit,
     todasTarefasProjeto: List<Tarefa>,
     lancamentosProjeto: Map<Pair<Int, String>, Double>,
     onRefreshLancamentosProjeto: suspend () -> Unit
@@ -1131,7 +1151,7 @@ fun ModoLoteView(
             if (projetoSelecionado == null) {
                 item {
                     Text(
-                        text = "Por favor, selecione um projeto na aba Por Poste para começar.",
+                        text = "Por favor, selecione um projeto para começar.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
@@ -1429,9 +1449,7 @@ fun ModoLoteView(
 @Composable
 fun ModoSimplificadoView(
     equipe: String,
-    projetoSelecionado: Projeto?,
-    projetos: List<Projeto>,
-    onProjetoSelecionadoChange: (Projeto?) -> Unit
+    projetoSelecionado: Projeto?
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1514,7 +1532,6 @@ fun ModoSimplificadoView(
         "Outro..."
     )
 
-    var projExpanded by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
 
     val equipeNumero = remember(equipe) {
@@ -1531,59 +1548,6 @@ fun ModoSimplificadoView(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Projeto Section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "Projeto",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { projExpanded = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = projetoSelecionado?.let { "[${it.id}] ${it.titulo}" } ?: "Selecionar Projeto...",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = if (projetoSelecionado != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = projExpanded,
-                        onDismissRequest = { projExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        projetos.forEach { p ->
-                            DropdownMenuItem(
-                                text = { Text("[${p.id}] ${p.titulo}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                onClick = {
-                                    onProjetoSelecionadoChange(p)
-                                    projExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
 
         // Poste Section
         Card(
