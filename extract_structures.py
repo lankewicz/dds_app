@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Union, Optional, Dict, List
 from google.cloud import storage
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Carregar credenciais locais do Firebase
 local_key = r"d:\programas\DDS\firebase_config.json"
@@ -119,82 +120,94 @@ def extract_structures():
     os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
     
     index_data = {}
+    futures = []
     
-    for net in NETWORKS:
-        net_dir = os.path.join(BASE_INPUT_DIR, net)
-        if not os.path.exists(net_dir):
-            print(f"Pasta não encontrada: {net_dir}")
-            continue
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        for net in NETWORKS:
+            net_dir = os.path.join(BASE_INPUT_DIR, net)
+            if not os.path.exists(net_dir):
+                print(f"Pasta não encontrada: {net_dir}")
+                continue
+                
+            print(f"\nProcessando rede: {net}")
+            index_data[net] = []
             
-        print(f"\nProcessando rede: {net}")
-        index_data[net] = []
-        
-        net_output_dir = os.path.join(BASE_OUTPUT_DIR, net)
-        os.makedirs(net_output_dir, exist_ok=True)
-        
-        files = [f for f in os.listdir(net_dir) if f.lower().endswith(".pdf")]
-        for file in files:
-            structure_name = os.path.splitext(file)[0]
-            pdf_path = os.path.join(net_dir, file)
+            net_output_dir = os.path.join(BASE_OUTPUT_DIR, net)
+            os.makedirs(net_output_dir, exist_ok=True)
             
-            print(f"  Estrutura: {structure_name} ({file})")
-            
-            try:
-                doc = fitz.open(pdf_path)
-                num_pages = len(doc)
-                if num_pages == 0:
-                    print(f"    PDF vazio: {file}")
-                    doc.close()
-                    continue
+            files = [f for f in os.listdir(net_dir) if f.lower().endswith(".pdf")]
+            for file in files:
+                structure_name = os.path.splitext(file)[0]
+                pdf_path = os.path.join(net_dir, file)
                 
-                url_desenho = None
-                url_titulo = None
+                print(f"  Estrutura: {structure_name} ({file})")
                 
-                # Processar página 1 (sempre esperado)
-                page1 = doc[0]
-                clip1 = clip_pagina_1_estrutura_completa(page1)
-                img1 = renderizar_clip_pdf(page1, clip1, escala=4.0)
-                img1 = aparar_margens_brancas(img1, tolerancia=245, margem=45)
-                
-                # Salvar localmente
-                desenho_filename = f"{structure_name}_desenho.png"
-                out_path1 = os.path.join(net_output_dir, desenho_filename)
-                img1.save(out_path1)
-                
-                # Upload para Firebase Storage
-                blob_name1 = f"estruturas/{net}/{desenho_filename}"
-                print(f"    Carregando desenho no Firebase Storage...")
-                url_desenho = upload_image_to_gcs(img1, blob_name1)
-                
-                # Processar página 2 (se existir)
-                if num_pages >= 2:
-                    page2 = doc[1]
-                    clip2 = clip_pagina_2_estrutura_base(page2)
-                    img2 = renderizar_clip_pdf(page2, clip2, escala=4.0)
-                    img2 = aparar_margens_brancas(img2, tolerancia=245, margem=45)
+                try:
+                    doc = fitz.open(pdf_path)
+                    num_pages = len(doc)
+                    if num_pages == 0:
+                        print(f"    PDF vazio: {file}")
+                        doc.close()
+                        continue
+                    
+                    url_desenho = None
+                    url_titulo = None
+                    
+                    # Processar página 1 (sempre esperado)
+                    page1 = doc[0]
+                    clip1 = clip_pagina_1_estrutura_completa(page1)
+                    img1 = renderizar_clip_pdf(page1, clip1, escala=4.0)
+                    img1 = aparar_margens_brancas(img1, tolerancia=245, margem=45)
                     
                     # Salvar localmente
-                    titulo_filename = f"{structure_name}_titulo.png"
-                    out_path2 = os.path.join(net_output_dir, titulo_filename)
-                    img2.save(out_path2)
+                    desenho_filename = f"{structure_name}_desenho.png"
+                    out_path1 = os.path.join(net_output_dir, desenho_filename)
+                    img1.save(out_path1)
                     
-                    # Upload para Firebase Storage
-                    blob_name2 = f"estruturas/{net}/{titulo_filename}"
-                    print(f"    Carregando título/detalhe no Firebase Storage...")
-                    url_titulo = upload_image_to_gcs(img2, blob_name2)
-                
-                doc.close()
-                
-                # Salvar no index com as URLs públicas do Firebase Storage
-                index_data[net].append({
-                    "estrutura": structure_name,
-                    "desenho": url_desenho,
-                    "titulo": url_titulo
-                })
-                print(f"    Sucesso: desenho={url_desenho}, titulo={url_titulo}")
-                
+                    # Upload para Firebase Storage (em background)
+                    blob_name1 = f"estruturas/{net}/{desenho_filename}"
+                    url_desenho = f"https://storage.googleapis.com/{BUCKET_NAME}/{blob_name1}"
+                    print(f"    [AGENDADO] Desenho: {desenho_filename}")
+                    futures.append(executor.submit(upload_image_to_gcs, img1, blob_name1))
+                    
+                    # Processar página 2 (se existir)
+                    if num_pages >= 2:
+                        page2 = doc[1]
+                        clip2 = clip_pagina_2_estrutura_base(page2)
+                        img2 = renderizar_clip_pdf(page2, clip2, escala=4.0)
+                        img2 = aparar_margens_brancas(img2, tolerancia=245, margem=45)
+                        
+                        # Salvar localmente
+                        titulo_filename = f"{structure_name}_titulo.png"
+                        out_path2 = os.path.join(net_output_dir, titulo_filename)
+                        img2.save(out_path2)
+                        
+                        # Upload para Firebase Storage (em background)
+                        blob_name2 = f"estruturas/{net}/{titulo_filename}"
+                        url_titulo = f"https://storage.googleapis.com/{BUCKET_NAME}/{blob_name2}"
+                        print(f"    [AGENDADO] Título: {titulo_filename}")
+                        futures.append(executor.submit(upload_image_to_gcs, img2, blob_name2))
+                    
+                    doc.close()
+                    
+                    # Salvar no index com as URLs públicas do Firebase Storage
+                    index_data[net].append({
+                        "estrutura": structure_name,
+                        "desenho": url_desenho,
+                        "titulo": url_titulo
+                    })
+                    
+                except Exception as e:
+                    print(f"    Erro ao processar {file}: {e}")
+                    
+        # Aguardar todos os uploads pendentes terminarem
+        print("\nAguardando a conclusão de todos os uploads em segundo plano...")
+        for future in as_completed(futures):
+            try:
+                url = future.result()
+                print(f"  [SUCESSO] Upload concluído: {url}")
             except Exception as e:
-                print(f"    Erro ao processar {file}: {e}")
+                print(f"  [ERRO] Falha em um dos uploads em background: {e}")
                 
     # Salvar index JSON com as URLs de storage
     index_path = os.path.join(BASE_OUTPUT_DIR, "estruturas_index.json")

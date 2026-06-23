@@ -120,7 +120,12 @@
         }
 
         .net-btn {
-            padding: 0.35rem 0.75rem;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0.4rem 0.8rem;
             border-radius: 4px;
             font-size: 0.75rem;
             font-weight: 600;
@@ -128,8 +133,9 @@
             border: 1px solid var(--border-color);
             color: var(--text-muted);
             cursor: pointer;
-            white-space: nowrap;
+            line-height: 1.25;
             transition: all 0.2s;
+            min-width: 65px;
         }
 
         .net-btn.active, .net-btn:hover {
@@ -566,11 +572,41 @@
 
             <div id="editorContent" style="display: none;">
                 <div class="card" style="margin-bottom: 1.5rem;">
-                    <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-                        <span id="structureTitle">Estrutura</span>
-                        <button id="btnDeleteStructure" style="font-size: 0.8rem; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--accent-red); cursor: pointer; font-weight: 600; transition: background 0.2s;">
-                            🗑️ Excluir Estrutura
-                        </button>
+                    <div class="card-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div id="structureTitleContainer" style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+                            <!-- Modo Visualização -->
+                            <div id="titleViewMode" style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span id="structureTitle" style="font-size: 1.1rem; font-weight: 700; color: var(--text-color);">Estrutura</span>
+                                <button id="btnEditStructure" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px; transition: background 0.2s;" title="Editar dados da estrutura">
+                                    ✏️
+                                </button>
+                            </div>
+                            <!-- Modo Edição (inline) -->
+                            <div id="titleEditMode" style="display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                <select id="editStructureRede" class="select-custom" style="width: 100px; padding: 0.4rem 0.5rem; font-size: 0.85rem;">
+                                    <option value="RDA">RDA</option>
+                                    <option value="RDC">RDC</option>
+                                    <option value="RDP">RDP</option>
+                                    <option value="RSI">RSI</option>
+                                </select>
+                                <span style="color: var(--text-muted); font-weight: normal;">-</span>
+                                <input type="text" id="editStructureName" class="search-input" style="width: 180px; padding: 0.4rem 0.5rem; font-size: 0.85rem; font-weight: 700;" placeholder="Nome">
+                                <span style="color: var(--text-muted); font-weight: normal;">(NTC:</span>
+                                <input type="text" id="editStructureNtc" class="search-input" style="width: 100px; padding: 0.4rem 0.5rem; font-size: 0.85rem;" placeholder="NTC">
+                                <span style="color: var(--text-muted); font-weight: normal;">)</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button id="btnSaveStructureMeta" class="btn-modal-submit" style="display: none; font-size: 0.8rem; padding: 6px 12px; border-radius: 4px; border: none; font-weight: 600; cursor: pointer; background-color: var(--primary); color: white;">
+                                💾 Salvar
+                            </button>
+                            <button id="btnCancelEditStructure" class="btn-modal-cancel" style="display: none; font-size: 0.8rem; padding: 6px 12px; border-radius: 4px; border: none; font-weight: 600; cursor: pointer; background-color: var(--border-color); color: var(--text-color);">
+                                Cancelar
+                            </button>
+                            <button id="btnDeleteStructure" style="font-size: 0.8rem; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 4px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--accent-red); cursor: pointer; font-weight: 600; transition: background 0.2s;">
+                                🗑️ Excluir Estrutura
+                            </button>
+                        </div>
                     </div>
                     <div class="images-grid" id="imagesGrid">
                         <!-- Imagens serão criadas dinamicamente -->
@@ -821,6 +857,21 @@
             btnSaveAtividades.onclick = saveStructureAssociations;
             btnQueueNext.onclick = advanceQueue;
             
+            const btnSaveStructureMeta = document.getElementById("btnSaveStructureMeta");
+            if (btnSaveStructureMeta) {
+                btnSaveStructureMeta.onclick = saveStructureMeta;
+            }
+            
+            const btnEditStructure = document.getElementById("btnEditStructure");
+            if (btnEditStructure) {
+                btnEditStructure.onclick = () => toggleEditStructure(true);
+            }
+            
+            const btnCancelEditStructure = document.getElementById("btnCancelEditStructure");
+            if (btnCancelEditStructure) {
+                btnCancelEditStructure.onclick = () => toggleEditStructure(false);
+            }
+            
             // Delete Structure Event
             const btnDeleteStructure = document.getElementById("btnDeleteStructure");
             if (btnDeleteStructure) {
@@ -872,10 +923,82 @@
             setupManualUpload();
         }
 
+        async function saveStructureMeta() {
+            if (!selectedStructure) return;
+            
+            const nome = document.getElementById('editStructureName').value.trim();
+            const tipo_rede = document.getElementById('editStructureRede').value;
+            const ntc = document.getElementById('editStructureNtc').value.trim();
+            
+            if (!nome) {
+                alert("O nome da estrutura não pode ser vazio.");
+                return;
+            }
+            
+            showToast("Salvando informações da estrutura...");
+            
+            try {
+                const res = await fetch(`/controle-projetos/api/estruturas/${selectedStructure.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ nome, tipo_rede, ntc })
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast("Estrutura atualizada com sucesso!");
+                    
+                    // Atualizar na lista local de estruturas
+                    await loadEstruturas();
+                    
+                    // Achar e re-selecionar a estrutura (que pode ter mudado de ID)
+                    const updatedEst = estruturas.find(x => x.id === data.id);
+                    if (updatedEst) {
+                        selectStructure(updatedEst);
+                    }
+                } else {
+                    const err = await res.json();
+                    alert("Erro ao salvar: " + (err.detail || "Falha desconhecida"));
+                }
+            } catch (err) {
+                console.error("Erro ao salvar dados da estrutura:", err);
+                alert("Erro ao salvar: " + err);
+            }
+        }
+
+        function updateFilterCounts() {
+            const counts = { RDA: 0, RDC: 0, RDP: 0, RSI: 0 };
+            estruturas.forEach(est => {
+                const tr = (est.tipo_rede || "").toUpperCase();
+                if (counts[tr] !== undefined) {
+                    counts[tr]++;
+                }
+            });
+            const total = estruturas.length;
+
+            const btnTodas = document.querySelector('.net-btn[data-rede=""]');
+            if (btnTodas) btnTodas.innerHTML = `Todas<br><span style="font-size: 0.65rem; font-weight: normal; opacity: 0.85;">(${total})</span>`;
+
+            const btnRda = document.querySelector('.net-btn[data-rede="RDA"]');
+            if (btnRda) btnRda.innerHTML = `RDA<br><span style="font-size: 0.65rem; font-weight: normal; opacity: 0.85;">(${counts.RDA})</span>`;
+
+            const btnRdc = document.querySelector('.net-btn[data-rede="RDC"]');
+            if (btnRdc) btnRdc.innerHTML = `RDC<br><span style="font-size: 0.65rem; font-weight: normal; opacity: 0.85;">(${counts.RDC})</span>`;
+
+            const btnRdp = document.querySelector('.net-btn[data-rede="RDP"]');
+            if (btnRdp) btnRdp.innerHTML = `RDP<br><span style="font-size: 0.65rem; font-weight: normal; opacity: 0.85;">(${counts.RDP})</span>`;
+
+            const btnRsi = document.querySelector('.net-btn[data-rede="RSI"]');
+            if (btnRsi) btnRsi.innerHTML = `RSI<br><span style="font-size: 0.65rem; font-weight: normal; opacity: 0.85;">(${counts.RSI})</span>`;
+        }
+
         async function loadEstruturas() {
             try {
                 const res = await fetch('/controle-projetos/api/estruturas');
                 estruturas = await res.json();
+                updateFilterCounts();
                 applyFilters();
             } catch (err) {
                 console.error("Erro ao carregar estruturas:", err);
@@ -925,6 +1048,40 @@
             });
         }
 
+        function toggleEditStructure(isEditing) {
+            const titleViewMode = document.getElementById('titleViewMode');
+            const titleEditMode = document.getElementById('titleEditMode');
+            const btnSaveStructureMeta = document.getElementById('btnSaveStructureMeta');
+            const btnCancelEditStructure = document.getElementById('btnCancelEditStructure');
+            
+            if (isEditing) {
+                if (titleViewMode) titleViewMode.style.display = 'none';
+                if (titleEditMode) titleEditMode.style.display = 'flex';
+                if (btnSaveStructureMeta) btnSaveStructureMeta.style.display = 'inline-block';
+                if (btnCancelEditStructure) btnCancelEditStructure.style.display = 'inline-block';
+            } else {
+                if (titleViewMode) titleViewMode.style.display = 'flex';
+                if (titleEditMode) titleEditMode.style.display = 'none';
+                if (btnSaveStructureMeta) btnSaveStructureMeta.style.display = 'none';
+                if (btnCancelEditStructure) btnCancelEditStructure.style.display = 'none';
+                
+                // Restaurar valores originais
+                if (selectedStructure) {
+                    const editName = document.getElementById('editStructureName');
+                    const editRede = document.getElementById('editStructureRede');
+                    const editNtc = document.getElementById('editStructureNtc');
+                    if (editName) editName.value = selectedStructure.nome || '';
+                    if (editRede) editRede.value = selectedStructure.tipo_rede || 'RDA';
+                    if (editNtc) editNtc.value = selectedStructure.ntc || '';
+                    
+                    const structureTitle = document.getElementById('structureTitle');
+                    if (structureTitle) {
+                        structureTitle.textContent = `${selectedStructure.tipo_rede} - Estrutura ${selectedStructure.nome} ${selectedStructure.ntc ? '(NTC ' + selectedStructure.ntc + ')' : ''}`;
+                    }
+                }
+            }
+        }
+
         async function selectStructure(est) {
             selectedStructure = est;
             renderList();
@@ -932,7 +1089,15 @@
             noSelection.style.display = 'none';
             editorContent.style.display = 'block';
             
-            structureTitle.textContent = `${est.tipo_rede} - Estrutura ${est.nome}`;
+            toggleEditStructure(false);
+
+            // Preencher campos de edição
+            const editName = document.getElementById('editStructureName');
+            const editRede = document.getElementById('editStructureRede');
+            const editNtc = document.getElementById('editStructureNtc');
+            if (editName) editName.value = est.nome || '';
+            if (editRede) editRede.value = est.tipo_rede || 'RDA';
+            if (editNtc) editNtc.value = est.ntc || '';
 
             // Renderizar Imagens se houver
             imagesGrid.innerHTML = '';

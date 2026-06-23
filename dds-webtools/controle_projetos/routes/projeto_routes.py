@@ -435,6 +435,63 @@ def deletar_estrutura_padrao(doc_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class EditarEstruturaPayload(BaseModel):
+    nome: str
+    tipo_rede: str
+    ntc: Optional[str] = ""
+
+# 20.1 API para editar metadados de uma estrutura padrão
+@router.put("/api/estruturas/{doc_id}")
+def editar_estrutura_padrao(doc_id: str, payload: EditarEstruturaPayload):
+    try:
+        estrutura_nome = re.sub(r'[^a-zA-Z0-9-]', '', payload.nome).strip()
+        tipo_rede = payload.tipo_rede.strip().upper()
+        
+        if not estrutura_nome:
+            raise HTTPException(status_code=400, detail="Nome inválido.")
+            
+        new_doc_id = f"{tipo_rede}_{estrutura_nome}"
+        
+        old_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(doc_id)
+        old_snap = old_ref.get()
+        if not old_snap.exists:
+            raise HTTPException(status_code=404, detail="Estrutura original não encontrada.")
+            
+        old_data = old_snap.to_dict()
+        
+        # Se o doc_id mudou, precisamos garantir que o novo doc_id não colida com outra existente
+        if new_doc_id != doc_id:
+            new_ref = BASE_DOC_PATH.collection("estruturas_padrao").document(new_doc_id)
+            if new_ref.get().exists:
+                raise HTTPException(status_code=400, detail=f"A estrutura '{estrutura_nome}' já existe na categoria '{tipo_rede}'.")
+                
+            # Copiar dados antigos e aplicar novas alterações
+            new_data = {**old_data, "id": new_doc_id, "nome": estrutura_nome, "tipo_rede": tipo_rede}
+            if payload.ntc is not None:
+                new_data["ntc"] = payload.ntc.strip()
+                
+            # Salvar o novo e apagar o antigo
+            new_ref.set(new_data)
+            old_ref.delete()
+            
+            return {"sucesso": True, "id": new_doc_id, "nome": estrutura_nome, "tipo_rede": tipo_rede}
+        else:
+            # Apenas atualizar os campos do documento atual
+            update_data = {
+                "nome": estrutura_nome,
+                "tipo_rede": tipo_rede
+            }
+            if payload.ntc is not None:
+                update_data["ntc"] = payload.ntc.strip()
+            old_ref.update(update_data)
+            
+            return {"sucesso": True, "id": doc_id, "nome": estrutura_nome, "tipo_rede": tipo_rede}
+            
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 import unicodedata
 import json
 

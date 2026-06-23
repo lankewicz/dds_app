@@ -24,6 +24,14 @@ def populate_db():
     total_added = 0
     total_skipped = 0
 
+    print("Buscando documentos existentes no Firestore para conferência local...")
+    try:
+        existing_docs = {doc.id: doc.to_dict() for doc in collection_ref.stream()}
+        print(f"Encontrados {len(existing_docs)} documentos já existentes no Firestore.")
+    except Exception as e:
+        print(f"Erro ao obter documentos existentes: {e}. Prosseguindo considerando banco vazio.")
+        existing_docs = {}
+
     print("Iniciando populacao do banco de dados no Firestore...")
 
     for net_type, structures in data.items():
@@ -32,9 +40,7 @@ def populate_db():
             name = est["estrutura"]
             doc_id = f"{net_type}_{name}"
             
-            # Verificar se o documento ja existe
             doc_ref = collection_ref.document(doc_id)
-            doc_snap = doc_ref.get()
             
             # Imagens
             imagens = []
@@ -51,7 +57,7 @@ def populate_db():
                 "ativo": True
             }
             
-            if not doc_snap.exists:
+            if doc_id not in existing_docs:
                 # Inicializar array de atividades vazio se for novo
                 payload["atividades"] = []
                 doc_ref.set(payload)
@@ -59,7 +65,7 @@ def populate_db():
                 total_added += 1
             else:
                 # Se ja existe, atualizar apenas campos basicos e preservar as atividades ja salvas
-                existing_data = doc_snap.to_dict()
+                existing_data = existing_docs[doc_id]
                 payload["atividades"] = existing_data.get("atividades", [])
                 doc_ref.update(payload)
                 print(f"  [ATUALIZADO] Estrutura {doc_id} atualizada (preservando atividades).")
