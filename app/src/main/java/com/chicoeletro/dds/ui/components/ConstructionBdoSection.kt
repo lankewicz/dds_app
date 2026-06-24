@@ -1456,8 +1456,11 @@ fun ModoSimplificadoView(
     val repository = remember { ConstrucaoFirestoreRepository() }
 
     // Form states
-    var locacao by remember { mutableStateOf("") }
-    var cava by remember { mutableStateOf("") }
+    var selectedLocacao by remember { mutableStateOf("") }
+    var locacaoExpanded by remember { mutableStateOf(false) }
+
+    var selectedCava by remember { mutableStateOf<Atividade?>(null) }
+    var cavaExpanded by remember { mutableStateOf(false) }
 
     // Pole dimensions
     var comprimentoExpanded by remember { mutableStateOf(false) }
@@ -1494,6 +1497,30 @@ fun ModoSimplificadoView(
         } finally {
             isLoadingEstruturas = false
         }
+    }
+
+    // Cavas List
+    var cavasList by remember { mutableStateOf(listOf<Atividade>()) }
+    var isLoadingCavas by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isLoadingCavas = true
+        try {
+            cavasList = repository.buscarAtividades("cava")
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao carregar cavas: ${e.message}", Toast.LENGTH_SHORT).show()
+        } finally {
+            isLoadingCavas = false
+        }
+    }
+
+    val orderedCavas = remember(cavasList) {
+        val topCodes = listOf(716, 616, 750)
+        val topList = cavasList.filter { it.codigo in topCodes }
+            .sortedBy { topCodes.indexOf(it.codigo) }
+        val otherList = cavasList.filter { it.codigo !in topCodes }
+            .sortedBy { it.codigo }
+        topList + otherList
     }
 
     var selectedCategory by remember { mutableStateOf("RDC") }
@@ -1570,23 +1597,85 @@ fun ModoSimplificadoView(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = locacao,
-                        onValueChange = { locacao = it },
-                        label = { Text("Locação") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    // Locação Dropdown (Urbana / Rural)
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = selectedLocacao,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Locação") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = { locacaoExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { locacaoExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = locacaoExpanded,
+                            onDismissRequest = { locacaoExpanded = false }
+                        ) {
+                            listOf("Urbana", "Rural").forEach { loc ->
+                                DropdownMenuItem(
+                                    text = { Text(loc) },
+                                    onClick = {
+                                        selectedLocacao = loc
+                                        locacaoExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
 
-                    OutlinedTextField(
-                        value = cava,
-                        onValueChange = { cava = it },
-                        label = { Text("Cava") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    // Cava Dropdown
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = selectedCava?.let { "${it.codigo} - ${it.descricao.take(15)}..." } ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Cava") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = { cavaExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { cavaExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = cavaExpanded,
+                            onDismissRequest = { cavaExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            if (isLoadingCavas) {
+                                DropdownMenuItem(
+                                    text = { Text("Carregando cavas...") },
+                                    onClick = {}
+                                )
+                            } else {
+                                orderedCavas.forEach { cv ->
+                                    DropdownMenuItem(
+                                        text = { Text("${cv.codigo} - ${cv.descricao}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                        onClick = {
+                                            selectedCava = cv
+                                            cavaExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Row(
@@ -1817,7 +1906,7 @@ fun ModoSimplificadoView(
         // Botão Salvar
         Button(
             onClick = {
-                if (locacao.isBlank() || cava.isBlank() || selectedComprimento == null || selectedCarga == null || selectedEstruturaPadrao == null || selectedCabo.isBlank()) {
+                if (selectedLocacao.isBlank() || selectedCava == null || selectedComprimento == null || selectedCarga == null || selectedEstruturaPadrao == null || selectedCabo.isBlank()) {
                     Toast.makeText(context, "Por favor, preencha todos os campos obrigatórios.", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
@@ -1836,8 +1925,8 @@ fun ModoSimplificadoView(
                                 equipe_numero = equipeNumero,
                                 data_execucao = dataExecucao,
                                 projeto_id = projetoSelecionado?.id,
-                                locacao = locacao,
-                                cava = cava,
+                                locacao = selectedLocacao,
+                                cava = "${selectedCava!!.codigo} - ${selectedCava!!.descricao}",
                                 poste_comprimento = selectedComprimento!!,
                                 poste_carga = selectedCarga!!,
                                 estrutura_categoria = selectedCategory,
@@ -1848,8 +1937,8 @@ fun ModoSimplificadoView(
                         if (response.sucesso) {
                             Toast.makeText(context, response.mensagem ?: "Lançamento registrado com sucesso!", Toast.LENGTH_LONG).show()
                             // Clear form fields
-                            locacao = ""
-                            cava = ""
+                            selectedLocacao = ""
+                            selectedCava = null
                             selectedComprimento = null
                             selectedCarga = null
                             selectedEstruturaPadrao = null
