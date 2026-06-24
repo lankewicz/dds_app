@@ -391,7 +391,7 @@ class ConstrucaoFirestoreRepository(
     suspend fun lancarSimplificado(request: LancamentoSimplificadoRequest): ConstrucaoApiResponse {
         return try {
             val newDocRef = baseDoc.collection("lancamentos_simplificados").document()
-            val data = mapOf(
+            val data = mutableMapOf<String, Any?>(
                 "equipe_numero" to request.equipe_numero,
                 "data_execucao" to request.data_execucao,
                 "projeto_id" to request.projeto_id,
@@ -404,6 +404,9 @@ class ConstrucaoFirestoreRepository(
                 "cabo" to request.cabo,
                 "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
+            request.ancoragem?.let { data["ancoragem"] = it }
+            request.ancoragem_us?.let { data["ancoragem_us"] = it }
+            
             newDocRef.set(data).await()
             ConstrucaoApiResponse(sucesso = true, mensagem = "Lançamento simplificado registrado com sucesso!")
         } catch (e: Exception) {

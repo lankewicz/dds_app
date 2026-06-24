@@ -1462,6 +1462,9 @@ fun ModoSimplificadoView(
     var selectedCava by remember { mutableStateOf<Atividade?>(null) }
     var cavaExpanded by remember { mutableStateOf(false) }
 
+    var selectedAncoragem by remember { mutableStateOf("Nenhuma") }
+    var ancoragemExpanded by remember { mutableStateOf(false) }
+
     // Pole dimensions
     var comprimentoExpanded by remember { mutableStateOf(false) }
     var selectedComprimento by remember { mutableStateOf<Double?>(null) }
@@ -1567,6 +1570,22 @@ fun ModoSimplificadoView(
     val dataExecucao = remember {
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     }
+
+    // Calculations for US Summary
+    val usCava = selectedCava?.us_montagem ?: 0.0
+    val concretagemVolume = when (selectedCarga) {
+        1000 -> if ((selectedComprimento ?: 0.0) <= 12.0) 0.57 else 0.80
+        2000 -> if ((selectedComprimento ?: 0.0) <= 12.0) 0.71 else 0.86
+        3000 -> if ((selectedComprimento ?: 0.0) <= 12.0) 0.88 else 0.92
+        else -> 0.0
+    }
+    val usAncoragem = when (selectedAncoragem) {
+        "Escora Simples" -> 1.3
+        "Escora Dupla" -> 4.78
+        "Concretagem" -> concretagemVolume * 12.41
+        else -> 0.0
+    }
+    val totalUs = usCava + usAncoragem
 
     Column(
         modifier = Modifier
@@ -1754,6 +1773,94 @@ fun ModoSimplificadoView(
                         }
                     }
                 }
+
+                // Ancoragem Dropdown
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedAncoragem,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Ancoragem") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        trailingIcon = {
+                            IconButton(onClick = { ancoragemExpanded = true }) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                        }
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { ancoragemExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = ancoragemExpanded,
+                        onDismissRequest = { ancoragemExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        listOf("Nenhuma", "Escora Simples", "Escora Dupla", "Concretagem").forEach { anc ->
+                            DropdownMenuItem(
+                                text = { Text(anc) },
+                                onClick = {
+                                    selectedAncoragem = anc
+                                    ancoragemExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // US Summary Card
+        if (totalUs > 0.0) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Valoração Estimada (US)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Cava (${selectedCava?.codigo ?: ""}):", style = MaterialTheme.typography.bodyMedium)
+                        Text(String.format(Locale.US, "%.2f US", usCava), fontWeight = FontWeight.Bold)
+                    }
+                    if (selectedAncoragem != "Nenhuma") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            val details = if (selectedAncoragem == "Concretagem") " (Vol: ${concretagemVolume} m³)" else ""
+                            Text("Ancoragem (${selectedAncoragem})${details}:", style = MaterialTheme.typography.bodyMedium)
+                            Text(String.format(Locale.US, "%.2f US", usAncoragem), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Total US:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = String.format(Locale.US, "%.2f US", totalUs),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                }
             }
         }
 
@@ -1931,7 +2038,9 @@ fun ModoSimplificadoView(
                                 poste_carga = selectedCarga!!,
                                 estrutura_categoria = selectedCategory,
                                 estrutura_nome = selectedEstruturaPadrao!!.nome,
-                                cabo = finalCabo
+                                cabo = finalCabo,
+                                ancoragem = if (selectedAncoragem == "Nenhuma") null else selectedAncoragem,
+                                ancoragem_us = if (selectedAncoragem == "Nenhuma") null else usAncoragem
                             )
                         )
                         if (response.sucesso) {
@@ -1939,6 +2048,7 @@ fun ModoSimplificadoView(
                             // Clear form fields
                             selectedLocacao = ""
                             selectedCava = null
+                            selectedAncoragem = "Nenhuma"
                             selectedComprimento = null
                             selectedCarga = null
                             selectedEstruturaPadrao = null

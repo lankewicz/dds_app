@@ -101,5 +101,7 @@ data class LancamentoSimplificadoRequest(
     val poste_carga: Int,
     val estrutura_categoria: String,
     val estrutura_nome: String,
-    val cabo: String
+    val cabo: String,
+    val ancoragem: String? = null,
+    val ancoragem_us: Double? = null
 )
