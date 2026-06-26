@@ -68,8 +68,13 @@ from dds_reports_engine import (
 
 # Firestore: usamos o client do engine (mesma inicialização) e normalizamos aqui
 from dds_reports_engine import _firestore_client
-def _build_key_detalhado(start: str, end: str, version: str = "v1") -> str:
-    return f"dds_detalhado_{start}_{end}_{version}"
+def _build_key_detalhado(start: str, end: str, team: str = "", team_type: str = "", version: str = "v2") -> str:
+    suffix = ""
+    if team:
+        suffix += f"_T_{team}"
+    if team_type:
+        suffix += f"_TY_{team_type}"
+    return f"dds_detalhado_{start}_{end}_{version}{suffix}"
 
 
 def _compute_kpis(day_groups: Dict[str, List[dict]], days_with_regs: List[str]) -> Tuple[int, int, int, int]:
@@ -135,12 +140,13 @@ def _normalize_dds_doc_v2(d: dict) -> Optional[dict]:
 
 def _fetch_dds_range_v2(start_date: str, end_date: str) -> Dict[str, List[dict]]:
     """Busca DDS no Firestore por range de headerDate (prefixo YYYY-MM-DD)."""
+    from google.cloud.firestore_v1.base_query import FieldFilter
     db = _firestore_client()
     end_key = f"{end_date}\uf8ff"
     q = (
         db.collection("DDS")
-        .where("headerDate", ">=", start_date)
-        .where("headerDate", "<=", end_key)
+        .where(filter=FieldFilter("headerDate", ">=", start_date))
+        .where(filter=FieldFilter("headerDate", "<=", end_key))
         .order_by("headerDate")
     )
 
@@ -156,9 +162,15 @@ def _fetch_dds_range_v2(start_date: str, end_date: str) -> Dict[str, List[dict]]
 
 
 def _fetch_dds_day_v2(day: str) -> List[dict]:
+    from google.cloud.firestore_v1.base_query import FieldFilter
     db = _firestore_client()
     end_key = f"{day}\uf8ff"
-    q = db.collection("DDS").where("headerDate", ">=", day).where("headerDate", "<=", end_key).order_by("headerDate")
+    q = (
+        db.collection("DDS")
+        .where(filter=FieldFilter("headerDate", ">=", day))
+        .where(filter=FieldFilter("headerDate", "<=", end_key))
+        .order_by("headerDate")
+    )
     out: List[dict] = []
     for doc in q.stream():
         raw = doc.to_dict() or {}
@@ -321,6 +333,8 @@ def build_or_get_report_detalhado(
     cache_prefix: str,
     force: bool = False,
     on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+    team: str = "",
+    team_type: str = "",
 ) -> ReportResult:
     """Gera (ou reaproveita) o relatório detalhado (sem fotos)."""
     if not bucket_name:
@@ -344,7 +358,7 @@ def build_or_get_report_detalhado(
         except Exception:
             pass
 
-    key = _build_key_detalhado(start_date, end_date)
+    key = _build_key_detalhado(start_date, end_date, team=team, team_type=team_type)
     final_rel = f"final/{key}.pdf"
     meta_rel = f"final/{key}.meta.json"
 
@@ -354,6 +368,9 @@ def build_or_get_report_detalhado(
     day_groups, days_all, days_with_regs, includes_hot, today, yesterday = _load_day_groups(
         start_date=start_date, end_date=end_date, tz_name=tz_name, store=store
     )
+
+    from dds_reports_engine import _filter_day_groups
+    day_groups = _filter_day_groups(day_groups, team=team, team_type=team_type)
 
     def _signed_urls() -> Dict[str, Optional[str]]:
         return {
@@ -406,8 +423,14 @@ def build_or_get_report_detalhado(
         day_date = parse_iso_date(day)
         is_hot = day_date in (today, yesterday)
 
-        daily_rel = f"daily-body/detalhado/{day}.pdf"
-        daily_meta_rel = f"daily-body/detalhado/{day}.meta.json"
+        suffix = ""
+        if team:
+            suffix += f"_T_{team}"
+        if team_type:
+            suffix += f"_TY_{team_type}"
+
+        daily_rel = f"daily-body/detalhado/{day}{suffix}.pdf"
+        daily_meta_rel = f"daily-body/detalhado/{day}{suffix}.meta.json"
 
         if (not force) and (not is_hot):
             meta_day = store.read_json(daily_meta_rel) or {}

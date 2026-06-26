@@ -60,7 +60,9 @@
         start_date: "{{ start_date }}",
         end_date: "{{ end_date }}",
         type: "{{ rtype }}",
-        force: "{{ '1' if force else '0' }}"
+        force: "{{ '1' if force else '0' }}",
+        team: "{{ team }}",
+        team_type: "{{ team_type }}"
       });
 
       const es = new EventSource("/admin/dds-reports/generate/stream?" + params.toString());

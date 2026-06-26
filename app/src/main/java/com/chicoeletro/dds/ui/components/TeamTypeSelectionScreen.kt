@@ -60,6 +60,13 @@ fun TeamTypeSelectionScreen(
                 accentColor = Color(0xFF0288D1) // Azul Premium
             ),
             TeamTypeOption(
+                key = "STC_CESTO",
+                title = "STC - CESTO",
+                description = "Caminhonete cabina simples com cesto aéreo.",
+                icon = Icons.Filled.ElectricalServices,
+                accentColor = Color(0xFF0288D1) // Azul Premium
+            ),
+            TeamTypeOption(
                 key = "EP",
                 title = "EP (Manutenção)",
                 description = "Caminhonetes Hilux, cabina dupla, com escada.",

@@ -70,6 +70,7 @@ const equipmentChangeReason = document.getElementById('equipmentChangeReason');
 const formTeamKey = document.getElementById('formTeamKey');
 const formEmpresa = document.getElementById('formEmpresa');
 const formDisplayName = document.getElementById('formDisplayName');
+const formTeamType = document.getElementById('formTeamType');
 const formMembers = document.getElementById('formMembers');
 const formActive = document.getElementById('formActive');
 const formEstado = document.getElementById('formEstado');
@@ -208,7 +209,17 @@ function setEquipmentFormNotice(message = '', kind = 'info') {
 
 function updateHeader(item, teamKey) {
   const frameCls = vehicleFrameClass(item?.estado);
-  const titleText = item?.equipe && item.equipe !== teamKey ? `${item.equipe} (${teamKey})` : (item?.equipe || teamKey || 'Equipe');
+  const teamTypeLabels = {
+    'STC': 'STC (NR-10)',
+    'STC_CESTO': 'STC - CESTO',
+    'EP': 'EP (Manutenção)',
+    'LINHA_VIVA': 'Linha Viva',
+    'ROCADA': 'Roçada',
+    'CONSTRUCAO': 'Construção'
+  };
+  const typeLabel = item?.teamType ? (teamTypeLabels[item.teamType] || item.teamType) : '';
+  const typeSuffix = typeLabel ? ` - ${typeLabel}` : '';
+  const titleText = (item?.equipe && item.equipe !== teamKey ? `${item.equipe} (${teamKey})` : (item?.equipe || teamKey || 'Equipe')) + typeSuffix;
   const empresa = state().getEmpresa ? state().getEmpresa() : '';
   teamFormVehicle.className = `modalVehicle ${frameCls}`;
   teamFormVehicle.textContent = '🚚';
@@ -544,6 +555,7 @@ function fillForm(data) {
   formTeamKey.value = team.teamKey || turno.teamKey || openTeamKey || '';
   formEmpresa.value = turno.empresa || data?.empresa || state().getEmpresa?.() || '';
   formDisplayName.value = team.displayName || formTeamKey.value;
+  if (formTeamType) formTeamType.value = team.teamType || '';
   formMembers.value = Array.isArray(team.members) ? team.members.join('\n') : '';
   equipmentState = {
     tablet: normalizeEquipment(team?.equipment?.tablet || {}, 'tablet'),
@@ -588,6 +600,7 @@ function collectPayload() {
     team: {
       teamKey,
       displayName: (formDisplayName.value || teamKey).trim(),
+      teamType: formTeamType ? formTeamType.value || null : null,
       members: normalizeMembersText(formMembers.value),
       equipment: {
         tablet: normalizeEquipment(equipmentState?.tablet || {}, 'tablet'),
@@ -731,6 +744,7 @@ async function openTeamForm(teamKey) {
   // Limpa campos do formulário imediatamente para não mostrar dados da equipe anterior
   suspendDirtyTracking = true;
   if (formDisplayName) formDisplayName.value = '';
+  if (formTeamType) formTeamType.value = '';
   if (formMembers) formMembers.value = '';
   if (formNocSs) formNocSs.value = '';
   if (formMotivo) formMotivo.value = '';
@@ -886,6 +900,7 @@ function refreshOpenTeam(item) {
 
 [
   formDisplayName,
+  formTeamType,
   formMembers,
   formActive,
   formEstado,

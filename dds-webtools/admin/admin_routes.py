@@ -359,20 +359,24 @@ def login_required(view):
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         if not session.get("is_admin"):
-            # Para chamadas via fetch/API, não redirecionar HTML (isso quebra .json()).
-            wants_json = (
-                request.is_json
-                or "application/json" in (request.headers.get("Accept") or "").lower()
-                or "text/event-stream" in (request.headers.get("Accept") or "").lower()
-                or request.path.endswith("/sessions/prepare")
-            )
-            if wants_json:
-                return jsonify({
-                    "ok": False,
-                    "error": "Não autenticado. Faça login novamente.",
-                    "redirect": url_for("admin.login", next=request.path),
-                }), 401
-            return redirect(url_for("admin.login", next=request.path))
+            portal_user = request.cookies.get("__session")
+            if portal_user:
+                session["is_admin"] = True
+            else:
+                # Para chamadas via fetch/API, não redirecionar HTML (isso quebra .json()).
+                wants_json = (
+                    request.is_json
+                    or "application/json" in (request.headers.get("Accept") or "").lower()
+                    or "text/event-stream" in (request.headers.get("Accept") or "").lower()
+                    or request.path.endswith("/sessions/prepare")
+                )
+                if wants_json:
+                    return jsonify({
+                        "ok": False,
+                        "error": "Não autenticado. Faça login novamente.",
+                        "redirect": url_for("admin.login", next=request.path),
+                    }), 401
+                return redirect(url_for("admin.login", next=request.path))
         return view(*args, **kwargs)
 
     return wrapper
@@ -504,7 +508,8 @@ def dds_presenca():
     start_date = (request.args.get("start_date") or start_default).strip()
     end_date = (request.args.get("end_date") or end_default).strip()
 
-    team_q = (request.args.get("team_q") or "").strip()
+    team_q = (request.args.get("team_q") or request.args.get("team") or "").strip()
+    team_type = (request.args.get("team_type") or "").strip()
     sort = (request.args.get("sort") or "name").strip().lower()
     hide_nodata = (request.args.get("hide_nodata") or "0").strip().lower() in ("1", "true", "yes", "on")
     view = (request.args.get("view") or "all").strip().lower()
@@ -518,7 +523,7 @@ def dds_presenca():
         flash("REPORTS_BUCKET_NAME/DDS_BUCKET_NAME não configurado.", "error")
         return redirect(url_for("admin.dashboard"))
 
- 
+
     if get_presence_matrix is None:
         flash("Módulo de presença não carregou (engine desatualizada).", "error")
         return redirect(url_for("admin.dds_reports"))
@@ -533,6 +538,7 @@ def dds_presenca():
             team_q=team_q,
             sort=sort,
             only_absences=only_absences,
+            team_type=team_type,
         )
     except Exception as e:
         current_app.logger.exception("Erro ao montar presença: %s", e)
@@ -811,13 +817,42 @@ def dds_reports():
     start_date = (request.args.get("start_date") or start_default).strip()
     end_date = (request.args.get("end_date") or end_default).strip()
     rtype = (request.args.get("type") or "fotos").strip().lower()
+    selected_team = (request.args.get("team") or "").strip()
+    selected_team_type = (request.args.get("team_type") or "").strip()
 
+    # Buscar equipes ativas
+    teams = []
+    try:
+        from monitor.services.teams_service import list_teams_map
+        teams_map = list_teams_map(active=True)
+        teams = sorted([
+            {
+                "key": k,
+                "name": v.get("displayName") or k
+            }
+            for k, v in teams_map.items()
+        ], key=lambda x: x["name"])
+    except Exception as e:
+        current_app.logger.warning("Falha ao listar equipes para filtros de relatórios: %s", e)
+
+    team_types = [
+        ("STC", "STC (NR-10)"),
+        ("STC_CESTO", "STC - CESTO"),
+        ("EP", "EP (Manutenção)"),
+        ("LINHA_VIVA", "Linha Viva"),
+        ("ROCADA", "Roçada"),
+        ("CONSTRUCAO", "Construção"),
+    ]
 
     return render_template(
         "dds_reports.html",
         start_date=start_date,
         end_date=end_date,
         rtype=rtype,
+        teams=teams,
+        team_types=team_types,
+        selected_team=selected_team,
+        selected_team_type=selected_team_type,
     )
 
 
@@ -833,10 +868,12 @@ def dds_reports_generate():
     end_date = (request.form.get("end_date") or "").strip()
     rtype = (request.form.get("type") or "fotos").strip().lower()
     force = (request.form.get("force") or "").strip().lower() in ("1", "true", "yes", "on")
+    team = (request.form.get("team") or "").strip()
+    team_type = (request.form.get("team_type") or "").strip()
 
     # "presenca" agora é o PAINEL (não gera PDF / não usa SSE)
     if rtype == "presenca":
-        return redirect(url_for("admin.dds_presenca", start_date=start_date, end_date=end_date))
+        return redirect(url_for("admin.dds_presenca", start_date=start_date, end_date=end_date, team=team, team_type=team_type))
 
 
     try:
@@ -844,7 +881,7 @@ def dds_reports_generate():
         _ = _days_total(start_date, end_date)
     except Exception as e:
         flash(f"Erro ao gerar relatório: {e}", "error")
-        return redirect(url_for("admin.dds_reports", start_date=start_date, end_date=end_date, type=rtype))
+        return redirect(url_for("admin.dds_reports", start_date=start_date, end_date=end_date, type=rtype, team=team, team_type=team_type))
 
     # Em vez de gerar no POST (bloqueia e pode estourar timeout),
     # redireciona para uma tela com SSE (progresso em tempo real).
@@ -854,6 +891,8 @@ def dds_reports_generate():
         end_date=end_date,
         type=rtype,
         force=("1" if force else "0"),
+        team=team,
+        team_type=team_type,
     ))
 
 
@@ -869,17 +908,19 @@ def dds_reports_progress():
     end_date = (request.args.get("end_date") or end_default).strip()
     rtype = (request.args.get("type") or "fotos").strip().lower()
     force = (request.args.get("force") or "0").strip().lower() in ("1", "true", "yes", "on")
+    team = (request.args.get("team") or "").strip()
+    team_type = (request.args.get("team_type") or "").strip()
 
     # Presença: não gera PDF — abre o painel (matriz Equipe × Dia)
     if rtype == "presenca":
-        return redirect(url_for("admin.dds_presenca", start_date=start_date, end_date=end_date))
+        return redirect(url_for("admin.dds_presenca", start_date=start_date, end_date=end_date, team=team, team_type=team_type))
 
 
     try:
         total_days = _days_total(start_date, end_date)
     except Exception as e:
         flash(f"Datas inválidas: {e}", "error")
-        return redirect(url_for("admin.dds_reports", start_date=start_date, end_date=end_date, type=rtype))
+        return redirect(url_for("admin.dds_reports", start_date=start_date, end_date=end_date, type=rtype, team=team, team_type=team_type))
 
     return render_template(
         "dds_reports_progress.html",
@@ -888,6 +929,8 @@ def dds_reports_progress():
         rtype=rtype,
         force=force,
         total_days=total_days,
+        team=team,
+        team_type=team_type,
     )
 
 
@@ -911,10 +954,12 @@ def dds_reports_generate_stream():
     end_date = (request.args.get("end_date") or "").strip()
     rtype = (request.args.get("type") or "fotos").strip().lower()
     force = (request.args.get("force") or "0").strip().lower() in ("1", "true", "yes", "on")
+    team = (request.args.get("team") or "").strip()
+    team_type = (request.args.get("team_type") or "").strip()
 
     # Presença: não gera PDF — abre o painel (matriz Equipe × Dia)
     if rtype == "presenca":
-        show_url = url_for("admin.dds_presenca", start_date=start_date, end_date=end_date)
+        show_url = url_for("admin.dds_presenca", start_date=start_date, end_date=end_date, team=team, team_type=team_type)
         return Response(
             _sse("done", {"key": "", "show_url": show_url}),
             headers={"Content-Type": "text/event-stream"},
@@ -959,6 +1004,8 @@ def dds_reports_generate_stream():
                 bucket_name=reports_bucket,
                 cache_prefix=cache_prefix,
                 force=force,
+                team=team,
+                team_type=team_type,
             )
 
             # passa callback só se a engine suportar (evita quebrar versões antigas)
@@ -1922,7 +1969,8 @@ def cleanup_storage_photos():
         start_key = f"{month}-01"
         end_key = f"{month}-31"
         
-        docs = dds_ref.where("headerDate", ">=", start_key).where("headerDate", "<=", end_key).stream()
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        docs = dds_ref.where(filter=FieldFilter("headerDate", ">=", start_key)).where(filter=FieldFilter("headerDate", "<=", end_key)).stream()
         
         fs_batch = db.batch()
         batch_count = 0

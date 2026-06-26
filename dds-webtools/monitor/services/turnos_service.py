@@ -239,6 +239,13 @@ def _storage_client() -> storage.Client:
     global _STORAGE_CLIENT
     if _STORAGE_CLIENT is None:
         _STORAGE_CLIENT = storage.Client()
+        try:
+            from requests.adapters import HTTPAdapter
+            adapter = HTTPAdapter(pool_connections=60, pool_maxsize=60)
+            _STORAGE_CLIENT._http.mount("https://", adapter)
+            _STORAGE_CLIENT._http._auth_request.session.mount("https://", adapter)
+        except Exception:
+            pass
     return _STORAGE_CLIENT
 
 
@@ -1944,6 +1951,7 @@ def _process_single_team(
         "unreadMessages": unread_counts.get(equipe, 0) or unread_counts.get(team_key, 0),
         "unreadMap": unread_map,
         "lastWasDescansoSemanal": last_was_descanso_semanal,
+        "teamType": team_data.get("teamType") or data.get("teamType"),
     }
 
 
@@ -2028,9 +2036,15 @@ def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
         return {"ok": True, "deleted": True}
 
     # 2. Carrega dependências de DDS e Mensagens (reutilizando caches e loaders)
-    recent_dds_days, dds_present_by_day, dds_days_with_any, mutable_dds_days, calendar_days, dds_timestamps_by_day = _load_recent_dds_presence(
-        manual_refresh=False
-    )
+    (
+        recent_dds_days,
+        dds_present_by_day,
+        dds_days_with_any,
+        mutable_dds_days,
+        calendar_days,
+        dds_timestamps_by_day,
+        dds_photos_by_day,
+    ) = _load_recent_dds_presence(manual_refresh=False)
     
     from services.messaging_service import get_unread_counts, get_all_unread_counts_map, get_last_messages_map
     unread_counts = get_unread_counts() # Setor padrão
@@ -2049,6 +2063,7 @@ def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
         mutable_dds_days=mutable_dds_days,
         calendar_days=calendar_days,
         dds_timestamps_by_day=dds_timestamps_by_day,
+        dds_photos_by_day=dds_photos_by_day,
         unread_counts=unread_counts,
         unread_map_global=unread_map_global,
         last_messages_map=last_messages_map,

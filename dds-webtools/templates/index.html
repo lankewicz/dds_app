@@ -56,6 +56,7 @@
           <a href="/monitor/inativas" class="viewTab {% if page_mode == 'inactive' %}isActive{% endif %}">Equipes inativas</a>
           <a href="/monitor/lixeira" class="viewTab {% if page_mode == 'trash' %}isActive{% endif %}">Lixeira</a>
           <a href="#" id="requestsTab" class="viewTab">Solicitações <span class="badge" id="requestsBadge" hidden>0</span></a>
+          <a href="/admin/dds-reports" class="viewTab">Relatórios</a>
         </nav>
       </div>
     </div>
@@ -212,6 +213,19 @@
                 <label class="formField formFieldFull">
                   <span class="formLabel">Nome da equipe</span>
                   <input id="formDisplayName" type="text" placeholder="Ex.: Equipe CA001" />
+                </label>
+
+                <label class="formField formFieldFull">
+                  <span class="formLabel">Tipo da equipe</span>
+                  <select id="formTeamType">
+                    <option value="">Não Definido</option>
+                    <option value="STC">STC (NR-10)</option>
+                    <option value="STC_CESTO">STC - CESTO</option>
+                    <option value="EP">EP (Manutenção)</option>
+                    <option value="LINHA_VIVA">Linha Viva</option>
+                    <option value="ROCADA">Roçada</option>
+                    <option value="CONSTRUCAO">Construção</option>
+                  </select>
                 </label>
 
                 <label class="formField formFieldFull">

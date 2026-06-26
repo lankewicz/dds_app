@@ -470,6 +470,7 @@ private fun TeamCard(
                 OutlinedTextField(
                     value = when (teamType) {
                         "STC" -> "STC (antiga NR-10)"
+                        "STC_CESTO" -> "STC - CESTO"
                         "EP" -> "EP (Manutenção)"
                         "LINHA_VIVA" -> "Linha Viva"
                         "ROCADA" -> "Roçada"
@@ -498,6 +499,7 @@ private fun TeamCard(
                 ) {
                     listOf(
                         "STC" to "STC (antiga NR-10)",
+                        "STC_CESTO" to "STC - CESTO",
                         "EP" to "EP (Manutenção)",
                         "LINHA_VIVA" to "Linha Viva",
                         "ROCADA" to "Roçada",

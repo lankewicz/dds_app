@@ -60,9 +60,13 @@ def _month_label_pt(year: int, month: int) -> str:
     return f"{_MONTHS_PT.get(month, str(month))} de {year}"
 
 
-def _build_key_ranking(start: str, end: str, version: str = "v2") -> str:
-    # Mantém o nome como "ranking" (decisão do produto)
-    return f"dds_ranking_{start}_{end}_{version}"
+def _build_key_ranking(start: str, end: str, team: str = "", team_type: str = "", version: str = "v2") -> str:
+    suffix = ""
+    if team:
+        suffix += f"_T_{team}"
+    if team_type:
+        suffix += f"_TY_{team_type}"
+    return f"dds_ranking_{start}_{end}_{version}{suffix}"
 
 
 def _teams_and_presence(day_groups: Dict[str, List[dict]], days_all: List[str]) -> Tuple[List[str], Dict[str, set], Dict[str, bool], Dict[str, List[str]]]:
@@ -562,6 +566,8 @@ def build_or_get_report_ranking(
     cache_prefix: str,
     force: bool = False,
     on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+    team: str = "",
+    team_type: str = "",
 ) -> ReportResult:
     """
     "Ranking" = relatório legado "Presença por Equipe" (calendário mensal).
@@ -589,7 +595,7 @@ def build_or_get_report_ranking(
         except Exception:
             pass
 
-    key = _build_key_ranking(start_date, end_date)
+    key = _build_key_ranking(start_date, end_date, team=team, team_type=team_type)
     final_rel = f"final/{key}.pdf"
     meta_rel = f"final/{key}.meta.json"
 
@@ -600,6 +606,9 @@ def build_or_get_report_ranking(
     day_groups, days_all, days_with_regs, includes_hot, _today, _yesterday = _load_day_groups(
         start_date=start_date, end_date=end_date, tz_name=tz_name, store=store
     )
+
+    from dds_reports_engine import _filter_day_groups
+    day_groups = _filter_day_groups(day_groups, team=team, team_type=team_type)
 
     def _signed_urls() -> Dict[str, Optional[str]]:
         return {

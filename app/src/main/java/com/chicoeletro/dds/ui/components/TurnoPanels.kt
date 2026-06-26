@@ -306,6 +306,7 @@ fun LeftPanel(
                         )
                         val readableType = when (teamType) {
                             "STC" -> "STC (NR-10)"
+                            "STC_CESTO" -> "STC - CESTO"
                             "EP" -> "EP (Manutenção)"
                             "LINHA_VIVA" -> "Linha Viva"
                             "ROCADA" -> "Roçada"

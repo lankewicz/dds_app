@@ -36,6 +36,7 @@ class TeamBasePayload(BaseModel):
     members: List[str] = Field(default_factory=list)
     equipment: TeamEquipmentPayload = Field(default_factory=TeamEquipmentPayload)
     active: bool = True
+    teamType: str | None = None
 
 
 class TeamTurnoPayload(BaseModel):

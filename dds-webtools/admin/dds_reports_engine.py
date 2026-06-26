@@ -283,6 +283,13 @@ class CacheStore:
     def __init__(self, cfg: CacheConfig):
         self.cfg = cfg
         self.client = storage.Client()
+        try:
+            from requests.adapters import HTTPAdapter
+            adapter = HTTPAdapter(pool_connections=60, pool_maxsize=60)
+            self.client._http.mount("https://", adapter)
+            self.client._http._auth_request.session.mount("https://", adapter)
+        except Exception:
+            pass
         self.bucket = self.client.bucket(cfg.bucket_name)
 
         self.cfg.tmp_root.mkdir(parents=True, exist_ok=True)
@@ -554,13 +561,14 @@ def _normalize_dds_doc(d: dict) -> Optional[dict]:
 
 def fetch_dds_range(start_date: str, end_date: str) -> Dict[str, List[dict]]:
     """Busca DDS no Firestore por range de headerDate (YYYY-MM-DD)."""
+    from google.cloud.firestore_v1.base_query import FieldFilter
     db = _firestore_client()
 
     # Query por range no mesmo campo
     q = (
         db.collection("DDS")
-        .where("headerDate", ">=", start_date)
-        .where("headerDate", "<=", end_date)
+        .where(filter=FieldFilter("headerDate", ">=", start_date))
+        .where(filter=FieldFilter("headerDate", "<=", end_date))
         .order_by("headerDate")
     )
 
@@ -577,8 +585,9 @@ def fetch_dds_range(start_date: str, end_date: str) -> Dict[str, List[dict]]:
 
 
 def fetch_dds_day(day: str) -> List[dict]:
+    from google.cloud.firestore_v1.base_query import FieldFilter
     db = _firestore_client()
-    q = db.collection("DDS").where("headerDate", "==", day)
+    q = db.collection("DDS").where(filter=FieldFilter("headerDate", "==", day))
     out: List[dict] = []
     for doc in q.stream():
         raw = doc.to_dict() or {}
@@ -755,7 +764,7 @@ def _logo_paths(base_dir: Path) -> Tuple[Optional[str], Optional[str]]:
     return left, right
 
 
-def gerar_pdf_capa(path_saida: Path, *, titulo: str, periodo: str, gerado_em: str, kpis: Dict[str, str]) -> None:
+def gerar_pdf_capa(path_saida: Path, *, titulo: str, periodo: str, gerado_em: str, kpis: Dict[str, str], empresa: str = "ChicoEletro") -> None:
     w, h = landscape(A4)
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(w, h), pageCompression=1)
@@ -763,34 +772,102 @@ def gerar_pdf_capa(path_saida: Path, *, titulo: str, periodo: str, gerado_em: st
     base_dir = Path(__file__).resolve().parent
     logo_left, logo_right = _logo_paths(base_dir)
 
-    # fundo simples
+    # 1. Fundo limpo
     c.setFillColor(colors.white)
     c.rect(0, 0, w, h, fill=1, stroke=0)
 
-    # logos
-    top_y = h - 2.2 * cm
+    # 2. Barras estéticas superior e inferior (azul institucional)
+    primary_color = colors.HexColor("#1f2e5a")
+    c.setFillColor(primary_color)
+    c.rect(0, h - 15, w, 15, fill=1, stroke=0)
+    c.rect(0, 0, w, 15, fill=1, stroke=0)
+
+    # 3. Logos
+    top_y = h - 2.5 * cm - 40
     if logo_left:
-        c.drawImage(logo_left, 2.0 * cm, top_y, height=1.6 * cm, preserveAspectRatio=True, mask='auto')
+        c.drawImage(logo_left, 3.0 * cm, top_y, height=1.4 * cm, preserveAspectRatio=True, mask='auto')
     if logo_right:
-        c.drawImage(logo_right, w - 4.0 * cm, top_y, height=1.6 * cm, preserveAspectRatio=True, mask='auto')
+        c.drawImage(logo_right, w - 3.0 * cm - 120, top_y, height=1.4 * cm, preserveAspectRatio=True, mask='auto')
 
-    # título
-    c.setFont("Helvetica-Bold", 22)
-    c.drawCentredString(w / 2, h - 3.2 * cm, titulo)
-    c.setFont("Helvetica", 12)
-    c.drawCentredString(w / 2, h - 4.1 * cm, periodo)
+    # Subtítulo discreto no topo
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(colors.HexColor("#64748b"))
+    c.drawString(3.0 * cm, top_y - 12, "DDS ONLINE — SEGURANÇA E OPERAÇÃO")
 
-    # KPIs
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2.0 * cm, h - 6.0 * cm, "Resumo")
-    c.setFont("Helvetica", 11)
-    y = h - 6.8 * cm
-    for label, val in kpis.items():
-        c.drawString(2.2 * cm, y, f"{label}: {val}")
-        y -= 0.65 * cm
+    # 4. Card central de Informações
+    card_w = 660
+    card_h = 310
+    card_x = (w - card_w) / 2
+    card_y = 100
 
-    c.setFont("Helvetica", 10)
-    c.drawString(2.0 * cm, 2.0 * cm, f"Gerado em: {gerado_em}")
+    # Sombra leve do card
+    c.setFillColor(colors.HexColor("#f8fafc"))
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.setLineWidth(1.5)
+    c.roundRect(card_x, card_y, card_w, card_h, 16, fill=1, stroke=1)
+
+    # Conteúdo do Card: Título do Relatório
+    c.setFont("Helvetica-Bold", 24)
+    c.setFillColor(colors.HexColor("#0f172a")) # Slate 900
+    c.drawString(card_x + 40, card_y + card_h - 55, titulo.upper())
+
+    # Indicador de Empresa
+   # c.setFont("Helvetica-Bold", 10)
+   # c.setFillColor(colors.HexColor("#2f6fed")) # Azul Destaque
+   # c.drawString(card_x + 40, card_y + card_h - 80, f"EMPRESA CONTRATANTE: {empresa.upper()}")
+
+    # Badge do Período
+    badge_x = card_x + 40
+    badge_y = card_y + card_h - 135
+    badge_w = 380
+    badge_h = 32
+    c.setFillColor(colors.HexColor("#eff6ff")) # Azul claro de fundo
+    c.setStrokeColor(colors.HexColor("#bfdbfe"))
+    c.roundRect(badge_x, badge_y, badge_w, badge_h, 6, fill=1, stroke=1)
+
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.HexColor("#1e40af"))
+    c.drawString(badge_x + 15, badge_y + 10, periodo)
+
+    # 5. Grid de KPIs (Métricas) no rodapé do card
+    kpi_y = card_y + 30
+    kpi_h = 75
+    kpi_w = 135
+    kpi_gap = 13
+    
+    # Lista ordenada de itens de KPI para desenhar caixas
+    kpi_items = list(kpis.items())[:4]
+    
+    for idx, (label, val) in enumerate(kpi_items):
+        cur_x = card_x + 40 + idx * (kpi_w + kpi_gap)
+        
+        # Caixa de KPI individual
+        c.setFillColor(colors.white)
+        c.setStrokeColor(colors.HexColor("#f1f5f9"))
+        c.setLineWidth(1)
+        c.roundRect(cur_x, kpi_y, kpi_w, kpi_h, 8, fill=1, stroke=1)
+        
+        # Nome da Métrica
+        c.setFont("Helvetica-Bold", 7.5)
+        c.setFillColor(colors.HexColor("#64748b")) # Slate 500
+        # Divide labels longas
+        label_text = label.upper()
+        if len(label_text) > 16:
+            c.drawString(cur_x + 12, kpi_y + 55, label_text[:15])
+            c.drawString(cur_x + 12, kpi_y + 44, label_text[15:])
+        else:
+            c.drawString(cur_x + 12, kpi_y + 52, label_text)
+        
+        # Valor da Métrica
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(colors.HexColor("#0f172a")) # Slate 900
+        c.drawString(cur_x + 12, kpi_y + 18, str(val))
+
+    # 6. Rodapé da capa
+    c.setFont("Helvetica", 9)
+    c.setFillColor(colors.HexColor("#94a3b8"))
+    c.drawString(3.0 * cm, 30, f"DDS ONLINE — Relatório Administrativo Geral")
+    c.drawRightString(w - 3.0 * cm, 30, f"Gerado em: {gerado_em}")
 
     c.showPage()
     c.save()
@@ -972,8 +1049,47 @@ class ReportResult:
     meta: dict
 
 
-def _build_key_photos(start: str, end: str, version: str = "v1") -> str:
-    return f"dds_fotos_{start}_{end}_1_{version}"
+def _build_key_photos(start: str, end: str, team: str = "", team_type: str = "", version: str = "v2") -> str:
+    suffix = ""
+    if team:
+        suffix += f"_T_{team}"
+    if team_type:
+        suffix += f"_TY_{team_type}"
+    return f"dds_fotos_{start}_{end}_1_{version}{suffix}"
+
+
+def _filter_day_groups(day_groups: Dict[str, List[dict]], team: str, team_type: str) -> Dict[str, List[dict]]:
+    if not team and not team_type:
+        return day_groups
+
+    from services.teams_service import list_teams_map
+    try:
+        teams_map = list_teams_map(active=None)
+    except Exception:
+        teams_map = {}
+
+    team_to_type = {}
+    for k, v in teams_map.items():
+        t_type = (v.get("teamType") or "").upper()
+        team_to_type[k.upper()] = t_type
+        disp = (v.get("displayName") or "").strip().upper()
+        if disp:
+            team_to_type[disp] = t_type
+
+    filtered = {}
+    for day, regs in day_groups.items():
+        filtered_regs = []
+        for r in regs:
+            r_equipe = (r.get("equipe") or "").strip()
+            if team and r_equipe.upper() != team.upper():
+                continue
+            if team_type:
+                r_type = team_to_type.get(r_equipe.upper(), "")
+                if r_type != team_type.upper():
+                    continue
+            filtered_regs.append(r)
+        filtered[day] = filtered_regs
+    return filtered
 
 
 def _tz_today_yesterday(tz_name: str) -> Tuple[dt.date, dt.date]:
@@ -995,6 +1111,8 @@ def build_or_get_report_photos(
     cache_prefix: str,
     force: bool = False,
     on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+    team: str = "",
+    team_type: str = "",
 ) -> ReportResult:
     """Gera (ou reaproveita) o relatório com fotos para o range."""
     if not bucket_name:
@@ -1025,7 +1143,7 @@ def build_or_get_report_photos(
         except Exception:
             pass
 
-    key = _build_key_photos(start_date, end_date)
+    key = _build_key_photos(start_date, end_date, team=team, team_type=team_type)
     final_rel = f"final/{key}.pdf"
     meta_rel = f"final/{key}.meta.json"
 
@@ -1119,6 +1237,8 @@ def build_or_get_report_photos(
             regs = (payload or {}).get("regs") or []
             day_groups[day] = regs
 
+    day_groups = _filter_day_groups(day_groups, team=team, team_type=team_type)
+
     # Filtra dias sem registros (para não criar páginas vazias)
     days_all = [d.strftime("%Y-%m-%d") for d in daterange(start, end)]
     days_with_regs = [day for day in days_all if (day_groups.get(day) or [])]
@@ -1163,8 +1283,14 @@ def build_or_get_report_photos(
         day_date = parse_iso_date(day)
         is_hot = day_date in (today, yesterday)
 
-        daily_rel = f"daily-body/photos/{day}.pdf"
-        daily_meta_rel = f"daily-body/photos/{day}.meta.json"
+        suffix = ""
+        if team:
+            suffix += f"_T_{team}"
+        if team_type:
+            suffix += f"_TY_{team_type}"
+
+        daily_rel = f"daily-body/photos/{day}{suffix}.pdf"
+        daily_meta_rel = f"daily-body/photos/{day}{suffix}.meta.json"
 
         # cold days: reusa cache só se NÃO for force
         if (not force) and (not is_hot):
@@ -1488,6 +1614,7 @@ def get_presence_matrix(
     team_q: str = "",
     sort: str = "name",
     only_absences: bool = False,
+    team_type: str = "",
 ) -> Dict[str, Any]:
     """Retorna uma matriz de presença por equipe x dia (para visualização rápida no admin-site).
 
@@ -1568,6 +1695,19 @@ def get_presence_matrix(
         tokens = [t.lower() for t in re.split(r"[;,\s]+", q) if t.strip()]
         if tokens:
             teams = [team for team in teams if all(tok in team.lower() for tok in tokens)]
+
+    # filtro por tipo de equipe
+    if team_type:
+        from services.teams_service import list_teams_map
+        try:
+            teams_map = list_teams_map(active=None)
+            team_to_type = {k.upper(): (v.get("teamType") or "").upper() for k, v in teams_map.items()}
+            teams = [
+                team for team in teams
+                if team_to_type.get(team.upper(), "") == team_type.upper()
+            ]
+        except Exception:
+            pass
     # 4) Matriz equipe x dia
     matrix: Dict[str, List[Optional[int]]] = {}
     team_stats: Dict[str, Dict[str, Any]] = {}
