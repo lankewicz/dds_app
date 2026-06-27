@@ -1588,6 +1588,66 @@ def explorer_slides():
     return jsonify({"ok": True, "slides": slides})
 
 
+@admin_bp.get("/explorer/download")
+@login_required
+def explorer_download():
+    """Gera um arquivo ZIP com as imagens e áudios do treinamento e envia para o cliente."""
+    import zipfile
+    folder_id = (request.args.get("folderId") or "").strip()
+    if not folder_id:
+        flash("folderId é obrigatório", "error")
+        return redirect(url_for("admin.explorer"))
+
+    bucket_name = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+    if not bucket_name:
+        flash("DDS_BUCKET_NAME não configurado.", "error")
+        return redirect(url_for("admin.explorer"))
+
+    prefix = f"{base_prefix}/{folder_id}/".replace("//", "/")
+    
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blobs = list(bucket.list_blobs(prefix=prefix))
+    
+    # Arquivos a ignorar no pacote final (metadados administrativos)
+    skip_files = {"reuniao.json", "lista.json"}
+    
+    valid_blobs = []
+    for blob in blobs:
+        if blob.name.endswith("/"):
+            continue
+        filename = blob.name.split("/")[-1]
+        if not filename:
+            continue
+        if filename.lower() in skip_files:
+            continue
+        valid_blobs.append(blob)
+        
+    if not valid_blobs:
+        flash("Nenhum arquivo de treinamento encontrado para baixar.", "warning")
+        return redirect(url_for("admin.explorer"))
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for blob in valid_blobs:
+            filename = blob.name.split("/")[-1]
+            try:
+                data = blob.download_as_bytes()
+                zip_file.writestr(filename, data)
+            except Exception as e:
+                current_app.logger.error(f"Erro ao baixar blob {blob.name} para o ZIP: {e}")
+
+    zip_buffer.seek(0)
+    safe_filename = f"{folder_id}.zip"
+    
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=safe_filename
+    )
+
 
 @admin_bp.get("/sessions/<session_id>/edit")
 @login_required

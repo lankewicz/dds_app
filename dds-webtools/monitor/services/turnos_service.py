@@ -41,7 +41,7 @@ DDS_CALENDAR_SOURCE_BLOB = os.getenv("DDS_CALENDAR_SOURCE_BLOB", "DDSv2/lista.js
 DDS_CALENDAR_CACHE_BLOB = os.getenv("DDS_CALENDAR_CACHE_BLOB", "_cache/dds_calendar_history.json")
 DDS_DAY_CACHE_PREFIX = os.getenv("DDS_DAY_CACHE_PREFIX", "_cache/days")
 MONITOR_VIEW_CACHE_PREFIX = os.getenv("MONITOR_VIEW_CACHE_PREFIX", "_cache/monitor")
-MONITOR_VIEW_CACHE_TTL_SEC = int(os.getenv("MONITOR_VIEW_CACHE_TTL_SEC", "60"))
+MONITOR_VIEW_CACHE_TTL_SEC = int(os.getenv("MONITOR_VIEW_CACHE_TTL_SEC", "86400"))
 WEBTOOLS_ROOT_COLLECTION = os.getenv("WEBTOOLS_ROOT_COLLECTION", "webtools")
 WEBTOOLS_MONITOR_DOC = os.getenv("WEBTOOLS_MONITOR_DOC", "monitor")
 AUTO_CLOSE_OPEN_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_CLOSE_OPEN_HOURS", "16"))
@@ -261,8 +261,6 @@ def _storage_blob_name(*parts: str) -> str:
 def _storage_read_json(blob_name: str) -> dict[str, Any] | None:
     try:
         blob = _storage_bucket().blob(blob_name)
-        if not blob.exists():
-            return None
         raw = blob.download_as_text(encoding="utf-8")
         data = json.loads(raw)
         return data if isinstance(data, dict) else None
@@ -1233,13 +1231,20 @@ def _load_recent_dds_presence(
     dds_photos_by_day: dict[str, dict[str, Any]] = {day: {} for day in recent_days}
     days_with_any_dds: set[str] = set()
 
-    for day in recent_days:
-        entry = _load_day_presence_with_cache(
+    from concurrent.futures import ThreadPoolExecutor
+
+    def load_day(day):
+        return day, _load_day_presence_with_cache(
             day,
             mutable_days=mutable_days,
             calendar_days=calendar_days,
             manual_refresh=manual_refresh,
         )
+
+    with ThreadPoolExecutor(max_workers=min(len(recent_days), 20)) as executor:
+        results = list(executor.map(load_day, recent_days))
+
+    for day, entry in results:
         present_by_day[day] = set(entry.get("present") or set())
         dds_timestamps_by_day[day] = dict(entry.get("team_timestamps") or {})
         dds_photos_by_day[day] = dict(entry.get("team_photos") or {})

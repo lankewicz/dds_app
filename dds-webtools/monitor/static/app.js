@@ -183,7 +183,7 @@ function renderActivityFeed(items = []) {
 async function loadActivityFeed() {
   if (!activityFeedPanel || getViewMode() === 'trash') return;
   const empresa = getEmpresaValue();
-  
+
   const initialCached = getLocalFeedCache(empresa);
   if (initialCached.length > 0) {
     renderActivityFeed(initialCached);
@@ -280,7 +280,7 @@ function fillConfigForm(config) {
   if (cfgAlertaVermelhoMin) cfgAlertaVermelhoMin.value = rules.alertaVermelhoMin ?? '';
   if (cfgAlertaPiscoMin) cfgAlertaPiscoMin.value = rules.alertaPiscoMin ?? '';
   if (cfgFechadoViraDesatualizadoHoras) {
-      cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
+    cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
   }
   if (cfgDesatualizadoCriticoHoras) cfgDesatualizadoCriticoHoras.value = rules.desatualizadoCriticoHoras ?? '';
   if (cfgPollingSeconds) cfgPollingSeconds.value = config?.pollingSeconds ?? '';
@@ -623,28 +623,28 @@ function tile(item) {
   const badgeHtml = art66Active
     ? `<div class="critical art66Badge"><div class="art66Line1">${badgeLabel}</div>${isBeforeSeven ? '' : `<div class="art66Line2">até ${escapeHtml(art66EndLabel)}</div>`}</div>`
     : (crit ? `<div class="critical">CRÍTICO</div>` : ``);
-  
+
   // Lógica de Mensagens Global por Setor (Estratégia 4)
   const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
   const unreadMap = item.unreadMap || {};
-  
+
   let unreadCurrent = 0;
   if (currentSector === 'TODOS') {
-      unreadCurrent = Object.values(unreadMap).reduce((a, b) => a + b, 0);
+    unreadCurrent = Object.values(unreadMap).reduce((a, b) => a + b, 0);
   } else {
-      unreadCurrent = Number(unreadMap[currentSector] || 0);
+    unreadCurrent = Number(unreadMap[currentSector] || 0);
   }
-  
+
   const totalUnread = Object.values(unreadMap).reduce((a, b) => a + b, 0);
   const hasOthers = totalUnread > unreadCurrent;
 
   let messageIconHtml = "";
   if (totalUnread > 0) {
     const iconClass = unreadCurrent > 0 ? "tileMessageIcon active" : "tileMessageIcon others";
-    const title = unreadCurrent > 0 
+    const title = unreadCurrent > 0
       ? `${unreadCurrent} mensagens para seu setor (${currentSector})`
       : `Mensagens pendentes para outros setores`;
-      
+
     messageIconHtml = `
       <div class="${iconClass}" title="${escapeHtml(title)}">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
@@ -665,7 +665,7 @@ function tile(item) {
   ` : '';
 
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
- 
+
   const lastContactLabel = fmtLastContact(item.lastContact, item.lastContactSource);
   const isTrash = getViewMode() === 'trash';
   const trashActions = isTrash ? `
@@ -675,6 +675,26 @@ function tile(item) {
     </div>
   ` : '';
 
+  const typeIcons = {
+    'STC': '/static/img/stc_small.jpg',
+    'STC_CESTO': '/static/img/stc_cesto_small.jpg',
+    'LINHA_VIVA': '/static/img/linha_viva_small.jpg',
+    'ROCADA': '/static/img/rocada_small.jpg',
+    'CONSTRUCAO': '/static/img/construcao_small.jpg',
+    'EP': '/static/img/ep_small.jpg'
+  };
+
+  let teamTypeIconHtml = '';
+  if (item.teamType) {
+    if (typeIcons[item.teamType]) {
+      teamTypeIconHtml = `<img class="teamTypeBadgeIcon" src="${typeIcons[item.teamType]}" loading="lazy" alt="${escapeHtml(item.teamType)}" />`;
+    } else {
+      teamTypeIconHtml = `<div class="teamTypeBadgeIcon emojiIcon" title="Sem Definição">🚫</div>`;
+    }
+  } else {
+    teamTypeIconHtml = `<div class="teamTypeBadgeIcon emojiIcon" title="Sem Definição">🚫</div>`;
+  }
+
   return `<article class="tile ${stateCard} ${border} ${isTrash ? 'isTrashTile' : ''}" tabindex="0" role="button" data-team="${escapeHtml(teamKey)}" aria-label="Equipe ${escapeHtml(equipe)}, status ${escapeHtml(statusLabel)}">
     ${badgeHtml}
     ${messageIconHtml}
@@ -683,6 +703,7 @@ function tile(item) {
         <div class="tileIdentity">
           <div class="tileTitleBlock tileTitleBlockFull">
             <div class="teamIdentityBadge" title="${escapeHtml(equipe)}">
+              ${teamTypeIconHtml}
               <div class="equipeCompact equipeCompactInline">${escapeHtml(equipe)}</div>
             </div>
             ${isTrash ? '' : `
@@ -700,7 +721,7 @@ function tile(item) {
         <div class="tileContactRow">
            <span class="contactLabel">Último Contato:</span>
            <span class="contactValue">${escapeHtml(lastContactLabel)}</span>
-        </div>
+         </div>
         ${ddsRow}
       `}
     </div>
@@ -709,6 +730,7 @@ function tile(item) {
       <div class="tileHoverTop">
         <div class="tileHoverTitles">
           <div class="teamIdentityBadge teamIdentityBadgeHover" title="${escapeHtml(equipe)}">
+            ${teamTypeIconHtml}
             <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
           </div>
           <div class="badge badgeCompact">${escapeHtml(stateLabel(shown))}</div>
@@ -760,8 +782,8 @@ function applyFilters(items) {
     const matchesKpi =
       !kpiFilter ||
       (kpiFilter === "ALERTA" ? activeAlertFilter(it) :
-       kpiFilter === "DDS_OK" ? it.ddsToday === "ok" :
-       shown === kpiFilter);
+        kpiFilter === "DDS_OK" ? it.ddsToday === "ok" :
+          shown === kpiFilter);
     return matchesText && matchesTeam && matchesKpi;
   });
 }
@@ -770,13 +792,13 @@ function renderKpis(items) {
   const counts = { ABERTO: 0, INTERVALO: 0, DESLOCAMENTO_ESPECIAL: 0, FECHADO: 0, DESATUALIZADO: 0, DESCONHECIDO: 0, ALERTA: 0 };
   let ddsOk = 0;
   let ddsTotal = 0;
-  
+
   (items || []).forEach((it) => {
     const st = normalizedState(it.estado);
     if (counts[st] !== undefined) counts[st]++;
     const alerta = safeUpper(it.alerta);
     if (alerta === "YELLOW" || alerta === "RED" || alerta === "PULSE") counts.ALERTA++;
-    
+
     if (it.ddsToday === "ok") {
       ddsOk++;
       ddsTotal++;
@@ -865,43 +887,43 @@ window.monitorState = {
 function syncRealtimeData() {
   const mode = getViewMode();
   if (mode === 'trash') return; // Lixeira ainda usa fetch normal
-  
+
   // Applica os filtros em cima da memória (allRealtimeItems)
   const isInactiveMode = mode === 'inactive';
-  
+
   // Estágio 1: Filtros de texto, equipe e ativo/inativo (usados para a contagem de KPIs)
   const baseFiltered = allRealtimeItems.filter(item => {
-      // 1. Filtro de Ativa/Inativa
-      const itemActive = item.active !== false; // Padrão é true
-      if (isInactiveMode && itemActive) return false;
-      if (!isInactiveMode && !itemActive) return false;
-      
-      // O Filtro de Setor (TIPO) agora é apenas para mensagens e requisições.
-      // As equipes aparecem globais para todos os setores conforme solicitado.
-      
-      // 3. Filtros de Pesquisa e KPI (já existentes)
-      const q = safeUpper(searchInput.value);
-      const selectedTeam = safeUpper(teamSelect?.value);
-      
-      const eq = safeUpper(item.equipe);
-      const teamKey = safeUpper(item.teamKey || item.equipe);
-      
-      const matchesText = !q || eq.includes(q) || teamKey.includes(q);
-      const matchesTeam = !selectedTeam || teamKey === selectedTeam;
-      
-      return matchesText && matchesTeam;
+    // 1. Filtro de Ativa/Inativa
+    const itemActive = item.active !== false; // Padrão é true
+    if (isInactiveMode && itemActive) return false;
+    if (!isInactiveMode && !itemActive) return false;
+
+    // O Filtro de Setor (TIPO) agora é apenas para mensagens e requisições.
+    // As equipes aparecem globais para todos os setores conforme solicitado.
+
+    // 3. Filtros de Pesquisa e KPI (já existentes)
+    const q = safeUpper(searchInput.value);
+    const selectedTeam = safeUpper(teamSelect?.value);
+
+    const eq = safeUpper(item.equipe);
+    const teamKey = safeUpper(item.teamKey || item.equipe);
+
+    const matchesText = !q || eq.includes(q) || teamKey.includes(q);
+    const matchesTeam = !selectedTeam || teamKey === selectedTeam;
+
+    return matchesText && matchesTeam;
   });
 
   // Estágio 2: Filtro de KPI (para determinar os cards exibidos)
   const kpiFilter = normalizeKpiFilter(activeKpiFilter);
   const filtered = baseFiltered.filter(item => {
-      const shown = normalizedState(item.estado);
-      const matchesKpi = !kpiFilter || (
-        kpiFilter === "ALERTA" ? activeAlertFilter(item) :
+    const shown = normalizedState(item.estado);
+    const matchesKpi = !kpiFilter || (
+      kpiFilter === "ALERTA" ? activeAlertFilter(item) :
         kpiFilter === "DDS_OK" ? item.ddsToday === "ok" :
-        shown === kpiFilter
-      );
-      return matchesKpi;
+          shown === kpiFilter
+    );
+    return matchesKpi;
   });
 
   currentItems = filtered;
@@ -911,13 +933,13 @@ function syncRealtimeData() {
 function startPolling() {
   if (pollingTimer) clearInterval(pollingTimer);
   if (countdownTimer) clearInterval(countdownTimer);
-  
+
   if (typeof unsubMonitor === 'function') {
-    try { unsubMonitor(); } catch(e) { console.warn("Erro ao desinscrever:", e); }
+    try { unsubMonitor(); } catch (e) { console.warn("Erro ao desinscrever:", e); }
     unsubMonitor = null;
   }
   if (typeof unsubActivityFeed === 'function') {
-    try { unsubActivityFeed(); } catch(e) { console.warn("Erro ao desinscrever activity feed:", e); }
+    try { unsubActivityFeed(); } catch (e) { console.warn("Erro ao desinscrever activity feed:", e); }
     unsubActivityFeed = null;
   }
 
@@ -925,7 +947,7 @@ function startPolling() {
   triggerFullDailyReset();
 
   const empresa = getEmpresaValue();
-  
+
   const mode = getViewMode();
   if (mode === 'trash') {
     // A lixeira ainda usa fetch normal
@@ -940,7 +962,7 @@ function startPolling() {
     pollingTimer = setInterval(() => {
       load({ forceRefresh: true });
     }, safeSeconds * 1000);
-    
+
     countdownTimer = setInterval(() => {
       setRefreshInfo();
     }, 1000);
@@ -1014,7 +1036,7 @@ function startPolling() {
 let uiSyncTimeout = null;
 function requestUiSync() {
   if (uiSyncTimeout) return; // Já existe uma atualização agendada
-  
+
   uiSyncTimeout = setTimeout(() => {
     syncRealtimeData();
     uiSyncTimeout = null;
@@ -1033,7 +1055,7 @@ function recalculateLocalAlerts() {
 
     const diffMins = Math.floor((now - updated) / 60000);
     let novoAlerta = "";
-    
+
     if (diffMins >= cfg.rules.alertaPiscoMin) novoAlerta = "PULSE";
     else if (diffMins >= cfg.rules.alertaVermelhoMin) novoAlerta = "RED";
     else if (diffMins >= cfg.rules.alertaAmareloMin) novoAlerta = "YELLOW";
@@ -1108,7 +1130,7 @@ async function loadDdsBackground(forceRefresh = false) {
 async function load(options = {}) {
   const forceRefresh = options.forceRefresh || false;
   const refreshSpinner = document.getElementById('refreshSpinner');
-  
+
   if (forceRefresh) {
     if (refreshBtn) refreshBtn.disabled = true;
     if (refreshSpinner) refreshSpinner.hidden = false;
@@ -1118,13 +1140,13 @@ async function load(options = {}) {
   const qs = new URLSearchParams();
   if (empresa) qs.set('empresa', empresa);
   qs.set('active', getActiveFilterValue());
-  
+
   const sectorSelector = document.getElementById('sectorSelector');
   const selectedSector = sectorSelector ? sectorSelector.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
   if (selectedSector) qs.set('setor', selectedSector);
 
   if (forceRefresh) qs.set('refresh', 'manual');
-  
+
   const mode = getViewMode();
   let url = `/api/turnos?${qs.toString()}`;
   if (mode === 'trash') {
@@ -1132,13 +1154,13 @@ async function load(options = {}) {
   }
 
   if (!forceRefresh) {
-     showSkeleton();
+    showSkeleton();
   }
 
   try {
     const r = await fetch(url, { cache: 'no-store' });
     const data = await r.json();
-    
+
     if (mode === 'trash') {
       const teamsMap = data || {};
       const items = Object.values(teamsMap).map(t => ({
@@ -1183,12 +1205,12 @@ function updateSingleTeamCard(item) {
   if (!card) return;
 
   const coreData = JSON.stringify({
-      st: item.estado,
-      al: item.alerta,
-      cr: item.critico,
-      ss: item.ss,
-      msg: item.unreadMap,
-      dds: (item.ddsHistory || []).slice(-1)[0]
+    st: item.estado,
+    al: item.alerta,
+    cr: item.critico,
+    ss: item.ss,
+    msg: item.unreadMap,
+    dds: (item.ddsHistory || []).slice(-1)[0]
   });
 
   const oldCore = card.dataset.core;
@@ -1198,9 +1220,9 @@ function updateSingleTeamCard(item) {
   const html = tile(item);
   const flashClass = ' flash-update';
   const order = card.style.order || '0';
-  
+
   card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${order}" data-core='${coreData}' class="tile${flashClass}`);
-  
+
   const newCard = document.getElementById(cardId);
   if (newCard) {
     newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
@@ -1208,104 +1230,104 @@ function updateSingleTeamCard(item) {
 }
 
 function renderData(items, meta, kpiSourceItems) {
-    if (skeletonGrid) skeletonGrid.classList.add('hidden');
-    if (grid) grid.classList.remove('hidden');
-    
-    if (empresaLabel) empresaLabel.textContent = meta.empresa || '-';
-    lastSync.textContent = `Atualizado: ${fmtTimeOnly(meta.serverTime)}`;
-    lastData = meta;
-    
-    syncTeamSelect(items);
-    currentItems = items;
-    
-    if (getViewMode() !== 'trash') {
-        renderKpis(kpiSourceItems || items);
-        kpis.hidden = false;
+  if (skeletonGrid) skeletonGrid.classList.add('hidden');
+  if (grid) grid.classList.remove('hidden');
+
+  if (empresaLabel) empresaLabel.textContent = meta.empresa || '-';
+  lastSync.textContent = `Atualizado: ${fmtTimeOnly(meta.serverTime)}`;
+  lastData = meta;
+
+  syncTeamSelect(items);
+  currentItems = items;
+
+  if (getViewMode() !== 'trash') {
+    renderKpis(kpiSourceItems || items);
+    kpis.hidden = false;
+  } else {
+    kpis.hidden = true;
+  }
+
+  renderTeamCount(currentItems);
+
+  if (!currentItems.length) {
+    grid.innerHTML = `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
+    return;
+  }
+
+  // RENDERIZAÇÃO INCREMENTAL:
+  // Em vez de limpar o grid, vamos atualizar apenas os cards que mudaram.
+  const container = grid;
+  const existingIds = new Set();
+
+  currentItems.forEach((item, index) => {
+    const teamKey = item.teamKey || item.equipe;
+    const cardId = `card-${teamKey.replace(/[^\w]/g, '_')}`;
+    existingIds.add(cardId);
+
+    let card = document.getElementById(cardId);
+    const html = tile(item);
+
+    // Dados vitais para decidir se deve 'piscar' (ignora relógio)
+    const coreData = JSON.stringify({
+      st: item.estado,
+      al: item.alerta,
+      cr: item.critico,
+      ss: item.ss,
+      msg: item.unreadMap,
+      dds: (item.ddsHistory || []).slice(-1)[0]
+    });
+
+    if (!card) {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      card = temp.firstElementChild;
+      card.id = cardId;
+      card.dataset.core = coreData;
+      card.style.order = index;
+      card.addEventListener('mouseenter', () => syncHoverPlacement(card));
+      container.appendChild(card);
     } else {
-        kpis.hidden = true;
+      const oldCore = card.dataset.core;
+      const hasChanged = oldCore !== coreData;
+
+      // Sempre atualiza o HTML para manter o relógio fresco, 
+      // mas só aplica o 'flash-update' se o dado vital mudou
+      const flashClass = hasChanged ? ' flash-update' : '';
+      card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${index}" data-core='${coreData}' class="tile${flashClass}`);
+
+      const newCard = document.getElementById(cardId);
+      if (newCard) newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
     }
-    
-    renderTeamCount(currentItems);
+  });
 
-    if (!currentItems.length) {
-      grid.innerHTML = `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
-      return;
+  // Remove cards que não estão mais na lista filtrada
+  Array.from(container.children).forEach(child => {
+    if (child.id && child.id.startsWith('card-') && !existingIds.has(child.id)) {
+      container.removeChild(child);
     }
+  });
 
-    // RENDERIZAÇÃO INCREMENTAL:
-    // Em vez de limpar o grid, vamos atualizar apenas os cards que mudaram.
-    const container = grid;
-    const existingIds = new Set();
+  if (window.teamForm?.refreshOpenTeam) {
+    const openTeamKey = window.teamForm.getOpenTeamKey?.();
+    if (openTeamKey) window.teamForm.refreshOpenTeam(findItem(openTeamKey));
+  }
 
-    currentItems.forEach((item, index) => {
-        const teamKey = item.teamKey || item.equipe;
-        const cardId = `card-${teamKey.replace(/[^\w]/g, '_')}`;
-        existingIds.add(cardId);
-
-        let card = document.getElementById(cardId);
-        const html = tile(item);
-
-        // Dados vitais para decidir se deve 'piscar' (ignora relógio)
-        const coreData = JSON.stringify({
-            st: item.estado,
-            al: item.alerta,
-            cr: item.critico,
-            ss: item.ss,
-            msg: item.unreadMap,
-            dds: (item.ddsHistory || []).slice(-1)[0]
-        });
-
-        if (!card) {
-            const temp = document.createElement('div');
-            temp.innerHTML = html;
-            card = temp.firstElementChild;
-            card.id = cardId;
-            card.dataset.core = coreData;
-            card.style.order = index;
-            card.addEventListener('mouseenter', () => syncHoverPlacement(card));
-            container.appendChild(card);
-        } else {
-            const oldCore = card.dataset.core;
-            const hasChanged = oldCore !== coreData;
-            
-            // Sempre atualiza o HTML para manter o relógio fresco, 
-            // mas só aplica o 'flash-update' se o dado vital mudou
-            const flashClass = hasChanged ? ' flash-update' : '';
-            card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${index}" data-core='${coreData}' class="tile${flashClass}`);
-            
-            const newCard = document.getElementById(cardId);
-            if (newCard) newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
-        }
-    });
-
-    // Remove cards que não estão mais na lista filtrada
-    Array.from(container.children).forEach(child => {
-        if (child.id && child.id.startsWith('card-') && !existingIds.has(child.id)) {
-            container.removeChild(child);
-        }
-    });
-    
-    if (window.teamForm?.refreshOpenTeam) {
-      const openTeamKey = window.teamForm.getOpenTeamKey?.();
-      if (openTeamKey) window.teamForm.refreshOpenTeam(findItem(openTeamKey));
-    }
-    
-    const globalMessagesBadge = document.getElementById('globalMessagesBadge');
-    if (globalMessagesBadge) {
-      const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
-      const totalUnread = items.reduce((acc, it) => {
-        const unreadMap = it.unreadMap || {};
-        if (currentSector === 'TODOS') {
-          return acc + Object.values(unreadMap).reduce((a, b) => a + b, 0);
-        }
-        return acc + (Number(unreadMap[currentSector]) || 0);
-      }, 0);
-      globalMessagesBadge.textContent = totalUnread;
-      globalMessagesBadge.hidden = totalUnread === 0;
-    }
+  const globalMessagesBadge = document.getElementById('globalMessagesBadge');
+  if (globalMessagesBadge) {
+    const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
+    const totalUnread = items.reduce((acc, it) => {
+      const unreadMap = it.unreadMap || {};
+      if (currentSector === 'TODOS') {
+        return acc + Object.values(unreadMap).reduce((a, b) => a + b, 0);
+      }
+      return acc + (Number(unreadMap[currentSector]) || 0);
+    }, 0);
+    globalMessagesBadge.textContent = totalUnread;
+    globalMessagesBadge.hidden = totalUnread === 0;
+  }
 }
 
-window.restoreTeam = async function(teamKey) {
+window.restoreTeam = async function (teamKey) {
   if (!confirm(`Deseja restaurar a equipe ${teamKey}?`)) return;
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/trash`, { method: 'DELETE' });
@@ -1316,7 +1338,7 @@ window.restoreTeam = async function(teamKey) {
   }
 };
 
-window.deleteTeamPermanent = async function(teamKey) {
+window.deleteTeamPermanent = async function (teamKey) {
   if (!confirm(`ATENÇÃO: Deseja excluir PERMANENTEMENTE a equipe ${teamKey} e TODO o histórico dela? Esta ação não pode ser desfeita.`)) return;
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/permanent`, { method: 'DELETE' });
@@ -1335,7 +1357,7 @@ window.deleteTeamPermanent = async function(teamKey) {
   }
 };
 
-window.toggleTeamActive = async function(teamKey, active) {
+window.toggleTeamActive = async function (teamKey, active) {
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/active?active=${active}`, { method: 'PATCH' });
     if (r.ok) await load();
@@ -1349,21 +1371,21 @@ window.toggleTeamActive = async function(teamKey, active) {
 };
 
 let pendingTrashTeamKey = null;
-window.openTrashConfirmation = async function(teamKey) {
+window.openTrashConfirmation = async function (teamKey) {
   pendingTrashTeamKey = teamKey;
   const modal = document.getElementById('trashConfirmModal');
   const backdrop = document.getElementById('trashConfirmModalBackdrop');
-  
+
   // Limpa estado anterior
   document.getElementById('trashTeamName').textContent = teamKey;
   document.getElementById('trashMembersCount').textContent = '...';
   document.getElementById('trashDdsCount').textContent = '...';
   document.getElementById('trashHistoryCount').textContent = '...';
-  
+
   modal.hidden = false;
   backdrop.hidden = false;
   document.body.classList.add('modalOpen');
-  
+
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/trash-preview`);
     const data = await r.json();
@@ -1393,7 +1415,7 @@ document.getElementById('trashConfirmExecute')?.addEventListener('click', async 
   const btn = document.getElementById('trashConfirmExecute');
   btn.disabled = true;
   btn.textContent = 'Movendo...';
-  
+
   try {
     const r = await fetch(`/api/teams/${encodeURIComponent(pendingTrashTeamKey)}/trash`, { method: 'POST' });
     if (r.ok) {
@@ -1467,16 +1489,16 @@ kpis.addEventListener('click', (event) => {
   }
 
   syncKpiSelection();
-  
+
   // O usuário solicitou que ao trocar o status (mesmo em memória), mostre o skeleton
   showSkeleton();
-  
+
   // Pequeno delay apenas para o skeleton ser visível e dar sensação de "processamento"
   // e satisfazer o requisito visual do usuário.
   setTimeout(() => {
     syncRealtimeData();
   }, 150);
-  
+
   event.stopPropagation();
 });
 
@@ -1508,27 +1530,27 @@ function initNavigation() {
     tab.addEventListener('click', async (e) => {
       try {
         const href = tab.getAttribute('href') || '';
-        const newMode = href.includes('inativas') ? 'inactive' : 
-                        href.includes('lixeira') ? 'trash' : 'active';
+        const newMode = href.includes('inativas') ? 'inactive' :
+          href.includes('lixeira') ? 'trash' : 'active';
         const oldMode = getViewMode();
-        
+
         if (newMode === oldMode) return;
 
         e.preventDefault();
-        
+
         // 1. Atualiza a URL sem recarregar
         history.pushState({ mode: newMode }, '', tab.href);
-        
+
         // 2. Atualiza o estado visual
         document.body.setAttribute('data-team-view', newMode);
         document.querySelectorAll('.viewTab').forEach(t => t.classList.remove('isActive'));
         tab.classList.add('isActive');
-        
+
         // 3. Atualiza o título da página
         const pageTitle = document.querySelector('.h1');
         if (pageTitle) {
-            pageTitle.textContent = newMode === 'inactive' ? 'Equipes Inativas' : 
-                                   newMode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
+          pageTitle.textContent = newMode === 'inactive' ? 'Equipes Inativas' :
+            newMode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
         }
 
         // 4. Limpa a lista atual imediatamente (mostra skeleton) para feedback instantâneo
@@ -1538,9 +1560,9 @@ function initNavigation() {
         // Se for apenas troca entre Ativas/Inativas, e já temos o listener e dados, basta filtrar em memória.
         // Se allRealtimeItems estiver vazio, forçamos o reinício para garantir a carga.
         if (newMode !== 'trash' && oldMode !== 'trash' && typeof unsubMonitor === 'function' && allRealtimeItems.length > 0) {
-            syncRealtimeData();
+          syncRealtimeData();
         } else {
-            startPolling();
+          startPolling();
         }
       } catch (err) {
         console.error("Erro na navegação dinâmica:", err);
@@ -1563,7 +1585,7 @@ function initNavigation() {
 function triggerFullDailyReset() {
   const lastReset = localStorage.getItem('dds_monitor_last_reset_day');
   const today = new Date().toISOString().split('T')[0];
-  
+
   if (lastReset && lastReset !== today) {
     console.log("[DailyReset] Virada de dia detectada. Forçando recriação do cache.");
     load({ forceRefresh: true });
@@ -1634,7 +1656,7 @@ function showDdsPhotoModal(photoUrl) {
     img.style.cursor = "default";
     img.style.transition = "transform 0.2s ease";
     img.style.transform = "scale(0.95)";
-    
+
     img.addEventListener("click", (e) => e.stopPropagation());
 
     const closeBtn = document.createElement("button");
@@ -1648,7 +1670,7 @@ function showDdsPhotoModal(photoUrl) {
     closeBtn.style.fontSize = "48px";
     closeBtn.style.cursor = "pointer";
     closeBtn.style.lineHeight = "1";
-    
+
     closeBtn.addEventListener("mouseenter", () => closeBtn.style.color = "#fff");
     closeBtn.addEventListener("mouseleave", () => closeBtn.style.color = "rgba(255, 255, 255, 0.8)");
 
@@ -1668,7 +1690,7 @@ function showDdsPhotoModal(photoUrl) {
 
   const img = document.getElementById("ddsPhotoModalImg");
   const loader = document.getElementById("ddsPhotoModalLoader");
-  
+
   // Oculta a imagem anterior e exibe o loader
   img.style.display = "none";
   if (loader) loader.style.display = "block";
@@ -1682,7 +1704,7 @@ function showDdsPhotoModal(photoUrl) {
   };
 
   img.src = photoUrl;
-  
+
   modal.style.display = "flex";
   // Forçar reflow
   modal.offsetHeight;

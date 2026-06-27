@@ -111,12 +111,26 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error stopping background listener: {e}")
 
+class CacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        # JS e CSS são versionados por parâmetro, então podem ter cache longo
+        if path.endswith((".js", ".css")):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # Imagens, favicons, etc. têm cache de 1 dia para evitar retenção de updates
+            response.headers["Cache-Control"] = "public, max-age=86400"
+        return response
+
 app = FastAPI(title=APP_TITLE, lifespan=lifespan)
 
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Static files for Monitor
-app.mount("/static", StaticFiles(directory=os.path.join(base_dir, "monitor", "static")), name="static_monitor")
+app.mount("/static", CacheStaticFiles(directory=os.path.join(base_dir, "monitor", "static")), name="static_monitor")
 # Static files for Controle de Projetos
-app.mount("/controle-projetos/static", StaticFiles(directory=os.path.join(base_dir, "controle_projetos", "static")), name="static_controle_projetos")
+app.mount("/controle-projetos/static", CacheStaticFiles(directory=os.path.join(base_dir, "controle_projetos", "static")), name="static_controle_projetos")
 
 # Modifica o Flask app para não usar prefixo se estivermos montando em /admin
 # O Flask app_bp já tem url_prefix='/admin', então se montarmos o WSGI no '/', ele pega '/admin'

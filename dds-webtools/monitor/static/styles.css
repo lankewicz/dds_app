@@ -2827,3 +2827,27 @@ button:disabled {
   }
 }
 
+/* Team Type Badge Icon (Top Left overlap style) */
+.teamTypeBadgeIcon {
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+  background-color: #1e293b;
+}
+
+.teamTypeBadgeIcon.emojiIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+

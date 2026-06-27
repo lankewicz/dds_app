@@ -269,6 +269,7 @@
             <td style="text-align:right;">
                <div style="display:flex; justify-content: flex-end; gap: 8px;">
                  <button class="btn-icon" title="Visualizar Apresentação" onclick="openPreview('{{ f.folderId }}', '{{ f.subject }}')">👁️</button>
+                 <a class="btn-icon" href="{{ url_for('admin.explorer_download', folderId=f.folderId) }}" title="Baixar Treinamento">📥</a>
                  
                  <form method="post" action="{{ url_for('admin.session_delete') }}" style="display:inline;" onsubmit="return confirm('Excluir esta pasta permanentemente do Storage?')">
                     <input type="hidden" name="type" value="{{ f.type }}">

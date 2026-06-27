@@ -210,7 +210,7 @@ function setEquipmentFormNotice(message = '', kind = 'info') {
 function updateHeader(item, teamKey) {
   const frameCls = vehicleFrameClass(item?.estado);
   const teamTypeLabels = {
-    'STC': 'STC (NR-10)',
+    'STC': 'STC',
     'STC_CESTO': 'STC - CESTO',
     'EP': 'EP (Manutenção)',
     'LINHA_VIVA': 'Linha Viva',
@@ -221,8 +221,32 @@ function updateHeader(item, teamKey) {
   const typeSuffix = typeLabel ? ` - ${typeLabel}` : '';
   const titleText = (item?.equipe && item.equipe !== teamKey ? `${item.equipe} (${teamKey})` : (item?.equipe || teamKey || 'Equipe')) + typeSuffix;
   const empresa = state().getEmpresa ? state().getEmpresa() : '';
+  
+  const typeIcons = {
+    'STC': '/static/img/stc_small.jpg',
+    'STC_CESTO': '/static/img/stc_cesto_small.jpg',
+    'LINHA_VIVA': '/static/img/linha_viva_small.jpg',
+    'ROCADA': '/static/img/rocada_small.jpg',
+    'CONSTRUCAO': '/static/img/construcao_small.jpg',
+    'EP': '/static/img/ep_small.jpg'
+  };
+
   teamFormVehicle.className = `modalVehicle ${frameCls}`;
-  teamFormVehicle.textContent = '🚚';
+  teamFormVehicle.style.fontSize = '';
+  teamFormVehicle.innerHTML = '';
+  
+  if (item?.teamType) {
+    if (typeIcons[item.teamType]) {
+      teamFormVehicle.innerHTML = `<img src="${typeIcons[item.teamType]}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 14px;" alt="${item.teamType}" />`;
+    } else {
+      teamFormVehicle.textContent = '🚫';
+      teamFormVehicle.style.fontSize = '24px';
+    }
+  } else {
+    teamFormVehicle.textContent = '🚫';
+    teamFormVehicle.style.fontSize = '24px';
+  }
+
   teamFormTitle.textContent = titleText;
   teamFormSubtitle.textContent = empresa ? `Empresa ${empresa}` : 'Cadastro e situação atual do turno';
 }
