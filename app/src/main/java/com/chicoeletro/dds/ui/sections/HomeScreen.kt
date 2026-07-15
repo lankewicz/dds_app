@@ -246,7 +246,7 @@ fun HomeCard(
                     // Top part: Logo only
                     Box(
                         modifier = Modifier
-                            .weight(1.8f)
+                            .weight(2f)
                             .fillMaxWidth()
                             .padding(top = topPadding, start = 8.dp, end = 8.dp, bottom = 8.dp),
                         contentAlignment = Alignment.Center
@@ -264,7 +264,7 @@ fun HomeCard(
                     // Bottom part: Status Bar with Markers (KPI) and Frequency Label inside
                     Column(
                         modifier = Modifier
-                            .weight(1.2f)
+                            .weight(1f)
                             .fillMaxWidth()
                             .background(Color(0xFFE5E7EB))
                             .padding(vertical = 4.dp),
