@@ -128,7 +128,7 @@ fun HomeScreen(
         )
     )
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F7FA))) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFE2E8F0))) {
         val isCompactHeight = maxHeight < 550.dp
         val spacing = if (isCompactHeight) 8.dp else 16.dp
         val iconSize = if (isCompactHeight) 40.dp else 72.dp
