@@ -83,7 +83,7 @@ fun HomeScreen(
     }
 
     val options = listOf(
-        HomeOption("KPI", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
+        HomeOption("DDS", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
         HomeOption(
             title = "TURNO",
             icon = Icons.Default.AccessTime,
