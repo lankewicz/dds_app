@@ -282,12 +282,6 @@ fun HomeCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Último Tópico",
-                                fontSize = subtitleSize,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
                                 text = "Frequência: Semanal",
                                 fontSize = subtitleSize,
                                 fontWeight = FontWeight.SemiBold,
@@ -305,7 +299,7 @@ fun HomeCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(Color(0xFFE5E7EB), RoundedCornerShape(20.dp))
-                                    .padding(vertical = 6.dp, horizontal = 12.dp),
+                                    .padding(top = 8.dp, bottom = 5.dp, start = 12.dp, end = 12.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Row(
