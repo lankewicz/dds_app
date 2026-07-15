@@ -83,7 +83,7 @@ fun HomeScreen(
     }
 
     val options = listOf(
-        HomeOption("LPI", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
+        HomeOption("KPI", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
         HomeOption(
             title = "TURNO",
             icon = Icons.Default.AccessTime,
@@ -102,7 +102,7 @@ fun HomeScreen(
                 EstadoTurno.DESLOCAMENTO_ESPECIAL -> Color(0xFF1976D2)
             }
         ),
-        HomeOption("DESEMPENHO DA PRODUÇÃO", icon = Icons.Default.BarChart, color = Color(0xFFF57C00), onClick = onProducaoClick),
+        HomeOption("PRODUÇÃO", icon = Icons.Default.BarChart, color = Color(0xFFF57C00), onClick = onProducaoClick),
         HomeOption(
             title = "MINHAS MENSAGENS", 
             icon = Icons.AutoMirrored.Filled.Chat, 
@@ -112,14 +112,14 @@ fun HomeScreen(
             subtitleColor = if (unreadIncomingCount > 0) Color(0xFF7B1FA2) else null
         ),
         HomeOption(
-            title = "HISTÓRICO DE ABASTECIMENTO", 
+            title = "ABASTECIMENTO", 
             icon = Icons.Default.LocalGasStation, 
             color = Color(0xFFD32F2F), 
             onClick = onAbastecimentoClick,
             subtitle = "Recente: 18,06 - Uso: 38,39"
         ),
         HomeOption(
-            title = if (equipe.isNotBlank()) "COLABORADOR: ${equipe.uppercase()}" else "DEFINIR EQUIPE",
+            title = if (equipe.isNotBlank()) equipe.uppercase() else "DEFINIR EQUIPE",
             icon = teamIcon,
             iconResId = teamIconResId,
             color = teamColor,
@@ -204,7 +204,7 @@ fun HomeCard(
     motorista: String? = null,
     coringas: List<String> = emptyList()
 ) {
-    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA" || option.title == "LPI"
+    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA" || option.title == "LPI" || option.title == "KPI"
     val isTurnoCard = option.title == "Turno" || option.title == "ESTADO DO TURNO" || option.title == "TURNO"
     val context = LocalContext.current
     val isMensagensOrAbastecimento = option.title == "Mensagens" || option.title == "Abastecimento" || 
@@ -290,7 +290,7 @@ fun HomeCard(
                         if (participationDays.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(if (isCompactHeight) 1.dp else 2.dp))
                             
-                            val last15Days = participationDays
+                            val daysToDisplay = participationDays
                              val sphereSize = if (isCompactHeight) 11.dp else 14.dp
                              val isSelectedSize = if (isCompactHeight) 14.dp else 16.dp
                             val dayFontSize = if (isCompactHeight) 6.sp else 8.sp
@@ -300,7 +300,7 @@ fun HomeCard(
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.Top
                             ) {
-                                last15Days.forEach { day ->
+                                daysToDisplay.forEach { day ->
                                     val gradientColors = when {
                                         day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
                                         day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))

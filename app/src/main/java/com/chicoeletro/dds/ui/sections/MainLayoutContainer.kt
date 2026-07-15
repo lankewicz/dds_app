@@ -1097,7 +1097,7 @@ fun MainLayoutContainer() {
                                         trainings = trainings,
                                         completedTrainingIds = trainingStatus.keys,
                                         today = LocalDate.now(),
-                                        numDays = 15
+                                        numDays = 7
                                     )
                                 }
                                 HomeScreen(
@@ -1264,7 +1264,7 @@ fun MainLayoutContainer() {
                                     trainings = trainings,
                                     completedTrainingIds = trainingStatus.keys,
                                     today = LocalDate.now(),
-                                    numDays = 15
+                                    numDays = 7
                                 )
                             }
                             HomeScreen(
