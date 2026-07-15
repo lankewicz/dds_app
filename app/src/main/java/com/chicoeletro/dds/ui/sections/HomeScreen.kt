@@ -252,10 +252,9 @@ fun HomeCard(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Logo takes ~72% of height (leaving enough space for title and presence info)
                     Box(
                         modifier = Modifier
-                            .weight(0.72f)
+                            .weight(0.65f)
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
@@ -269,72 +268,87 @@ fun HomeCard(
                         }
                     }
 
-                    // Remaining content (Title & Presence Bar) takes ~28% of height
                     Column(
                         modifier = Modifier
-                            .weight(0.28f)
-                            .fillMaxWidth(),
+                            .weight(0.35f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = option.title,
-                            fontSize = fontSize,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        
-                        if (participationDays.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(if (isCompactHeight) 1.dp else 2.dp))
-                            
-                            val daysToDisplay = participationDays
-                             val sphereSize = if (isCompactHeight) 16.dp else 21.dp
-                             val isSelectedSize = if (isCompactHeight) 21.dp else 24.dp
-                             val dayFontSize = if (isCompactHeight) 8.sp else 10.sp
+                        Row(
+                            modifier = Modifier.fillMaxWidth(0.96f),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Último Tópico",
+                                fontSize = subtitleSize,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Frequência: Semanal",
+                                fontSize = subtitleSize,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(0.98f),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.Top
+                        if (participationDays.isNotEmpty()) {
+                            val daysToDisplay = participationDays
+                            val sphereSize = if (isCompactHeight) 11.dp else 15.dp
+                            val isSelectedSize = if (isCompactHeight) 15.dp else 17.dp
+                            val dayFontSize = if (isCompactHeight) 7.sp else 8.sp
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFE5E7EB), RoundedCornerShape(20.dp))
+                                    .padding(vertical = 6.dp, horizontal = 12.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                daysToDisplay.forEach { day ->
-                                    val gradientColors = when {
-                                        day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
-                                        day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))
-                                        day.hasTraining -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B), Color(0xFFB45309))
-                                        else -> listOf(Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF334155))
-                                    }
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(1.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(if (day.isSelected) isSelectedSize else sphereSize)
-                                                .drawBehind {
-                                                    val radius = size.minDimension / 2
-                                                    val brush = Brush.radialGradient(
-                                                        colors = gradientColors,
-                                                        center = Offset(size.width * 0.3f, size.height * 0.3f),
-                                                        radius = size.minDimension * 0.75f
-                                                    )
-                                                    drawCircle(
-                                                        brush = brush,
-                                                        radius = radius,
-                                                        center = Offset(size.width / 2, size.height / 2)
-                                                    )
-                                                }
-                                        )
-                                        Text(
-                                            text = day.dayNumber.toString(),
-                                            fontSize = dayFontSize,
-                                            fontWeight = FontWeight.Normal,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            textAlign = TextAlign.Center
-                                        )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    daysToDisplay.forEach { day ->
+                                        val gradientColors = when {
+                                            day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
+                                            day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))
+                                            day.hasTraining -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B), Color(0xFFB45309))
+                                            else -> listOf(Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF334155))
+                                        }
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(if (day.isSelected) isSelectedSize else sphereSize)
+                                                    .drawBehind {
+                                                        val radius = size.minDimension / 2
+                                                        val brush = Brush.radialGradient(
+                                                            colors = gradientColors,
+                                                            center = Offset(size.width * 0.3f, size.height * 0.3f),
+                                                            radius = size.minDimension * 0.75f
+                                                        )
+                                                        drawCircle(
+                                                            brush = brush,
+                                                            radius = radius,
+                                                            center = Offset(size.width / 2, size.height / 2)
+                                                        )
+                                                    }
+                                            )
+                                            Text(
+                                                text = day.dayNumber.toString(),
+                                                fontSize = dayFontSize,
+                                                fontWeight = FontWeight.Normal,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
                                     }
                                 }
                             }
