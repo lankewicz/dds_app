@@ -130,7 +130,7 @@ fun HomeScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F7FA))) {
         val isCompactHeight = maxHeight < 550.dp
         val spacing = if (isCompactHeight) 8.dp else 16.dp
-        val iconSize = if (isCompactHeight) 40.dp else 56.dp
+        val iconSize = if (isCompactHeight) 40.dp else 72.dp
         val fontSize = if (isCompactHeight) 14.sp else 16.sp
         val subtitleSize = if (isCompactHeight) 10.sp else 12.sp
         val subtitleMaxLines = if (isCompactHeight) 1 else 3
@@ -239,53 +239,33 @@ fun HomeCard(
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val cardHeight = maxHeight
-
             if (isDdsCard) {
-                // DDS specific layout designed to occupy 90% of area and ~75% logo size
-                val verticalPadding = cardHeight * 0.05f // 5% top and 5% bottom padding
-                
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp, vertical = verticalPadding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(0.65f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (option.iconResId != null) {
-                            Image(
-                                painter = painterResource(id = option.iconResId),
-                                contentDescription = option.title,
-                                modifier = Modifier.fillMaxHeight(),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
+                val topPadding = if (isCompactHeight) 8.dp else 12.dp
 
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Top part: Logo and Presence
                     Column(
                         modifier = Modifier
-                            .weight(0.35f)
+                            .weight(2.2f)
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
+                            .padding(top = topPadding, start = 8.dp, end = 8.dp, bottom = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(0.96f),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            modifier = Modifier
+                                .weight(0.6f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Frequência: Semanal",
-                                fontSize = subtitleSize,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (option.iconResId != null) {
+                                Image(
+                                    painter = painterResource(id = option.iconResId),
+                                    contentDescription = option.title,
+                                    modifier = Modifier.fillMaxHeight(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
 
                         if (participationDays.isNotEmpty()) {
@@ -346,6 +326,23 @@ fun HomeCard(
                                 }
                             }
                         }
+                    }
+
+                    // Bottom part: Colored Frequency Bar
+                    Box(
+                        modifier = Modifier
+                            .weight(0.8f)
+                            .fillMaxWidth()
+                            .background(Color(0xFF2E7D32)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "FREQUÊNCIA: SEMANAL",
+                            fontSize = subtitleSize,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             } else if (isTurnoCard) {
