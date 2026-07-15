@@ -204,7 +204,7 @@ fun HomeCard(
     motorista: String? = null,
     coringas: List<String> = emptyList()
 ) {
-    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA" || option.title == "LPI" || option.title == "KPI"
+    val isDdsCard = option.title == "DDS" || option.title == "DIÁLOGO DIÁRIO DE SEGURANÇA" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA" || option.title == "LPI" || option.title == "KPI"
     val isTurnoCard = option.title == "Turno" || option.title == "ESTADO DO TURNO" || option.title == "TURNO"
     val context = LocalContext.current
     val isMensagensOrAbastecimento = option.title == "Mensagens" || option.title == "Abastecimento" || 
