@@ -243,10 +243,10 @@ fun HomeCard(
                 val topPadding = if (isCompactHeight) 8.dp else 12.dp
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Top part: Logo and Presence
+                    // Top part: Logo and Frequency label
                     Column(
                         modifier = Modifier
-                            .weight(2.2f)
+                            .weight(2f)
                             .fillMaxWidth()
                             .padding(top = topPadding, start = 8.dp, end = 8.dp, bottom = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -254,7 +254,7 @@ fun HomeCard(
                     ) {
                         Box(
                             modifier = Modifier
-                                .weight(0.6f)
+                                .weight(1f)
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
@@ -268,81 +268,75 @@ fun HomeCard(
                             }
                         }
 
+                        Text(
+                            text = "FREQUÊNCIA: SEMANAL",
+                            fontSize = subtitleSize,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+
+                    // Bottom part: Status Bar with Markers (KPI)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .background(Color(0xFFE5E7EB)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         if (participationDays.isNotEmpty()) {
                             val daysToDisplay = participationDays
                             val sphereSize = if (isCompactHeight) 11.dp else 15.dp
                             val isSelectedSize = if (isCompactHeight) 15.dp else 17.dp
                             val dayFontSize = if (isCompactHeight) 7.sp else 8.sp
 
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFFE5E7EB), RoundedCornerShape(20.dp))
-                                    .padding(top = 8.dp, bottom = 5.dp, start = 12.dp, end = 12.dp),
-                                contentAlignment = Alignment.Center
+                                    .padding(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    daysToDisplay.forEach { day ->
-                                        val gradientColors = when {
-                                            day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
-                                            day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))
-                                            day.hasTraining -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B), Color(0xFFB45309))
-                                            else -> listOf(Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF334155))
-                                        }
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(1.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(if (day.isSelected) isSelectedSize else sphereSize)
-                                                    .drawBehind {
-                                                        val radius = size.minDimension / 2
-                                                        val brush = Brush.radialGradient(
-                                                            colors = gradientColors,
-                                                            center = Offset(size.width * 0.3f, size.height * 0.3f),
-                                                            radius = size.minDimension * 0.75f
-                                                        )
-                                                        drawCircle(
-                                                            brush = brush,
-                                                            radius = radius,
-                                                            center = Offset(size.width / 2, size.height / 2)
-                                                        )
-                                                    }
-                                            )
-                                            Text(
-                                                text = day.dayNumber.toString(),
-                                                fontSize = dayFontSize,
-                                                fontWeight = FontWeight.Normal,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
+                                daysToDisplay.forEach { day ->
+                                    val gradientColors = when {
+                                        day.isPresent -> listOf(Color(0xFF6EE7B7), Color(0xFF10B981), Color(0xFF047857))
+                                        day.isAbsent -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFB91C1C))
+                                        day.hasTraining -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B), Color(0xFFB45309))
+                                        else -> listOf(Color(0xFFCBD5E1), Color(0xFF64748B), Color(0xFF334155))
+                                    }
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(if (day.isSelected) isSelectedSize else sphereSize)
+                                                .drawBehind {
+                                                    val radius = size.minDimension / 2
+                                                    val brush = Brush.radialGradient(
+                                                        colors = gradientColors,
+                                                        center = Offset(size.width * 0.3f, size.height * 0.3f),
+                                                        radius = size.minDimension * 0.75f
+                                                    )
+                                                    drawCircle(
+                                                        brush = brush,
+                                                        radius = radius,
+                                                        center = Offset(size.width / 2, size.height / 2)
+                                                    )
+                                                }
+                                        )
+                                        Text(
+                                            text = day.dayNumber.toString(),
+                                            fontSize = dayFontSize,
+                                            fontWeight = FontWeight.Normal,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            textAlign = TextAlign.Center
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
-
-                    // Bottom part: Colored Frequency Bar
-                    Box(
-                        modifier = Modifier
-                            .weight(0.8f)
-                            .fillMaxWidth()
-                            .background(Color(0xFF2E7D32)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "FREQUÊNCIA: SEMANAL",
-                            fontSize = subtitleSize,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
                     }
                 }
             } else if (isTurnoCard) {
