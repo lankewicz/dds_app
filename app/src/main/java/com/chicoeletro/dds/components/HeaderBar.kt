@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -113,13 +115,13 @@ fun HeaderBar(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 62.dp, max = 96.dp)
-            .background(Color.LightGray)
+            .background(Color(0xFF0F4C81))
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .alpha(overlayAlpha),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.width(140.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -128,29 +130,34 @@ fun HeaderBar(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Voltar",
-                            tint = Color.Black
+                            tint = Color.White
                         )
                     }
                 } else {
-                    Image(
-                        painter = painterResource(id = R.drawable.logo_chico),
-                        contentDescription = "Logo Chico Eletro",
+                    Box(
                         modifier = Modifier
-                            .heightIn(min = 36.dp, max = 48.dp)
-                            .padding(end = 8.dp)
-                    )
+                            .background(Color.White, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.logo_chico),
+                            contentDescription = "Logo Chico Eletro",
+                            modifier = Modifier.height(38.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 }
             }
         }
 
         Column(
-            modifier = Modifier.weight(4f),
+            modifier = Modifier.weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(color = Color.White, fontWeight = FontWeight.Bold),
                 maxLines = 2,
                 textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis
@@ -162,7 +169,7 @@ fun HeaderBar(
         }
 
         Box(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.width(140.dp),
             contentAlignment = Alignment.CenterEnd
         ) {
             Row(
@@ -203,7 +210,7 @@ fun HeaderBar(
                         imageVector = Icons.AutoMirrored.Filled.Chat,
                         contentDescription = "Comunicação",
                         modifier = Modifier.size(28.dp),
-                        tint = bubbleColor
+                        tint = if (bubbleColor == Color.Gray) Color.White else bubbleColor
                     )
                 }
             }

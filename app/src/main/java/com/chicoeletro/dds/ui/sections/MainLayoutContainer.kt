@@ -1133,7 +1133,8 @@ fun MainLayoutContainer() {
                                     onMensagensClick = { showCommunicationDialog = true },
                                     onAbastecimentoClick = {
                                         showAbastecimento = true
-                                    }
+                                    },
+                                    unreadIncomingCount = unreadIncomingCount
                                 )
                             }
                         }
@@ -1299,7 +1300,8 @@ fun MainLayoutContainer() {
                                 onMensagensClick = { showCommunicationDialog = true },
                                 onAbastecimentoClick = {
                                     showAbastecimento = true
-                                }
+                                },
+                                unreadIncomingCount = unreadIncomingCount
                             )
                         }
                     }

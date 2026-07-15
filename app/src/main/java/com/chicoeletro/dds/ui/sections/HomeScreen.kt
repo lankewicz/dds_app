@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.draw.drawBehind
@@ -68,7 +69,8 @@ fun HomeScreen(
     onAbastecimentoClick: () -> Unit,
     teamType: String? = null,
     motorista: String? = null,
-    coringas: List<String> = emptyList()
+    coringas: List<String> = emptyList(),
+    unreadIncomingCount: Int = 0
 ) {
     val (teamIcon: ImageVector?, teamIconResId: Int?, teamColor: Color) = when (teamType) {
         "STC" -> Triple(null, R.drawable.stc_small, Color(0xFF0288D1))
@@ -81,9 +83,9 @@ fun HomeScreen(
     }
 
     val options = listOf(
-        HomeOption("DDS", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
+        HomeOption("DISCUSSÃO DIÁRIA DE SEGURANÇA", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
         HomeOption(
-            title = "Turno",
+            title = "ESTADO DO TURNO",
             icon = Icons.Default.AccessTime,
             color = Color(0xFF1976D2),
             onClick = onTurnoClick,
@@ -100,11 +102,24 @@ fun HomeScreen(
                 EstadoTurno.DESLOCAMENTO_ESPECIAL -> Color(0xFF1976D2)
             }
         ),
-        HomeOption("Produção", icon = Icons.Default.BarChart, color = Color(0xFFF57C00), onClick = onProducaoClick),
-        HomeOption("Mensagens", icon = Icons.AutoMirrored.Filled.Chat, color = Color(0xFF7B1FA2), onClick = onMensagensClick),
-        HomeOption("Abastecimento", icon = Icons.Default.LocalGasStation, color = Color(0xFFD32F2F), onClick = onAbastecimentoClick),
+        HomeOption("DESEMPENHO DA PRODUÇÃO", icon = Icons.Default.BarChart, color = Color(0xFFF57C00), onClick = onProducaoClick),
         HomeOption(
-            title = equipe.ifBlank { "Definir equipe" },
+            title = "MINHAS MENSAGENS", 
+            icon = Icons.AutoMirrored.Filled.Chat, 
+            color = Color(0xFF7B1FA2), 
+            onClick = onMensagensClick,
+            subtitle = if (unreadIncomingCount > 0) "($unreadIncomingCount novas)" else "Sem mensagens novas",
+            subtitleColor = if (unreadIncomingCount > 0) Color(0xFF7B1FA2) else null
+        ),
+        HomeOption(
+            title = "HISTÓRICO DE ABASTECIMENTO", 
+            icon = Icons.Default.LocalGasStation, 
+            color = Color(0xFFD32F2F), 
+            onClick = onAbastecimentoClick,
+            subtitle = "Recente: 18,06 - Uso: 38,39"
+        ),
+        HomeOption(
+            title = if (equipe.isNotBlank()) "COLABORADOR: ${equipe.uppercase()}" else "DEFINIR EQUIPE",
             icon = teamIcon,
             iconResId = teamIconResId,
             color = teamColor,
@@ -113,7 +128,7 @@ fun HomeScreen(
         )
     )
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F7FA))) {
         val isCompactHeight = maxHeight < 550.dp
         val spacing = if (isCompactHeight) 8.dp else 16.dp
         val iconSize = if (isCompactHeight) 24.dp else 36.dp
@@ -189,10 +204,11 @@ fun HomeCard(
     motorista: String? = null,
     coringas: List<String> = emptyList()
 ) {
-    val isDdsCard = option.title == "DDS"
-    val isTurnoCard = option.title == "Turno"
+    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA"
+    val isTurnoCard = option.title == "Turno" || option.title == "ESTADO DO TURNO"
     val context = LocalContext.current
-    val isMensagensOrAbastecimento = option.title == "Mensagens" || option.title == "Abastecimento"
+    val isMensagensOrAbastecimento = option.title == "Mensagens" || option.title == "Abastecimento" || 
+            option.title == "MINHAS MENSAGENS" || option.title == "HISTÓRICO DE ABASTECIMENTO"
     var showWarning by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -219,7 +235,7 @@ fun HomeCard(
                 }
             ),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -343,12 +359,24 @@ fun HomeCard(
                         verticalArrangement = Arrangement.Center
                     ) {
                         if (option.icon != null) {
-                            Icon(
-                                imageVector = option.icon,
-                                contentDescription = option.title,
-                                modifier = Modifier.size(iconSize),
-                                tint = option.color
-                            )
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                                Icon(
+                                    imageVector = option.icon,
+                                    contentDescription = option.title,
+                                    modifier = Modifier.size(iconSize),
+                                    tint = option.color
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(iconSize * 0.45f)
+                                        .offset(x = (iconSize * 0.1f), y = (iconSize * 0.1f))
+                                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                                        .padding(1.dp),
+                                    tint = option.color
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(topSpacing))
                         Text(
@@ -440,12 +468,54 @@ fun HomeCard(
                             contentScale = ContentScale.Fit
                         )
                     } else if (option.icon != null) {
-                        Icon(
-                            imageVector = option.icon,
-                            contentDescription = option.title,
-                            modifier = Modifier.size(currentIconSize),
-                            tint = option.color
-                        )
+                        if (option.title == "DESEMPENHO DA PRODUÇÃO" || option.title == "Produção") {
+                            Column(
+                                modifier = Modifier.size(currentIconSize),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.BarChart,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(currentIconSize * 0.45f),
+                                        tint = option.color
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.TrendingUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(currentIconSize * 0.45f),
+                                        tint = option.color
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PieChart,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(currentIconSize * 0.45f),
+                                        tint = option.color
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Assessment,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(currentIconSize * 0.45f),
+                                        tint = option.color
+                                    )
+                                }
+                            }
+                        } else {
+                            Icon(
+                                imageVector = option.icon,
+                                contentDescription = option.title,
+                                modifier = Modifier.size(currentIconSize),
+                                tint = option.color
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(itemSpacing))
                     Text(
@@ -459,7 +529,11 @@ fun HomeCard(
                     )
                     if (option.subtitle != null) {
                         Spacer(modifier = Modifier.height(2.dp))
-                        val isTeamCard = option.title != "DDS" && option.title != "Turno" && option.title != "Produção" && option.title != "Mensagens" && option.title != "Abastecimento"
+                        val isTeamCard = option.title != "DDS" && option.title != "DISCUSSÃO DIÁRIA DE SEGURANÇA" && 
+                                option.title != "Turno" && option.title != "ESTADO DO TURNO" && 
+                                option.title != "Produção" && option.title != "DESEMPENHO DA PRODUÇÃO" && 
+                                option.title != "Mensagens" && option.title != "MINHAS MENSAGENS" && 
+                                option.title != "Abastecimento" && option.title != "HISTÓRICO DE ABASTECIMENTO"
                         if (isTeamCard) {
                             val namesList = option.subtitle.split("\n")
                             Column(
