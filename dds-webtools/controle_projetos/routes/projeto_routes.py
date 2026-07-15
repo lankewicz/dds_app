@@ -228,6 +228,7 @@ class ConfirmarMitPayload(BaseModel):
     calculo_dinamico: Optional[bool] = False
     tipo_calculo: Optional[str] = None
     ativo: Optional[bool] = True
+    tipo_equipe: Optional[str] = "CONSTRUCAO"
 
 # 12. Rota HTML para revisão do MIT
 @router.get("/revisar-mit", response_class=HTMLResponse)
@@ -240,38 +241,97 @@ def ver_revisao_mit(request: Request):
 
 # 13. API para listar atividades pendentes e salvas
 @router.get("/api/mit-import/pendentes")
-def listar_mit_pendentes():
+def listar_mit_pendentes(equipe: str = "CONSTRUCAO"):
     try:
         import json
         from controle_projetos.firestore_service import BASE_DOC_PATH
         
+        collection_name = "atividades_mit"
+        if equipe == "EP":
+            collection_name = "atividades_mit_ep"
+        elif equipe == "LV":
+            collection_name = "atividades_mit_lv"
+        elif equipe == "STC":
+            collection_name = "atividades_mit_stc"
+
         # 1. Carregar atividades cadastradas no Firestore
         cadastradas = {}
-        docs = BASE_DOC_PATH.collection("atividades_mit").stream()
+        docs = BASE_DOC_PATH.collection(collection_name).stream()
         for d in docs:
             dict_data = d.to_dict()
             cadastradas[dict_data["codigo"]] = dict_data
             
-        # 2. Ler o JSON gerado pelo parser (tentando múltiplos caminhos possíveis)
-        caminhos_tentados = [
-            r"d:\programas\DDS\parsed_mit_v2.json",
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "parsed_mit_v2.json"),
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "parsed_mit_v2.json"),
-            os.path.join(os.getcwd(), "parsed_mit_v2.json"),
-            os.path.abspath("parsed_mit_v2.json")
-        ]
-        
-        json_path = None
-        for path in caminhos_tentados:
-            if os.path.exists(path):
-                json_path = path
-                break
-                
-        if not json_path:
-            raise HTTPException(status_code=404, detail=f"Arquivo parsed_mit_v2.json nao encontrado nos caminhos buscados: {caminhos_tentados}. Execute o script de parse primeiro.")
+        # 2. Determinar fonte JSON e carregar dados estruturados
+        parsed_data = []
+        if equipe in ("EP", "LV"):
+            # Ler o JSON de manutenção (MIT 160904)
+            caminhos_tentados = [
+                r"d:\programas\DDS\catalogo_mit_copel_bdo_flat_validado.json",
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "catalogo_mit_copel_bdo_flat_validado.json"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "catalogo_mit_copel_bdo_flat_validado.json"),
+                os.path.join(os.getcwd(), "catalogo_mit_copel_bdo_flat_validado.json"),
+                os.path.abspath("catalogo_mit_copel_bdo_flat_validado.json")
+            ]
+            json_path = None
+            for path in caminhos_tentados:
+                if os.path.exists(path):
+                    json_path = path
+                    break
             
-        with open(json_path, "r", encoding="utf-8") as f:
-            parsed_data = json.load(f)
+            if json_path:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    raw_wrapper = json.load(f)
+                raw_manutencao = raw_wrapper.get("servicos", [])
+                
+                # Mapear formato flat para o padrão com us_montagem e us_desmontagem
+                for item in raw_manutencao:
+                    # Se for equipe LV, opcionalmente mostramos apenas tarefas que possuem códigos LV
+                    possui_lv = any("LV" in x.get("codigo_pm", "") for x in item.get("codigos_pm", []))
+                    if equipe == "LV" and not possui_lv:
+                        continue
+                        
+                    codigo = int(item["codigo"])
+                    us_montagem = 0.0
+                    us_desmontagem = 0.0
+                    for c_pm in item.get("codigos_pm", []):
+                        pm_code = c_pm.get("codigo_pm", "")
+                        us_val = c_pm.get("us", 0.0)
+                        if "M" in pm_code:
+                            us_montagem = us_val
+                        elif "D" in pm_code:
+                            us_desmontagem = us_val
+                    
+                    parsed_data.append({
+                        "codigo": codigo,
+                        "tarefa": item.get("nome_curto", ""),
+                        "categoria": item.get("secao", "Geral"),
+                        "forma_pagamento": item.get("unidade_medida_inferida", "UNIDADE").upper(),
+                        "descricao_detalhada": item.get("descricao_detalhada", ""),
+                        "us_montagem": us_montagem,
+                        "us_desmontagem": us_desmontagem,
+                        "raw_text": f"Códigos Copel: {', '.join([x.get('codigo_pm','') for x in item.get('codigos_pm',[])])}"
+                    })
+        elif equipe == "STC":
+            # Sem JSON baseline, carrega apenas o que estiver no Firestore
+            pass
+        else:
+            # Construção: parsed_mit_v2.json
+            caminhos_tentados = [
+                r"d:\programas\DDS\parsed_mit_v2.json",
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "parsed_mit_v2.json"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "parsed_mit_v2.json"),
+                os.path.join(os.getcwd(), "parsed_mit_v2.json"),
+                os.path.abspath("parsed_mit_v2.json")
+            ]
+            json_path = None
+            for path in caminhos_tentados:
+                if os.path.exists(path):
+                    json_path = path
+                    break
+            
+            if json_path:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    parsed_data = json.load(f)
             
         # 3. Anotar cada item com o estado de salvamento no Firestore
         ret = []
@@ -324,7 +384,7 @@ def listar_mit_pendentes():
 def confirmar_item_mit(payload: ConfirmarMitPayload):
     try:
         from controle_projetos.firestore_service import atualizar_atividade_mit_db
-        atualizar_atividade_mit_db(payload.codigo, payload.dict())
+        atualizar_atividade_mit_db(payload.codigo, payload.dict(), payload.tipo_equipe)
         return {"sucesso": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1084,6 +1144,62 @@ def deletar_imagem_estrutura(doc_id: str, payload: DeletarImagemPayload):
         
     except HTTPException as he:
         raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 15. API para exportar e publicar o catálogo do Firestore no Firebase Storage como JSON
+@router.post("/api/mit-import/publicar")
+def publicar_catalogo_mit(equipe: str = "CONSTRUCAO"):
+    try:
+        from controle_projetos.firestore_service import BASE_DOC_PATH
+        from monitor.services.turnos_service import DDS_BUCKET_NAME, _storage_bucket
+        
+        if not DDS_BUCKET_NAME:
+            raise HTTPException(status_code=500, detail="Bucket name do Firebase Storage não configurado.")
+            
+        bucket = _storage_bucket()
+        
+        # Determinar coleções do Firestore a exportar
+        if equipe in ("EP", "LV"):
+            # Para manutenção, exportamos ambas as coleções consolidadas no mesmo arquivo
+            docs_ep = BASE_DOC_PATH.collection("atividades_mit_ep").stream()
+            docs_lv = BASE_DOC_PATH.collection("atividades_mit_lv").stream()
+            
+            # Unificar
+            atividades = {}
+            for d in docs_ep:
+                data = d.to_dict()
+                atividades[data["codigo"]] = data
+            for d in docs_lv:
+                data = d.to_dict()
+                if data["codigo"] in atividades:
+                    # Garantir que se houver us de LV, mesclamos
+                    atividades[data["codigo"]]["us_montagem"] = max(atividades[data["codigo"]].get("us_montagem", 0.0), data.get("us_montagem", 0.0))
+                    atividades[data["codigo"]]["us_desmontagem"] = max(atividades[data["codigo"]].get("us_desmontagem", 0.0), data.get("us_desmontagem", 0.0))
+                else:
+                    atividades[data["codigo"]] = data
+                    
+            list_atividades = list(atividades.values())
+            blob_name = "catalogo/catalogo_mit_manutencao.json"
+        elif equipe == "STC":
+            docs = BASE_DOC_PATH.collection("atividades_mit_stc").stream()
+            list_atividades = [d.to_dict() for d in docs]
+            blob_name = "catalogo/catalogo_mit_stc.json"
+        else:
+            # CONSTRUCAO
+            docs = BASE_DOC_PATH.collection("atividades_mit").stream()
+            list_atividades = [d.to_dict() for d in docs]
+            blob_name = "catalogo/catalogo_mit_construcao.json"
+            
+        # Converter para JSON string
+        import json
+        json_content = json.dumps(list_atividades, indent=2, ensure_ascii=False)
+        
+        # Fazer upload para o Storage
+        blob = bucket.blob(blob_name)
+        blob.upload_from_string(json_content, content_type="application/json")
+        
+        return {"sucesso": True, "items_exportados": len(list_atividades), "caminho": blob_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

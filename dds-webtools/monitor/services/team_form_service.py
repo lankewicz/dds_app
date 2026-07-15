@@ -45,6 +45,8 @@ def get_team_form_data(empresa: str, team_key: str) -> dict[str, Any]:
         "equipment": equipment,
         "active": bool(team_doc.get("active", True)),
         "teamType": team_doc.get("teamType"),
+        "motorista": team_doc.get("motorista"),
+        "coringas": team_doc.get("coringas") or [],
     }
 
     dds_data = get_team_dds_data(empresa, team_key)

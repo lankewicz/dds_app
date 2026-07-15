@@ -182,7 +182,7 @@ dependencies {
     implementation(libs.androidx.camera.extensions)
 
     // ─── AGORA.IO ────────
-    implementation("io.agora.rtc:lite-sdk:4.6.1")
+    implementation("io.agora.rtc:lite-rtc-basic:4.6.3")
 
 
     // Dependência Retrofit + Gson no Android

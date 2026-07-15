@@ -5,6 +5,7 @@
 
 package com.chicoeletro.dds.ui.components
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,6 +26,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.chicoeletro.dds.features.turno.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,43 +45,231 @@ fun MenuStep(
     onDefinirSs: (String) -> Unit,
     onAlterarEstado: (String, SsStatus) -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp >= 600
+    var showControls by remember { mutableStateOf(false) }
     
-    val leftWeight = if (isTablet) 0.175f else 0.30f
-    val rightWeight = 1f - leftWeight
+    val themeColor = getTurnoColor(snapshot.estado)
+    val bgColor = getTurnoBgColor(snapshot.estado)
     
-    Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        LeftPanel(
-            snapshot = snapshot,
-            onDismiss = onDismiss,
-            onSelectTarget = onSelectTarget,
-            equipe = equipe,
-            teamType = teamType,
-            onClickEquipe = onClickEquipe,
-            online = online,
-            modifier = Modifier.weight(leftWeight).fillMaxHeight()
-        )
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            nowMs = System.currentTimeMillis()
+        }
+    }
+    
+    val tempoAtivoMs = calcularTempoAtivo(snapshot.transicoes, snapshot.openedAtClientMs, nowMs)
+    val nextStates = remember(snapshot.estado) {
+        EstadoTurno.values().filter { to ->
+            TurnoRules.podeTransitar(snapshot.estado, to)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Barra Superior de Status
+        Surface(
+            color = bgColor,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.Home,
+                            contentDescription = "Home",
+                            tint = themeColor
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    
+                    // Botão interativo do estado atual
+                    Button(
+                        onClick = { showControls = !showControls },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = themeColor,
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        val stateLabel = when (snapshot.estado) {
+                            EstadoTurno.ABERTO -> "TURNO ABERTO ▾"
+                            EstadoTurno.INTERVALO -> "INTERVALO ▾"
+                            EstadoTurno.DESLOCAMENTO_ESPECIAL -> "DESLOCAMENTO ▾"
+                            EstadoTurno.FECHADO -> "TURNO FECHADO ▾"
+                        }
+                        Text(text = stateLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (snapshot.estado != EstadoTurno.FECHADO) {
+                        Text(
+                            text = "Tempo Ativo: ${formatDuration(tempoAtivoMs)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = themeColor
+                        )
+                    }
+                    
+                    // Badge da Equipe
+                    Surface(
+                        color = Color.White.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable { onClickEquipe() }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Group,
+                                contentDescription = "Equipe",
+                                tint = themeColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = equipe,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = themeColor
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = if (online) Icons.Filled.Wifi else Icons.Filled.SignalWifiOff,
+                        contentDescription = if (online) "Online" else "Offline",
+                        tint = themeColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
         
-        if (teamType == "CONSTRUCAO") {
-            ConstructionBdoSection(
-                equipe = equipe,
-                online = online,
-                modifier = Modifier.weight(rightWeight).fillMaxHeight()
-            )
-        } else {
-            BdoSection(
-                snapshot = snapshot,
-                equipe = equipe,
-                online = online,
-                bdoList = bdoList,
-                onDefinirSs = onDefinirSs,
-                onAlterarEstado = onAlterarEstado,
-                modifier = Modifier.weight(rightWeight).fillMaxHeight()
-            )
+        // Painel de Ações do Turno (Expansível)
+        AnimatedVisibility(
+            visible = showControls && nextStates.isNotEmpty(),
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = bgColor),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Alterar Estado do Turno",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = themeColor,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        nextStates.forEach { st ->
+                            val buttonColor = when (st) {
+                                EstadoTurno.ABERTO -> Color(0xFF2E7D32)
+                                EstadoTurno.INTERVALO -> Color(0xFFEF6C00)
+                                EstadoTurno.DESLOCAMENTO_ESPECIAL -> Color(0xFF1565C0)
+                                EstadoTurno.FECHADO -> Color(0xFFC62828)
+                            }
+                            
+                            val buttonIcon = when (st) {
+                                EstadoTurno.ABERTO -> Icons.Filled.PlayArrow
+                                EstadoTurno.INTERVALO -> Icons.Filled.Pause
+                                EstadoTurno.DESLOCAMENTO_ESPECIAL -> Icons.Filled.DirectionsCar
+                                EstadoTurno.FECHADO -> Icons.Filled.Stop
+                            }
+                            
+                            val label = when (st) {
+                                EstadoTurno.ABERTO -> if (snapshot.estado == EstadoTurno.FECHADO) "ABRIR TURNO" else "RETOMAR"
+                                EstadoTurno.INTERVALO -> "INTERVALO"
+                                EstadoTurno.DESLOCAMENTO_ESPECIAL -> "DESLOCAMENTO"
+                                EstadoTurno.FECHADO -> "FECHAR TURNO"
+                            }
+                            
+                            Button(
+                                onClick = {
+                                    showControls = false
+                                    onSelectTarget(st)
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = buttonColor,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = buttonIcon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = label,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BDO (Espaço Total)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (teamType == "CONSTRUCAO") {
+                ConstructionBdoSection(
+                    equipe = equipe,
+                    online = online,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (teamType == "EP" || teamType == "LINHA_VIVA") {
+                EpBdoSection(
+                    equipe = equipe,
+                    online = online,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                BdoSection(
+                    snapshot = snapshot,
+                    equipe = equipe,
+                    online = online,
+                    bdoList = bdoList,
+                    onDefinirSs = onDefinirSs,
+                    onAlterarEstado = onAlterarEstado,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

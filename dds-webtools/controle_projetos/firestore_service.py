@@ -1101,8 +1101,16 @@ def atualizar_titulo_projeto_db(projeto_id: str, novo_titulo: str):
         _project_cache[projeto_id] = novo_titulo
 
 # 13. Salvar alterações em uma atividade do MIT no Firestore
-def atualizar_atividade_mit_db(codigo: int, payload: dict):
-    doc_ref = BASE_DOC_PATH.collection("atividades_mit").document(str(codigo))
+def atualizar_atividade_mit_db(codigo: int, payload: dict, tipo_equipe: str = "CONSTRUCAO"):
+    collection_name = "atividades_mit"
+    if tipo_equipe == "EP":
+        collection_name = "atividades_mit_ep"
+    elif tipo_equipe == "LV":
+        collection_name = "atividades_mit_lv"
+    elif tipo_equipe == "STC":
+        collection_name = "atividades_mit_stc"
+
+    doc_ref = BASE_DOC_PATH.collection(collection_name).document(str(codigo))
     
     data = {
         "codigo": int(codigo),
@@ -1119,19 +1127,29 @@ def atualizar_atividade_mit_db(codigo: int, payload: dict):
     
     doc_ref.set(data)
     
-    # Limpar/recarregar no cache local em memória
-    global _mit_cache
-    if _mit_cache:
-        _mit_cache[codigo] = data
+    # Limpar/recarregar no cache local em memória (apenas para CONSTRUCAO)
+    if tipo_equipe == "CONSTRUCAO":
+        global _mit_cache
+        if _mit_cache:
+            _mit_cache[codigo] = data
 
-def excluir_atividade_mit_db(codigo: int):
-    doc_ref = BASE_DOC_PATH.collection("atividades_mit").document(str(codigo))
+def excluir_atividade_mit_db(codigo: int, tipo_equipe: str = "CONSTRUCAO"):
+    collection_name = "atividades_mit"
+    if tipo_equipe == "EP":
+        collection_name = "atividades_mit_ep"
+    elif tipo_equipe == "LV":
+        collection_name = "atividades_mit_lv"
+    elif tipo_equipe == "STC":
+        collection_name = "atividades_mit_stc"
+
+    doc_ref = BASE_DOC_PATH.collection(collection_name).document(str(codigo))
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Atividade não encontrada no MIT.")
     doc_ref.delete()
     
-    global _mit_cache
-    if _mit_cache and codigo in _mit_cache:
-        del _mit_cache[codigo]
+    if tipo_equipe == "CONSTRUCAO":
+        global _mit_cache
+        if _mit_cache and codigo in _mit_cache:
+            del _mit_cache[codigo]
 
 

@@ -151,9 +151,9 @@ class TurnoController(
 
         // Motivo obrigatório ao entrar em deslocamento especial
         if (TurnoRules.pedeMotivo(to)) {
-            require(req.motivo != null) { "Motivo obrigatório." }
+            require(req.motivo != null) { "O motivo do deslocamento especial é obrigatório." }
             if (req.motivo == MotivoDeslocamentoEspecial.OUTRO) {
-                require(!req.motivoOutro.isNullOrBlank()) { "Informe o motivo (Outro)." }
+                require(!req.motivoOutro.isNullOrBlank()) { "Por favor, informe a descrição do motivo do deslocamento especial." }
             }
         }
 
@@ -161,12 +161,12 @@ class TurnoController(
 
         if (plano.pedeKm) {
             val hasAny = (req.kmTotalAbs != null) || (req.kmLast3 != null)
-            require(hasAny) { "Quilometragem obrigatória." }
-            if (req.kmLast3 != null) require(req.kmLast3 in 0..999) { "KM (3 últimos) inválido (0..999)." }
-            if (req.kmTotalAbs != null) require(req.kmTotalAbs in 0..9_999_999L) { "KM total inválido (0..9.999.999)." }
+            require(hasAny) { "A quilometragem é obrigatória para esta transição." }
+            if (req.kmLast3 != null) require(req.kmLast3 in 0..999) { "O valor dos 3 últimos dígitos do KM deve estar entre 0 e 999." }
+            if (req.kmTotalAbs != null) require(req.kmTotalAbs in 0..9_999_999L) { "O KM total informado é inválido." }
             // 1ª execução: exige KM completo, mas não bloqueia por ausência de foto.
             if (plano.primeiraExecucao) {
-                require(req.kmTotalAbs != null) { "Na 1ª execução, informe o KM total (câmera ou digitado completo)." }
+                require(req.kmTotalAbs != null) { "Como este é o primeiro registro de KM, é obrigatório informar o KM total completo (digitando ou tirando foto)." }
             }
         }
 
@@ -190,7 +190,7 @@ class TurnoController(
 
             val delta: Int = if (req.kmTotalAbs != null && snap.kmTotalAbs != null) {
                 val d = req.kmTotalAbs - snap.kmTotalAbs
-                require(d >= 0) { "KM total menor que o anterior. Verifique a leitura." }
+                require(d >= 0) { "O KM total informado (${req.kmTotalAbs} KM) é menor do que o KM registrado anteriormente (${snap.kmTotalAbs} KM). Por favor, verifique o painel do veículo e insira o valor correto." }
                 d.toInt()
             } else {
                 val prev = snap.kmLast3 ?: snap.kmInicioLast3 ?: currLast3

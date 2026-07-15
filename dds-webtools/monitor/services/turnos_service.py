@@ -1957,6 +1957,8 @@ def _process_single_team(
         "unreadMap": unread_map,
         "lastWasDescansoSemanal": last_was_descanso_semanal,
         "teamType": team_data.get("teamType") or data.get("teamType"),
+        "motorista": team_data.get("motorista"),
+        "coringas": team_data.get("coringas") or [],
     }
 
 

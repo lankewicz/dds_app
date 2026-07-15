@@ -149,6 +149,76 @@ function normalizeMembersText(value) {
     .filter((item, index, list) => list.findIndex((x) => x.toLowerCase() === item.toLowerCase()) === index);
 }
 
+function createMemberRowHtml(name = "", isDriver = false, isCoringa = false) {
+  return `
+    <div class="memberRow" style="display: flex; align-items: center; gap: 8px; width: 100%;">
+      <input type="text" class="memberInput" value="${escapeHtml(name)}" placeholder="Nome do integrante" style="flex: 1; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .10); color: #fff; border-radius: 14px; padding: 11px 12px; outline: none; font-size: 14px;">
+      
+      <button type="button" class="btnDriverToggle ${isDriver ? 'active' : ''}" title="Motorista" style="background: transparent; border: none; cursor: pointer; padding: 6px; color: ${isDriver ? '#2196F3' : 'rgba(255,255,255,0.35)'}; display: flex; align-items: center; transition: color 0.2s;" onclick="toggleRowDriver(this)">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12,2C6.5,2 2,6.5 2,12C2,17.5 6.5,22 12,22C17.5,22 22,17.5 22,12C22,6.5 17.5,2 12,2M12,4C15.8,4 19,6.9 19.8,10.5H16.2C15.6,9 14,8 12,8C10,8 8.4,9 7.8,10.5H4.2C5,6.9 8.2,4 12,4M4.2,13.5H7.8C8.4,15 10,16 12,16C14,16 15.6,15 16.2,13.5H19.8C19,17.1 15.8,20 12,20C8.2,20 5,17.1 4.2,13.5Z"/></svg>
+      </button>
+      
+      <button type="button" class="btnCoringaToggle ${isCoringa ? 'active' : ''}" title="Coringa" style="background: transparent; border: none; cursor: pointer; padding: 6px; color: ${isCoringa ? '#4CAF50' : 'rgba(255,255,255,0.35)'}; display: flex; align-items: center; transition: color 0.2s;" onclick="toggleRowCoringa(this)">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M17,20A3,3 0 0,0 20,17A3,3 0 0,0 17,14A3,3 0 0,0 14,17A3,3 0 0,0 17,20M7,12A3,3 0 0,0 10,9A3,3 0 0,0 7,6A3,3 0 0,0 4,9A3,3 0 0,0 7,12M17,22H7C4.67,22 2,20.83 2,18.5V18H22V18.5C22,20.83 19.33,22 17,22M17,12A1,1 0 0,0 18,11V9H21L17,5L13,9H16V11A1,1 0 0,0 17,12M7,4A1,1 0 0,0 6,5V7H3L7,11L11,7H8V5A1,1 0 0,0 7,4Z"/></svg>
+      </button>
+      
+      <button type="button" class="btnRemoveMember" title="Remover" style="background: transparent; border: none; cursor: pointer; padding: 6px; color: rgba(244,67,54,0.7); display: flex; align-items: center; transition: color 0.2s;" onclick="removeMemberRow(this)">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>
+      </button>
+    </div>
+  `;
+}
+
+window.toggleRowDriver = function(btn) {
+  const row = btn.closest(".memberRow");
+  const container = row.parentElement;
+  const isActive = btn.classList.contains("active");
+  
+  container.querySelectorAll(".btnDriverToggle").forEach(b => {
+    b.classList.remove("active");
+    b.style.color = "rgba(255,255,255,0.35)";
+  });
+  
+  if (!isActive) {
+    btn.classList.add("active");
+    btn.style.color = "#2196F3";
+  }
+  updateDirtyState();
+};
+
+window.toggleRowCoringa = function(btn) {
+  const isActive = btn.classList.contains("active");
+  if (isActive) {
+    btn.classList.remove("active");
+    btn.style.color = "rgba(255,255,255,0.35)";
+  } else {
+    btn.classList.add("active");
+    btn.style.color = "#4CAF50";
+  }
+  updateDirtyState();
+};
+
+window.removeMemberRow = function(btn) {
+  const row = btn.closest(".memberRow");
+  row.remove();
+  updateDirtyState();
+};
+
+window.addMemberRow = function(name = "", isDriver = false, isCoringa = false) {
+  const container = document.getElementById("membersContainer");
+  if (!container) return;
+  
+  const div = document.createElement("div");
+  div.innerHTML = createMemberRowHtml(name, isDriver, isCoringa).trim();
+  const row = div.firstChild;
+  container.appendChild(row);
+  
+  const input = row.querySelector(".memberInput");
+  input.addEventListener("input", updateDirtyState);
+  
+  updateDirtyState();
+};
+
 function setModalHidden(hidden) {
   if (!teamFormModal) return;
   teamFormModal.hidden = hidden;
@@ -580,7 +650,18 @@ function fillForm(data) {
   formEmpresa.value = turno.empresa || data?.empresa || state().getEmpresa?.() || '';
   formDisplayName.value = team.displayName || formTeamKey.value;
   if (formTeamType) formTeamType.value = team.teamType || '';
-  formMembers.value = Array.isArray(team.members) ? team.members.join('\n') : '';
+  const container = document.getElementById("membersContainer");
+  if (container) {
+    container.innerHTML = "";
+    if (Array.isArray(team.members)) {
+      team.members.forEach(member => {
+        const normMember = member.trim().toUpperCase();
+        const isDriver = normMember === (team.motorista || "").trim().toUpperCase();
+        const isCoringa = Array.isArray(team.coringas) && team.coringas.some(c => c.trim().toUpperCase() === normMember);
+        window.addMemberRow(member, isDriver, isCoringa);
+      });
+    }
+  }
   equipmentState = {
     tablet: normalizeEquipment(team?.equipment?.tablet || {}, 'tablet'),
     cameraCopel: normalizeEquipment(team?.equipment?.cameraCopel || {}, 'cameraCopel'),
@@ -625,7 +706,15 @@ function collectPayload() {
       teamKey,
       displayName: (formDisplayName.value || teamKey).trim(),
       teamType: formTeamType ? formTeamType.value || null : null,
-      members: normalizeMembersText(formMembers.value),
+      members: Array.from(document.querySelectorAll("#membersContainer .memberRow")).map(row => row.querySelector(".memberInput").value.trim()).filter(Boolean),
+      motorista: (() => {
+        const driverRow = Array.from(document.querySelectorAll("#membersContainer .memberRow")).find(row => row.querySelector(".btnDriverToggle").classList.contains("active"));
+        return driverRow ? driverRow.querySelector(".memberInput").value.trim() : null;
+      })(),
+      coringas: Array.from(document.querySelectorAll("#membersContainer .memberRow"))
+        .filter(row => row.querySelector(".btnCoringaToggle").classList.contains("active"))
+        .map(row => row.querySelector(".memberInput").value.trim())
+        .filter(Boolean),
       equipment: {
         tablet: normalizeEquipment(equipmentState?.tablet || {}, 'tablet'),
         cameraCopel: normalizeEquipment(equipmentState?.cameraCopel || {}, 'cameraCopel'),
@@ -769,7 +858,8 @@ async function openTeamForm(teamKey) {
   suspendDirtyTracking = true;
   if (formDisplayName) formDisplayName.value = '';
   if (formTeamType) formTeamType.value = '';
-  if (formMembers) formMembers.value = '';
+  const container = document.getElementById("membersContainer");
+  if (container) container.innerHTML = '';
   if (formNocSs) formNocSs.value = '';
   if (formMotivo) formMotivo.value = '';
   if (formHoraEntrada) formHoraEntrada.value = '';
@@ -925,7 +1015,6 @@ function refreshOpenTeam(item) {
 [
   formDisplayName,
   formTeamType,
-  formMembers,
   formActive,
   formEstado,
   formNocSs,
@@ -936,6 +1025,10 @@ function refreshOpenTeam(item) {
 ].forEach((field) => {
   field?.addEventListener('input', updateDirtyState);
   field?.addEventListener('change', updateDirtyState);
+});
+
+document.getElementById('btnAddMember')?.addEventListener('click', () => {
+  window.addMemberRow('', false, false);
 });
 
 [equipmentSerial, equipmentPatrimonio, equipmentImei, equipmentPhone, equipmentEmail].forEach((field) => {

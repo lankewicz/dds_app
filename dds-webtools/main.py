@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(base_dir, "vexpenses"))
 sys.path.insert(0, os.path.join(base_dir, "token_server"))
 sys.path.insert(0, os.path.join(base_dir, "boletim_x_ponto"))
 sys.path.insert(0, os.path.join(base_dir, "controle_projetos"))
+sys.path.insert(0, os.path.join(base_dir, "boletim_cidades"))
 
 # Configuração de Credenciais: Local (arquivo) vs Cloud Run (ADC)
 local_key = r"d:\programas\DDS\firebase_config.json"
@@ -93,6 +94,9 @@ from boletim_x_ponto.routes.boletim_routes import router as boletim_router
 # Controle de Projetos import
 from controle_projetos.routes.projeto_routes import router as projeto_router
 
+# Boletim Cidades (Financeiro) import
+from boletim_cidades.routes.cidades_routes import router as cidades_router
+
 listener_manager = None
 
 @asynccontextmanager
@@ -168,7 +172,8 @@ async def auth_middleware(request: Request, call_next):
         "/controle-projetos/revisar-mit",
         "/controle-projetos/api/mit-import",
         "/controle-projetos/estruturas",
-        "/controle-projetos/api/estruturas"
+        "/controle-projetos/api/estruturas",
+        "/boletim-cidades"
     ]
     if not any(request.url.path.startswith(p) for p in public_paths):
         user_email = request.cookies.get("__session")
@@ -238,8 +243,9 @@ app.include_router(token_router)
 app.include_router(produtividade_router)
 app.include_router(boletim_router)
 app.include_router(projeto_router)
+app.include_router(cidades_router)
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 8081))
     uvicorn.run(app, host="0.0.0.0", port=port)

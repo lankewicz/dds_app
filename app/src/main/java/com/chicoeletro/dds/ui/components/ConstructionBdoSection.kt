@@ -55,7 +55,7 @@ fun ConstructionBdoSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val repository = remember { ConstrucaoFirestoreRepository() }
+    val repository = remember { ConstrucaoFirestoreRepository(context) }
     val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -277,7 +277,7 @@ fun ModoPosteView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val repository = remember { ConstrucaoFirestoreRepository() }
+    val repository = remember { ConstrucaoFirestoreRepository(context) }
     val sharedPrefs = remember { context.getSharedPreferences("construcao_prefs", android.content.Context.MODE_PRIVATE) }
 
     var estruturas by remember { mutableStateOf(listOf<Estrutura>()) }
@@ -1055,7 +1055,7 @@ fun ModoLoteView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val repository = remember { ConstrucaoFirestoreRepository() }
+    val repository = remember { ConstrucaoFirestoreRepository(context) }
 
     val groupedTarefasProjeto = remember(todasTarefasProjeto, lancamentosProjeto) {
         todasTarefasProjeto.groupBy { Pair(it.atividade_codigo, it.sinal) }
@@ -1453,7 +1453,7 @@ fun ModoSimplificadoView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val repository = remember { ConstrucaoFirestoreRepository() }
+    val repository = remember { ConstrucaoFirestoreRepository(context) }
 
     // Form states
     var selectedLocacao by remember { mutableStateOf("") }

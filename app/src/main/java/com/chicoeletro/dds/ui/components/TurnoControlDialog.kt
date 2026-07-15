@@ -44,7 +44,7 @@ fun TurnoControlScreen(
     snapshot: TurnoSnapshot,
     onDismiss: () -> Unit,
     onSaveNocSs: (String?) -> Unit,
-    onRequestTransition: (RequisicaoTransicao) -> Unit,
+    onRequestTransition: (RequisicaoTransicao) -> Boolean,
     onOpenOdometerCamera: (EstadoTurno?, MotivoDeslocamentoEspecial?, String) -> Unit = { _, _, _ -> },
     prefillKmTotal: String? = null,
     startAtKmTarget: EstadoTurno? = null,
@@ -68,6 +68,8 @@ fun TurnoControlScreen(
 
     var isDescansoSemanal by remember { mutableStateOf(false) }
     var pendingRequest by remember { mutableStateOf<RequisicaoTransicao?>(null) }
+    var showHighKmConfirmation by remember { mutableStateOf<RequisicaoTransicao?>(null) }
+    var highKmDelta by remember { mutableStateOf(0L) }
 
     val context = LocalContext.current
     var bdoList by remember(equipe) {
@@ -88,6 +90,18 @@ fun TurnoControlScreen(
 
     val podeConfirmarKm =
         (kmTotalFromPhoto != null) || kmOutro.trim().isNotEmpty()
+
+    fun proceedWithTransition(req: RequisicaoTransicao, isClosing: Boolean) {
+        if (isClosing) {
+            pendingRequest = req
+            step = Step.RECIBO_FINAL
+        } else {
+            val success = onRequestTransition(req)
+            if (success) {
+                step = Step.MENU
+            }
+        }
+    }
 
     fun confirmarKmDoTopo() {
         val totalAbs: Long? = kmTotalFromPhoto ?: run {
@@ -122,12 +136,24 @@ fun TurnoControlScreen(
                 kmLast3 = last3
             )
 
-            if (isClosing) {
-                pendingRequest = req
-                step = Step.RECIBO_FINAL
+            // Calcula o delta desde o último KM registrado
+            val prevKm = snapshot.kmTotalAbs
+            val delta = if (totalAbs != null && prevKm != null) {
+                totalAbs - prevKm
+            } else if (prevKm != null) {
+                val prevL3 = (prevKm % 1000).toInt()
+                val raw = last3 - prevL3
+                val d = if (raw >= 0) raw else raw + 1000
+                d.toLong()
             } else {
-                onRequestTransition(req)
-                step = Step.MENU
+                0L
+            }
+
+            if (delta > 1000) {
+                highKmDelta = delta
+                showHighKmConfirmation = req
+            } else {
+                proceedWithTransition(req, isClosing)
             }
         }
     }
@@ -349,6 +375,34 @@ fun TurnoControlScreen(
         )
     }
 
+    if (showHighKmConfirmation != null) {
+        val req = showHighKmConfirmation!!
+        AlertDialog(
+            onDismissRequest = { showHighKmConfirmation = null },
+            title = { Text("Deslocamento Elevado") },
+            text = { Text("O deslocamento calculado desde o último registro é de $highKmDelta KM. Tem certeza de que a leitura está correta?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val targetState = req.to
+                        val isClosing = targetState == EstadoTurno.FECHADO
+                        showHighKmConfirmation = null
+                        proceedWithTransition(req, isClosing)
+                    }
+                ) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showHighKmConfirmation = null }
+                ) {
+                    Text("Corrigir")
+                }
+            }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -449,8 +503,8 @@ fun TurnoControlScreen(
                                 snapshot = snapshot,
                                 onProceed = {
                                     step = if (TurnoRules.pedeKm(snapshot.estado, target!!)) Step.KM else {
-                                        onRequestTransition(RequisicaoTransicao(to = target!!))
-                                        Step.MENU
+                                        val success = onRequestTransition(RequisicaoTransicao(to = target!!))
+                                        if (success) Step.MENU else step
                                     }
                                 }
                             )
@@ -480,9 +534,11 @@ fun TurnoControlScreen(
                                 onDescansoChanged = { isDescansoSemanal = it },
                                 onConfirm = {
                                     pendingRequest?.let { req ->
-                                        onRequestTransition(req.copy(isDescansoSemanal = isDescansoSemanal))
+                                        val success = onRequestTransition(req.copy(isDescansoSemanal = isDescansoSemanal))
+                                        if (success) {
+                                            onDismiss()
+                                        }
                                     }
-                                    onDismiss()
                                 }
                             )
                             else -> {}

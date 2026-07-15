@@ -19,12 +19,7 @@ def setup_logging():
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Handler para arquivo
-    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    logging.info("Logging inicializado. Gravando em %s", LOG_FILE)
+    logging.info("Logging inicializado no console (stdout).")
 
 def get_logger(name: str):
     return logging.getLogger(name)

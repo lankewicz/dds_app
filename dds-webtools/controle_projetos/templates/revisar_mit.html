@@ -436,16 +436,28 @@
 </head>
 <body>
     <header>
-        <h1>Revisão e Cadastro do Catálogo de Atividades MIT 163108</h1>
-        <div class="user-info">
-            <span>Usuário: {{ user_email }}</span>
-            <a href="/controle-projetos">Voltar ao Painel</a>
+        <h1>Revisão e Cadastro do Catálogo de Atividades MIT</h1>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn btn-primary" id="btnPublicar" style="background-color: #f59e0b; border-color: #d97706; font-size: 0.85rem; padding: 0.5rem 1rem;">☁️ Publicar Catálogo p/ Tablets</button>
+            <div class="user-info" style="margin-left: 0;">
+                <span>Usuário: {{ user_email }}</span>
+                <a href="/controle-projetos" style="margin-left: 1rem;">Voltar ao Painel</a>
+            </div>
         </div>
     </header>
 
     <div class="main-container">
         <div class="sidebar">
             <div class="search-container">
+                <div style="margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 4px;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Tipo de Equipe</label>
+                    <select id="teamTypeSelect" class="search-input" style="padding: 0.5rem 1rem;">
+                        <option value="CONSTRUCAO">Construção (MIT 163108)</option>
+                        <option value="EP">Manutenção EP (MIT 160904)</option>
+                        <option value="LV">Linha Viva LV (MIT 160904)</option>
+                        <option value="STC">STC (NR-10)</option>
+                    </select>
+                </div>
                 <input type="text" id="searchInput" class="search-input" placeholder="Pesquisar código, título ou categoria...">
                 <div class="filter-container">
                     <label class="filter-label">
@@ -588,6 +600,7 @@
         let filteredItems = [];
         let visualItems = [];
         let selectedItem = null;
+        let lastSelectedCategory = '';
 
         const itemList = document.getElementById('itemList');
         const searchInput = document.getElementById('searchInput');
@@ -599,6 +612,12 @@
         // Form Fields
         const formCodigo = document.getElementById('formCodigo');
         const formCategoria = document.getElementById('formCategoria');
+        formCategoria.onchange = () => {
+            lastSelectedCategory = formCategoria.value;
+            formCategoria.style.backgroundColor = '';
+            formCategoria.style.color = '';
+            formCategoria.style.border = '';
+        };
         const formTarefa = document.getElementById('formTarefa');
         const formUnidade = document.getElementById('formUnidade');
         const formUsMontagem = document.getElementById('formUsMontagem');
@@ -617,17 +636,93 @@
         const btnPrev = document.getElementById('btnPrev');
         const btnNext = document.getElementById('btnNext');
 
+        const categoriesConstrucao = [
+            "4.1 - LEVANTAMENTO CADASTRAL",
+            "4.2 - LEVANTAMENTO TOPOGRÁFICO",
+            "4.3 - PROJETOS E ORÇAMENTOS",
+            "4.4 - CAVAS E VALETAS",
+            "4.5 - POSTES",
+            "4.6 - ESTRUTURAS PRIMÁRIAS",
+            "4.7 - ESTRUTURAS SECUNDÁRIAS",
+            "4.8 - ESTAIS E ANCORAGENS",
+            "4.9 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA PRIMÁRIA",
+            "4.10 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA SECUNDÁRIA",
+            "4.11 - LIGAÇÕES, AMARRAÇÕES E EMENDAS",
+            "4.12 - ATERRAMENTOS E SECCIONAMENTOS",
+            "4.13 - EQUIPAMENTOS",
+            "4.14 - ILUMINAÇÃO PÚBLICA",
+            "4.15 - LIGAÇÃO DE UNIDADE CONSUMIDORA",
+            "4.16 - TRANSPORTES E DESLOCAMENTOS",
+            "4.17 - PODA DE ÁRVORES E ROÇADA EM FAIXA DE SERVIDÃO",
+            "4.18 - NUMERAÇÃO E IDENTIFICAÇÃO DA REDE",
+            "4.19 - OPERAÇÃO E DESLIGAMENTOS DA REDE",
+            "4.20 - ATIVIDADES COM REDE ENERGIZADA (LINHA VIVA)",
+            "4.21 - ATIVIDADES DE REDE PRIMÁRIA COMPACTA (RDC)",
+            "4.22 - ATIVIDADES DE REDE SECUNDÁRIA ISOLADA (RSI)",
+            "4.23 - ATIVIDADES DIVERSAS",
+            "4.24 - ATIVIDADES PARA SERVIÇOS EMERGENCIAIS",
+            "4.25 - ATIVIDADES COM O BIG JUMPER",
+            "4.26 - ATIVIDADES DE SISTEMAS FOTOVOLTAICOS - SIGFI",
+            "4.27 - ATIVIDADES DE REDE SUBTERRÂNEA CABO DIRETAMENTE ENTERRADO"
+        ];
+
+        const categoriesManutencao = [
+            "3 - Vegetação",
+            "4 - Abertura de cava",
+            "5 - Postes",
+            "6 - Estrutura Primária",
+            "7 - Estrutura Secundária",
+            "8 - Estaiamento e Ancoragem",
+            "9 - Lançamento de Condutor em MT",
+            "10 - Lançamento de Condutor em BT",
+            "11 - Retensionamento de Condutores",
+            "12 - Ligação, Amarração e Emenda",
+            "13 - Aterramento de Proteção",
+            "14 - Equipamentos",
+            "15 - Iluminação Pública",
+            "16 - Ligação de Consumidor",
+            "17 - Atividades Diversas",
+            "18 - Rede Compacta Protegida",
+            "19 - Rede Isolada de BT",
+            "20 - Cabo Óptico COPEL",
+            "21 - Abertura de Faixa",
+            "22 - Atividades especiais"
+        ];
+
+        function updateCategorySelect(teamType) {
+            const list = (teamType === 'EP' || teamType === 'LV') ? categoriesManutencao : categoriesConstrucao;
+            formCategoria.innerHTML = '';
+            list.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                formCategoria.appendChild(opt);
+            });
+        }
+
         async function loadItems() {
             try {
-                const response = await fetch('/controle-projetos/api/mit-import/pendentes');
+                const teamType = document.getElementById('teamTypeSelect').value;
+                updateCategorySelect(teamType);
+                
+                const response = await fetch(`/controle-projetos/api/mit-import/pendentes?equipe=${teamType}`);
                 allItems = await response.json();
+                
+                if (selectedItem && !allItems.some(x => x.codigo === selectedItem.codigo)) {
+                    selectedItem = null;
+                    noSelection.style.display = 'flex';
+                    editorContent.style.display = 'none';
+                }
+                
                 applyFilters();
                 updateStats();
             } catch (err) {
                 console.error("Erro ao carregar itens do MIT:", err);
-                alert("Falha ao carregar as atividades. Certifique-se de ter rodado o script para gerar o arquivo parsed_mit_v2.json.");
+                alert("Falha ao carregar as atividades.");
             }
         }
+
+        document.getElementById('teamTypeSelect').onchange = loadItems;
 
         function updateStats() {
             const total = allItems.length;
@@ -708,7 +803,27 @@
 
             // Populate form
             formCodigo.value = item.codigo;
-            formCategoria.value = item.categoria;
+            
+            if (item.categoria && item.categoria.trim()) {
+                formCategoria.value = item.categoria;
+                lastSelectedCategory = item.categoria;
+                formCategoria.style.backgroundColor = '';
+                formCategoria.style.color = '';
+                formCategoria.style.border = '';
+            } else {
+                if (lastSelectedCategory) {
+                    formCategoria.value = lastSelectedCategory;
+                    formCategoria.style.backgroundColor = '#fffbeb'; // Amber-50
+                    formCategoria.style.color = '#b45309'; // Amber-700
+                    formCategoria.style.border = '2px dashed #f59e0b'; // Amber-500
+                } else {
+                    formCategoria.selectedIndex = 0;
+                    formCategoria.style.backgroundColor = '';
+                    formCategoria.style.color = '';
+                    formCategoria.style.border = '';
+                }
+            }
+
             formTarefa.value = item.tarefa;
             formUnidade.value = item.forma_pagamento;
             formUsMontagem.value = item.us_montagem;
@@ -767,7 +882,8 @@
                 us_desmontagem: parseFloat(formUsDesmontagem.value) || 0.0,
                 descricao: formDescricao.value,
                 calculo_dinamico: formCalculoDinamico.checked,
-                tipo_calculo: formCalculoDinamico.checked ? formTipoCalculo.value : null
+                tipo_calculo: formCalculoDinamico.checked ? formTipoCalculo.value : null,
+                tipo_equipe: document.getElementById('teamTypeSelect').value
             };
 
             try {
@@ -885,6 +1001,33 @@
                 btnSalvar.click();
             }
         });
+
+        const btnPublicar = document.getElementById('btnPublicar');
+        btnPublicar.onclick = async () => {
+            const teamType = document.getElementById('teamTypeSelect').value;
+            if (!confirm(`Deseja publicar o catálogo da equipe "${teamType}" para os tablets? Isso substituirá o arquivo JSON no Firebase Storage.`)) {
+                return;
+            }
+            btnPublicar.disabled = true;
+            btnPublicar.textContent = 'Enviando...';
+            try {
+                const response = await fetch(`/controle-projetos/api/mit-import/publicar?equipe=${teamType}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                if (result.sucesso) {
+                    showToast(`Catálogo publicado com sucesso! (${result.items_exportados} itens salvos)`);
+                } else {
+                    alert(`Falha ao publicar catálogo: ${result.detail || 'Erro desconhecido'}`);
+                }
+            } catch (err) {
+                console.error("Erro ao publicar:", err);
+                alert("Falha de conexão ao publicar o catálogo.");
+            } finally {
+                btnPublicar.disabled = false;
+                btnPublicar.textContent = '☁️ Publicar Catálogo p/ Tablets';
+            }
+        };
 
         window.onload = loadItems;
     </script>

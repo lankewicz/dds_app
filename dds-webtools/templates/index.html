@@ -228,11 +228,14 @@
                   </select>
                 </label>
 
-                <label class="formField formFieldFull">
-                  <span class="formLabel">Integrantes</span>
-                  <textarea id="formMembers" rows="6" placeholder="Um nome por linha"></textarea>
-                  <small class="formHint">Digite um integrante por linha. Linhas vazias serão ignoradas.</small>
-                </label>
+                <div class="formField formFieldFull">
+                  <span class="formLabel" style="margin-bottom: 6px; display: inline-block;">Integrantes</span>
+                  <div id="membersContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+                  <button type="button" id="btnAddMember" class="btnSecondary" style="align-self: flex-start; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; border: 1px dashed rgba(255,255,255,0.3); background: transparent; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>
+                    Adicionar Integrante
+                  </button>
+                </div>
 
                 <div class="formField formFieldFull">
                   <span class="formLabel">Equipamentos</span>

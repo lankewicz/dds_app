@@ -25,6 +25,8 @@ data class TeamFormation(
     val members: List<String>,
     val workSchedule: Map<String, Any>? = null,
     val teamType: String? = null,
+    val motorista: String? = null,
+    val coringas: List<String> = emptyList(),
     val updatedAt: Timestamp? = null,
     val updatedByUid: String? = null,
     val updatedByName: String? = null,
@@ -58,11 +60,14 @@ class TeamFormationRepository(
         @Suppress("UNCHECKED_CAST")
         val schedule = snap.get("workSchedule") as? Map<String, Any>
 
+        val snapCoringas = (snap.get("coringas") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
         return TeamFormation(
             teamKey = teamKey,
             members = members,
             workSchedule = schedule,
             teamType = snap.getString("teamType"),
+            motorista = snap.getString("motorista"),
+            coringas = snapCoringas,
             updatedAt = snap.getTimestamp("updatedAt"),
             updatedByUid = snap.getString("updatedByUid"),
             updatedByName = snap.getString("updatedByName"),
@@ -70,7 +75,7 @@ class TeamFormationRepository(
         )
     }
 
-    suspend fun saveAndAudit(teamKey: String, newMembers: List<String>, workSchedule: Map<String, Any>? = null, teamType: String? = null) {
+    suspend fun saveAndAudit(teamKey: String, newMembers: List<String>, workSchedule: Map<String, Any>? = null, teamType: String? = null, motorista: String? = null, coringas: List<String> = emptyList()) {
         val uid = ensureAuthUid()
 
         val before = getCurrent(teamKey)
@@ -85,6 +90,7 @@ class TeamFormationRepository(
         val currentPayload: MutableMap<String, Any> = mutableMapOf(
             "teamKey" to teamKey,
             "members" to newMembers,
+            "coringas" to coringas,
             "updatedAt" to now,
             "updatedByUid" to uid,
             "updatedByName" to whoName,
@@ -96,6 +102,9 @@ class TeamFormationRepository(
         }
         if (teamType != null) {
             currentPayload["teamType"] = teamType
+        }
+        if (motorista != null) {
+            currentPayload["motorista"] = motorista
         }
 
         // Atualiza CURRENT (merge)
@@ -111,7 +120,9 @@ class TeamFormationRepository(
             "changedByEmail" to whoEmail,
             "deviceModel" to Build.MODEL,
             "beforeMembers" to beforeMembers,
-            "afterMembers" to newMembers
+            "afterMembers" to newMembers,
+            "beforeCoringas" to (before?.coringas ?: emptyList()),
+            "afterCoringas" to coringas
         )
         if (workSchedule != null) {
             histPayload["afterSchedule"] = workSchedule
@@ -124,6 +135,12 @@ class TeamFormationRepository(
         }
         if (before?.teamType != null) {
             histPayload["beforeTeamType"] = before.teamType
+        }
+        if (motorista != null) {
+            histPayload["afterMotorista"] = motorista
+        }
+        if (before?.motorista != null) {
+            histPayload["beforeMotorista"] = before.motorista
         }
 
         doc(teamKey).collection("history").add(histPayload).await()

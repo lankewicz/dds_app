@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -63,9 +65,11 @@ fun TeamEditDialog(
     initialMembers: List<String>,
     initialWorkSchedule: com.chicoeletro.dds.core.WorkSchedule = com.chicoeletro.dds.core.WorkSchedule(),
     initialTeamType: String? = null,
+    initialMotorista: String? = null,
+    initialCoringas: List<String> = emptyList(),
     mandatory: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (teamName: String, members: List<String>, schedule: com.chicoeletro.dds.core.WorkSchedule, teamType: String?) -> Unit,
+    onSave: (teamName: String, members: List<String>, schedule: com.chicoeletro.dds.core.WorkSchedule, teamType: String?, motorista: String?, coringas: List<String>) -> Unit,
 ) {
     BackHandler(enabled = true) { /* bloqueado: use os botões */ }
 
@@ -95,6 +99,8 @@ fun TeamEditDialog(
 
     var workSchedule by remember { mutableStateOf(initialWorkSchedule) }
     var teamType by remember { mutableStateOf(initialTeamType) }
+    var motorista by remember { mutableStateOf(initialMotorista) }
+    val coringas = remember { mutableStateListOf<String>().apply { addAll(initialCoringas) } }
     var showScheduleConfig by remember { mutableStateOf(false) }
 
     // controla se usuário já mexeu manualmente nos participantes (para não sobrescrever)
@@ -125,8 +131,15 @@ fun TeamEditDialog(
     }
 
     val teamNameValid by remember(teamName) { derivedStateOf { isTeamNameValid(teamName) } }
-    val canSave by remember(teamName, members) {
-        derivedStateOf { teamName.trim().isNotBlank() && normalizedMembers().isNotEmpty() }
+    val canSave by remember(teamName, members, motorista) {
+        derivedStateOf {
+            val list = normalizedMembers()
+            val currentDriver = motorista
+            teamName.trim().isNotBlank() && 
+                    list.isNotEmpty() && 
+                    !currentDriver.isNullOrBlank() && 
+                    list.contains(normalizeMember(currentDriver))
+        }
     }
     fun triggerLoadFormationIfNeeded() {
         val key = normalizeTeamName(teamName)
@@ -146,6 +159,9 @@ fun TeamEditDialog(
                     members.clear()
                     members.addAll(formation.members.map { it.uppercase(ptBr) })
                     members.add("")
+                    motorista = formation.motorista?.uppercase(ptBr)
+                    coringas.clear()
+                    coringas.addAll(formation.coringas.map { it.uppercase(ptBr) })
                     Toast.makeText(context, "Formação carregada para $key", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(
@@ -233,6 +249,51 @@ fun TeamEditDialog(
 
                 Spacer(Modifier.height(12.dp))
 
+                val handleClear = {
+                    members.clear()
+                    members.add("")
+                    motorista = null
+                    coringas.clear()
+                    membersTouched = true
+                }
+
+                val handleMemberChange: (Int, String) -> Unit = { index, new ->
+                    val oldVal = members[index]
+                    val newVal = new.uppercase(ptBr)
+                    members[index] = newVal
+                    membersTouched = true
+                    
+                    if (normalizeMember(oldVal) == normalizeMember(motorista ?: "")) {
+                        motorista = if (newVal.isNotBlank()) newVal else null
+                    }
+                    val oldNorm = normalizeMember(oldVal)
+                    if (coringas.contains(oldNorm)) {
+                        coringas.remove(oldNorm)
+                        if (newVal.isNotBlank()) {
+                            coringas.add(normalizeMember(newVal))
+                        }
+                    }
+                    
+                    if (members.last().isNotBlank()) {
+                        members.add("")
+                    }
+                }
+
+                val handleRemove: (Int) -> Unit = { index ->
+                    if (index in members.indices) {
+                        val removedMember = members[index]
+                        members.removeAt(index)
+                        
+                        if (normalizeMember(removedMember) == normalizeMember(motorista ?: "")) {
+                            motorista = null
+                        }
+                        coringas.remove(normalizeMember(removedMember))
+                        
+                        if (members.isEmpty() || members.last().isNotBlank()) members.add("")
+                        membersTouched = true
+                    }
+                }
+
                 if (isCompactLayout) {
                     // Layout compacto (celular): empilha os cards para evitar ficar "minúsculo" e parecer que sumiu
                     Column(
@@ -262,23 +323,22 @@ fun TeamEditDialog(
                             ParticipantsCard(
                                 members = members,
                                 normalizedCount = normalizedMembers().size,
+                                motorista = motorista,
+                                onMotoristaChange = { motorista = it },
+                                coringas = coringas,
+                                onToggleCoringa = { name ->
+                                    val norm = normalizeMember(name)
+                                    if (coringas.contains(norm)) {
+                                        coringas.remove(norm)
+                                    } else {
+                                        coringas.add(norm)
+                                    }
+                                },
                                 onHideKeyboard = { hideKeyboard() },
                                 onAdd = { if (members.isEmpty() || members.last().isNotBlank()) members.add("") },
-                                onClear = { members.clear(); members.add(""); membersTouched = true },
-                                onMemberChange = { index, new ->
-                                    members[index] = new.uppercase(ptBr)
-                                    membersTouched = true
-                                    if (members.last().isNotBlank()) {
-                                        members.add("")
-                                    }
-                                },
-                                onRemove = { index ->
-                                    if (index in members.indices) {
-                                        members.removeAt(index)
-                                        if (members.isEmpty() || members.last().isNotBlank()) members.add("")
-                                        membersTouched = true
-                                    }
-                                },
+                                onClear = handleClear,
+                                onMemberChange = handleMemberChange,
+                                onRemove = handleRemove,
                                 onDone = { hideKeyboard() }
                             )
                         }
@@ -311,23 +371,22 @@ fun TeamEditDialog(
                             ParticipantsCard(
                                 members = members,
                                 normalizedCount = normalizedMembers().size,
+                                motorista = motorista,
+                                onMotoristaChange = { motorista = it },
+                                coringas = coringas,
+                                onToggleCoringa = { name ->
+                                    val norm = normalizeMember(name)
+                                    if (coringas.contains(norm)) {
+                                        coringas.remove(norm)
+                                    } else {
+                                        coringas.add(norm)
+                                    }
+                                },
                                 onHideKeyboard = { hideKeyboard() },
                                 onAdd = { if (members.isEmpty() || members.last().isNotBlank()) members.add("") },
-                                onClear = { members.clear(); members.add(""); membersTouched = true },
-                                onMemberChange = { index, new ->
-                                    members[index] = new.uppercase(ptBr)
-                                    membersTouched = true
-                                    if (members.last().isNotBlank()) {
-                                        members.add("")
-                                    }
-                                },
-                                onRemove = { index ->
-                                    if (index in members.indices) {
-                                        members.removeAt(index)
-                                        if (members.isEmpty() || members.last().isNotBlank()) members.add("")
-                                        membersTouched = true
-                                    }
-                                },
+                                onClear = handleClear,
+                                onMemberChange = handleMemberChange,
+                                onRemove = handleRemove,
                                 onDone = { hideKeyboard() }
                             )
                         }
@@ -361,13 +420,17 @@ fun TeamEditDialog(
                                 Toast.makeText(context, "Informe a equipe e pelo menos um participante", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
+                            if (motorista.isNullOrBlank() || !list.contains(normalizeMember(motorista ?: ""))) {
+                                Toast.makeText(context, "É obrigatório indicar um motorista!", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
                             if (!isTeamNameValid(team)) {
                                 Toast.makeText(context, "PREFIXO inválido (5-11; letras/números; sem espaços; não iniciar com CA/PG/LO/MA/CB).", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
                             // 1) Salva local (fluxo atual do app)
-                            onSave(team, list, workSchedule, teamType)
+                            onSave(team, list, workSchedule, teamType, motorista, coringas.toList())
 
                             Toast.makeText(context, "Equipe registrada com sucesso!", Toast.LENGTH_SHORT).show()
                             onDismiss()
@@ -475,11 +538,19 @@ private fun TeamCard(
                         "LINHA_VIVA" -> "Linha Viva"
                         "ROCADA" -> "Roçada"
                         "CONSTRUCAO" -> "Construção"
-                        else -> "Não Selecionado"
+                        else -> ""
                     },
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Tipo de Equipe") },
+                    isError = teamType.isNullOrBlank(),
+                    supportingText = {
+                        if (teamType.isNullOrBlank()) {
+                            Text("Obrigatório: indique o tipo da equipe de trabalho.")
+                        } else {
+                            Text("Selecione a categoria de serviço.")
+                        }
+                    },
                     trailingIcon = {
                         IconButton(onClick = { dropdownExpanded = true }) {
                             Icon(
@@ -533,6 +604,10 @@ private fun TeamCard(
 private fun ParticipantsCard(
     members: MutableList<String>,
     normalizedCount: Int,
+    motorista: String?,
+    onMotoristaChange: (String?) -> Unit,
+    coringas: List<String>,
+    onToggleCoringa: (String) -> Unit,
     onHideKeyboard: () -> Unit,
     onAdd: () -> Unit,
     onClear: () -> Unit,
@@ -591,6 +666,12 @@ private fun ParticipantsCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                } else if (motorista.isNullOrBlank()) {
+                    Text(
+                        "Indique o motorista (clique no volante)!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 
@@ -626,6 +707,53 @@ private fun ParticipantsCard(
                         )
 
                         Spacer(Modifier.width(8.dp))
+
+                        val normalizedVal = value.trim().uppercase()
+                        val isDriver = normalizedVal.isNotBlank() && normalizedVal == motorista?.trim()?.uppercase()
+                        val isCoringa = normalizedVal.isNotBlank() && coringas.contains(normalizedVal)
+                        val isEnabled = normalizedVal.isNotBlank()
+
+                        IconButton(
+                            onClick = {
+                                if (isDriver) {
+                                    onMotoristaChange(null)
+                                } else {
+                                    onMotoristaChange(normalizedVal)
+                                }
+                            },
+                            enabled = isEnabled
+                        ) {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(id = com.chicoeletro.dds.R.drawable.ic_steering_wheel),
+                                contentDescription = "Selecionar motorista",
+                                tint = if (isDriver) {
+                                    MaterialTheme.colorScheme.primary
+                                } else if (motorista.isNullOrBlank()) {
+                                    Color(0xFFD32F2F) // Alerta vermelho se não houver motorista selecionado
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                }
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                onToggleCoringa(normalizedVal)
+                            },
+                            enabled = isEnabled
+                        ) {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(id = com.chicoeletro.dds.R.drawable.ic_wildcard),
+                                contentDescription = "Coringa",
+                                tint = if (isCoringa) {
+                                    Color.Unspecified
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                }
+                            )
+                        }
+
+                        Spacer(Modifier.width(4.dp))
 
                         IconButton(onClick = { onRemove(index) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Remover")

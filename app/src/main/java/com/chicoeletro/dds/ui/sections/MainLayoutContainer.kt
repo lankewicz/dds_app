@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -165,7 +166,9 @@ data class PendingTeamChange(
     val name: String,
     val members: List<String>,
     val schedule: com.chicoeletro.dds.core.WorkSchedule,
-    val teamType: String?
+    val teamType: String?,
+    val motorista: String?,
+    val coringas: List<String>
 )
 
 @Composable
@@ -219,6 +222,7 @@ fun MainLayoutContainer() {
     // ==========================================================
     var turnoSnap by remember { mutableStateOf(TurnoSnapshot()) }
     var showTurnoControl by remember { mutableStateOf(false) }
+    var errorTurnoMessage by remember { mutableStateOf<String?>(null) }
     var showCommunicationDialog by rememberSaveable { mutableStateOf(false) }
     val commRepo = remember { CommunicationRepository() }
     var unreadIncomingCount by remember { mutableStateOf(0) }
@@ -234,6 +238,8 @@ fun MainLayoutContainer() {
     var submissaoExistente by remember { mutableStateOf<FormSubmission?>(null) }
     var equipe by rememberSaveable { mutableStateOf("") }
     var eletricistas by remember { mutableStateOf(listOf<String>()) }
+    var motorista by remember { mutableStateOf<String?>(null) }
+    var coringas by remember { mutableStateOf(listOf<String>()) }
 
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var capturedThumbUri by remember { mutableStateOf<Uri?>(null) }
@@ -365,7 +371,7 @@ fun MainLayoutContainer() {
                 }
 
                 // 2. Restaura o prefixo original
-                teamSync.savePendingLocal(context, oldName, eletricistas, lastTeamData?.workSchedule ?: com.chicoeletro.dds.core.WorkSchedule())
+                teamSync.savePendingLocal(context, oldName, eletricistas, lastTeamData?.workSchedule ?: com.chicoeletro.dds.core.WorkSchedule(), lastTeamData?.teamType, motorista, coringas)
                 equipe = oldName
                 
                 // 3. Limpa estados
@@ -386,6 +392,8 @@ fun MainLayoutContainer() {
             if (data != null) {
                 equipe = data.equipe
                 eletricistas = data.eletricistas
+                motorista = data.motorista
+                coringas = data.coringas
             }
         }
     }
@@ -496,10 +504,29 @@ fun MainLayoutContainer() {
 
     LaunchedEffect(teamLoaded, lastTeamData, isInitializing) {
         if (!teamLoaded || isInitializing) return@LaunchedEffect
-        val missingTeam = lastTeamData?.equipe.isNullOrBlank() || lastTeamData?.eletricistas.isNullOrEmpty()
+        val currentTeamData = lastTeamData
+        val missingTeam = currentTeamData?.equipe.isNullOrBlank() || 
+                currentTeamData?.eletricistas.isNullOrEmpty() || 
+                currentTeamData?.motorista.isNullOrBlank() || 
+                currentTeamData?.teamType.isNullOrBlank()
         if (missingTeam) {
             teamDialogMandatory = true
             showEditDialog = true
+            
+            // Se já tem equipe e eletricistas, mas falta motorista ou tipo de equipe, avisa com Toast
+            if (currentTeamData != null && !currentTeamData.equipe.isNullOrBlank() && !currentTeamData.eletricistas.isNullOrEmpty()) {
+                val missingFields = mutableListOf<String>()
+                if (currentTeamData.motorista.isNullOrBlank()) missingFields.add("indique o motorista")
+                if (currentTeamData.teamType.isNullOrBlank()) missingFields.add("indique o tipo da equipe de trabalho")
+                
+                if (missingFields.isNotEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Configuração pendente: ${missingFields.joinToString(" e ")}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 
@@ -551,6 +578,34 @@ fun MainLayoutContainer() {
             onConfirm = {
                 showDdsWarning = false
                 showPresenceReport = true
+            }
+        )
+    }
+
+    if (errorTurnoMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorTurnoMessage = null },
+            title = {
+                Text(
+                    text = "Atenção",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            text = {
+                Text(
+                    text = errorTurnoMessage ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { errorTurnoMessage = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Entendido")
+                }
             }
         )
     }
@@ -656,7 +711,7 @@ fun MainLayoutContainer() {
                     // Regra: mudança de membros implica fechar e abrir novo turno.
                     if (!turnoSnap.isOpen && (req.to == EstadoTurno.ABERTO || req.to == EstadoTurno.DESLOCAMENTO_ESPECIAL)) {
                         val opened = runCatching { ctrl.abrirTurno(empresa, eletricistas) }.getOrNull()
-                            ?: return@TurnoControlScreen
+                            ?: return@TurnoControlScreen false
                         turnoSnap = opened
 
                         // Clear the local BDO list for this team when opening a new shift session
@@ -686,16 +741,16 @@ fun MainLayoutContainer() {
                     }
                         .onFailure { e ->
                             android.util.Log.w("DDS-TURNO", "Falha plan: ${e.message}", e)
-                            Toast.makeText(context, e.message ?: "Falha ao planejar transição", Toast.LENGTH_LONG).show()
+                            errorTurnoMessage = e.message ?: "Falha ao planejar transição"
                         }
-                        .getOrNull() ?: return@TurnoControlScreen
+                        .getOrNull() ?: return@TurnoControlScreen false
 
                     val after = runCatching { ctrl.confirm(req, photoProvided = false) }
                         .onFailure { e ->
                             android.util.Log.w("DDS-TURNO", "Falha confirm: ${e.message}", e)
-                            Toast.makeText(context, e.message ?: "Falha ao confirmar transição", Toast.LENGTH_LONG).show()
+                            errorTurnoMessage = e.message ?: "Falha ao confirmar transição"
                         }
-                        .getOrNull() ?: return@TurnoControlScreen
+                        .getOrNull() ?: return@TurnoControlScreen false
 
                     val before = turnoSnap
                     // Atualiza UI local imediatamente
@@ -839,6 +894,7 @@ fun MainLayoutContainer() {
                     odoPendingTarget = null
                     odoPendingMotivo = null
                     odoPendingMotivoOutro = ""
+                    true
                 }
             )
             }
@@ -1047,8 +1103,11 @@ fun MainLayoutContainer() {
                                 HomeScreen(
                                     equipe = equipe,
                                     eletricistas = eletricistas,
+                                    motorista = motorista,
+                                    coringas = coringas,
                                     monthParticipationDays = homeParticipationDays,
                                     turnoEstado = turnoSnap.estado,
+                                    teamType = lastTeamData?.teamType,
                                     onClickEquipe = {
                                         teamDialogMandatory = false
                                         showEditDialog = true
@@ -1210,8 +1269,11 @@ fun MainLayoutContainer() {
                             HomeScreen(
                                 equipe = equipe,
                                 eletricistas = eletricistas,
+                                motorista = motorista,
+                                coringas = coringas,
                                 monthParticipationDays = homeParticipationDays,
                                 turnoEstado = turnoSnap.estado,
+                                teamType = lastTeamData?.teamType,
                                 onClickEquipe = {
                                     teamDialogMandatory = false
                                     showEditDialog = true
@@ -1253,19 +1315,23 @@ fun MainLayoutContainer() {
                     initialTeamName = equipe,
                     initialMembers  = eletricistas,
                     initialTeamType = lastTeamData?.teamType,
+                    initialMotorista = motorista,
+                    initialCoringas = coringas,
                     onDismiss = { showEditDialog = false },
-                    onSave   = { name, members, schedule, teamType ->
+                    onSave   = { name, members, schedule, teamType, driver, wildcards ->
                         val oldName = equipe
                         if (oldName.isNotBlank() && oldName != name) {
                             // Mudança de prefixo: pede motivo antes de salvar
-                            pendingTeamChange = PendingTeamChange(name, members, schedule, teamType)
+                            pendingTeamChange = PendingTeamChange(name, members, schedule, teamType, driver, wildcards)
                             showReasonDialog = true
                         } else {
                             // Mesma equipe ou primeira vez: salva direto
                             scope.launch {
-                                teamSync.savePendingLocal(context, name, members, schedule, teamType)
+                                teamSync.savePendingLocal(context, name, members, schedule, teamType, driver, wildcards)
                                 equipe = name
                                 eletricistas = members
+                                motorista = driver
+                                coringas = wildcards
                                 teamDialogMandatory = false
                                 showEditDialog = false
                             }
@@ -1280,7 +1346,7 @@ fun MainLayoutContainer() {
                     newPrefix = pendingTeamChange!!.name,
                     onCancel = { showReasonDialog = false },
                     onConfirm = { reason ->
-                        val (name, members, schedule, pendingType) = pendingTeamChange!!
+                        val (name, members, schedule, pendingType, driver, wildcards) = pendingTeamChange!!
                         val oldName = equipe
                         
                         scope.launch {
@@ -1292,9 +1358,11 @@ fun MainLayoutContainer() {
                                 TrainingExecLocalStore.clearLocalOnly(context, oldName)
                             }
                             
-                            teamSync.savePendingLocal(context, name, members, schedule, pendingType)
+                            teamSync.savePendingLocal(context, name, members, schedule, pendingType, driver, wildcards)
                             equipe = name
                             eletricistas = members
+                            motorista = driver
+                            coringas = wildcards
                             
                             // 2. CRIA O PEDIDO PARA AUDITORIA/REVERSÃO
                             val rid = requestRepo.createRequest(

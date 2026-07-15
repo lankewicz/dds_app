@@ -27,7 +27,9 @@ object TeamConfigSync {
         teamKey: String,
         members: List<String>,
         schedule: com.chicoeletro.dds.core.WorkSchedule,
-        teamType: String? = null
+        teamType: String? = null,
+        motorista: String? = null,
+        coringas: List<String> = emptyList()
     ) {
         val data = LastTeamData(
             equipe = teamKey,
@@ -35,7 +37,9 @@ object TeamConfigSync {
             pendingSync = true,
             lastSyncedAt = null,
             workSchedule = schedule,
-            teamType = teamType
+            teamType = teamType,
+            motorista = motorista,
+            coringas = coringas
         )
         LastTeamStore.salvar(context, data)
         Log.i(TAG, "savePendingLocal: team=$teamKey members=${members.size} teamType=$teamType pendingSync=true")
@@ -50,6 +54,13 @@ object TeamConfigSync {
             val updated = current.copy(teamType = teamType, pendingSync = true)
             LastTeamStore.salvar(context, updated)
             Log.i(TAG, "saveTeamTypeLocal: team=${current.equipe} type=$teamType")
+            
+            // Download do catalogo correspondente imediatamente no background
+            try {
+                com.chicoeletro.dds.features.construcao.MitCatalogManager.downloadCatalog(context, teamType)
+            } catch (e: Exception) {
+                Log.e(TAG, "Erro ao baixar catalogo na mudanca de tipo de equipe: ${e.message}", e)
+            }
         }
     }
 
@@ -96,7 +107,9 @@ object TeamConfigSync {
                 teamKey = d.equipe,
                 newMembers = d.eletricistas,
                 workSchedule = payloadSchedule,
-                teamType = d.teamType
+                teamType = d.teamType,
+                motorista = d.motorista,
+                coringas = d.coringas
             )
         }.isSuccess
 
@@ -148,18 +161,24 @@ object TeamConfigSync {
             } else null
         }
 
+        val remoteCoringas = remote.coringas
         val membersChanged = remoteMembers.isNotEmpty() && remoteMembers != d.eletricistas
         val scheduleChanged = remoteSchedule != null && remoteSchedule != d.workSchedule
         val remoteTeamType = remote.teamType
         val typeChanged = remoteTeamType != null && remoteTeamType != d.teamType
+        val remoteMotorista = remote.motorista
+        val motoristaChanged = remoteMotorista != null && remoteMotorista != d.motorista
+        val coringasChanged = remoteCoringas != d.coringas
 
-        if (membersChanged || scheduleChanged || typeChanged) {
+        if (membersChanged || scheduleChanged || typeChanged || motoristaChanged || coringasChanged) {
             LastTeamStore.salvar(
                 context,
                 d.copy(
                     eletricistas = if (membersChanged) remoteMembers else d.eletricistas,
                     workSchedule = if (scheduleChanged) remoteSchedule!! else d.workSchedule,
                     teamType = if (typeChanged) remoteTeamType else d.teamType,
+                    motorista = if (motoristaChanged) remoteMotorista else d.motorista,
+                    coringas = if (coringasChanged) remoteCoringas else d.coringas,
                     pendingSync = false,
                     lastSyncedAt = System.currentTimeMillis()
                 )

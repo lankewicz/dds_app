@@ -37,6 +37,8 @@ class TeamBasePayload(BaseModel):
     equipment: TeamEquipmentPayload = Field(default_factory=TeamEquipmentPayload)
     active: bool = True
     teamType: str | None = None
+    motorista: str | None = None
+    coringas: List[str] = Field(default_factory=list)
 
 
 class TeamTurnoPayload(BaseModel):

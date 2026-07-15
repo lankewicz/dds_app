@@ -52,5 +52,9 @@ data class LastTeamData(
     // NOVO: Cronograma detalhado
     val workSchedule: WorkSchedule = WorkSchedule(),
     // NOVO: Tipo de equipe
-    val teamType: String? = null
+    val teamType: String? = null,
+    // NOVO: Motorista indicado para dirigir o veículo
+    val motorista: String? = null,
+    // NOVO: Funcionários temporários (coringas)
+    val coringas: List<String> = emptyList()
 )

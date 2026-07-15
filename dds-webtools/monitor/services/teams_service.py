@@ -576,6 +576,8 @@ def save_team(
         "cameraVeicular": clean_equipment["cameraVeicular"]["summary"] or None,
         "active": bool(payload.get("active", True)),
         "teamType": payload.get("teamType") or previous_data.get("teamType"),
+        "motorista": payload.get("motorista") or previous_data.get("motorista"),
+        "coringas": payload.get("coringas") or previous_data.get("coringas") or [],
     }
 
     team_ref.set(clean_payload, merge=True)

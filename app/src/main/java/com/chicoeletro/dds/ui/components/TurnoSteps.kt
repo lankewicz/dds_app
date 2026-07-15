@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,6 +105,7 @@ fun KmStep(
     val totalDigits = maxOf(6, currentKmStr.length)
     val currentKmPadded = currentKmStr.padStart(totalDigits, '0')
     
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var editableStartIndex by remember { mutableStateOf(totalDigits - 3) }
     var typedDigits by remember { mutableStateOf("") }
     
@@ -114,8 +116,9 @@ fun KmStep(
         focusRequester.requestFocus()
     }
     
+
     LaunchedEffect(editableStartIndex, typedDigits) {
-        val finalKmStr = buildString {
+        var finalKmStr = buildString {
             for (i in 0 until totalDigits) {
                 if (i < editableStartIndex) {
                     append(currentKmPadded[i])
@@ -129,6 +132,15 @@ fun KmStep(
                 }
             }
         }
+
+        // Correção automática do 4º dígito (milhar) em caso de rollover de 3 dígitos
+        if (editableStartIndex >= totalDigits - 3 && typedDigits.isNotEmpty()) {
+            val rawKm = finalKmStr.toLongOrNull() ?: currentKm
+            if (rawKm < currentKm) {
+                finalKmStr = (rawKm + 1000L).toString().padStart(totalDigits, '0')
+            }
+        }
+
         onManualKmChange(finalKmStr)
     }
 
@@ -264,9 +276,24 @@ fun KmStep(
                         }
                     },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
                     ),
-                    modifier = Modifier.focusRequester(focusRequester)
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                        }
+                    ),
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) {
+                                focusManager.clearFocus()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                 )
             }
             

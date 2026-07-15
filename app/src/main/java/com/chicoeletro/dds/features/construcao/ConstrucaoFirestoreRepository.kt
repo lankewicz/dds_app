@@ -5,10 +5,13 @@
 
 package com.chicoeletro.dds.features.construcao
 
+import android.content.Context
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.firstOrNull
 
 class ConstrucaoFirestoreRepository(
+    private val context: Context,
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
     private val baseDoc = db.collection("webtools").document("producao")
@@ -16,42 +19,68 @@ class ConstrucaoFirestoreRepository(
     // Cache local de atividades para evitar leituras excessivas do Firestore
     private var activitiesCache: Map<Int, Atividade>? = null
 
-    /**
-     * Carrega todas as atividades do MIT 163108 do Firestore e armazena em cache.
-     */
     private suspend fun getActivitiesMap(): Map<Int, Atividade> {
         activitiesCache?.let { return it }
 
-        return try {
-            val snapshot = baseDoc.collection("atividades_mit")
-                .get()
-                .await()
+        val teamData = com.chicoeletro.dds.core.LastTeamStore.carregar(context).firstOrNull()
+        val teamType = teamData?.teamType ?: "CONSTRUCAO"
 
-            val map = snapshot.documents.mapNotNull { doc ->
-                val ativo = doc.getBoolean("ativo") ?: true
-                if (!ativo) return@mapNotNull null
-                val codigo = doc.getLong("codigo")?.toInt() ?: return@mapNotNull null
-                val tarefa = doc.getString("tarefa") ?: doc.getString("descricao") ?: "Atividade $codigo"
-                val usMontagem = doc.getDouble("us_montagem") ?: 0.0
-                val usDesmontagem = doc.getDouble("us_desmontagem") ?: 0.0
-                val calculoDinamico = doc.getBoolean("calculo_dinamico") ?: false
-                val tipoCalculo = doc.getString("tipo_calculo")
+        // 1. Tentar ler do catalogo local via MitCatalogManager
+        var list = MitCatalogManager.loadLocalCatalog(context, teamType)
 
-                codigo to Atividade(
-                    codigo = codigo,
-                    descricao = tarefa,
-                    us_montagem = usMontagem,
-                    us_desmontagem = usDesmontagem,
-                    calculo_dinamico = calculoDinamico,
-                    tipo_calculo = tipoCalculo
-                )
-            }.toMap()
-
-            activitiesCache = map
-            map
-        } catch (e: Exception) {
-            emptyMap()
+        // 2. Se a lista estiver vazia (primeiro acesso), tentar baixar do Storage
+        if (list.isEmpty()) {
+            val downloaded = MitCatalogManager.downloadCatalog(context, teamType)
+            if (downloaded) {
+                list = MitCatalogManager.loadLocalCatalog(context, teamType)
+            }
         }
+
+        // 3. Fallback para Firestore apenas se a lista continuar vazia
+        if (list.isEmpty()) {
+            return try {
+                val collectionName = when (teamType.uppercase().trim()) {
+                    "CONSTRUCAO" -> "atividades_mit"
+                    "EP" -> "atividades_mit_ep"
+                    "LINHA_VIVA" -> "atividades_mit_lv"
+                    "STC", "STC_CESTO" -> "atividades_mit_stc"
+                    else -> "atividades_mit"
+                }
+                
+                val snapshot = baseDoc.collection(collectionName)
+                    .get()
+                    .await()
+
+                val map = snapshot.documents.mapNotNull { doc ->
+                    val ativo = doc.getBoolean("ativo") ?: true
+                    if (!ativo) return@mapNotNull null
+                    val codigo = doc.getLong("codigo")?.toInt() ?: return@mapNotNull null
+                    val tarefa = doc.getString("tarefa") ?: doc.getString("descricao") ?: "Atividade $codigo"
+                    val usMontagem = doc.getDouble("us_montagem") ?: 0.0
+                    val usDesmontagem = doc.getDouble("us_desmontagem") ?: 0.0
+                    val calculoDinamico = doc.getBoolean("calculo_dinamico") ?: false
+                    val tipoCalculo = doc.getString("tipo_calculo")
+
+                    codigo to Atividade(
+                        codigo = codigo,
+                        descricao = tarefa,
+                        us_montagem = usMontagem,
+                        us_desmontagem = usDesmontagem,
+                        calculo_dinamico = calculoDinamico,
+                        tipo_calculo = tipoCalculo
+                    )
+                }.toMap()
+
+                activitiesCache = map
+                map
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+
+        val map = list.associateBy { it.codigo }
+        activitiesCache = map
+        return map
     }
 
     /**

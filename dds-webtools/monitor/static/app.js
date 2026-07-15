@@ -374,7 +374,30 @@ function stateCardClass(state) {
   }
 }
 function borderClass(alerta) { switch (safeUpper(alerta)) { case "YELLOW": return "tileBorderYellow"; case "RED": return "tileBorderRed"; case "PULSE": return "tileBorderPulse"; default: return ""; } }
-function participantsHtml(list, extraClass = "") { const names = Array.isArray(list) ? list.filter(Boolean) : []; const cls = ["participantsList", extraClass].filter(Boolean).join(" "); if (!names.length) return `<div class="popoverEmpty">Nenhum participante informado</div>`; return `<ul class="${cls}">${names.map((name) => `<li>${escapeHtml(name)}</li>`).join("")}</ul>`; }
+function participantsHtml(list, motorista, coringas, extraClass = "") {
+  const names = Array.isArray(list) ? list.filter(Boolean) : [];
+  const cls = ["participantsList", extraClass].filter(Boolean).join(" ");
+  if (!names.length) return `<div class="popoverEmpty">Nenhum participante informado</div>`;
+  
+  const normMotorista = (motorista || "").trim().toUpperCase();
+  const normCoringas = Array.isArray(coringas) ? coringas.map(c => (c || "").trim().toUpperCase()) : [];
+
+  return `<ul class="${cls}">${names.map((name) => {
+    const normName = name.trim().toUpperCase();
+    const isDriver = normName === normMotorista;
+    const isCoringa = normCoringas.includes(normName);
+    
+    let iconsHtml = "";
+    if (isDriver) {
+      iconsHtml += `<svg class="monitorIcon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display:inline-block; vertical-align:middle; margin-left:6px; color:#2196F3;" title="Motorista"><path d="M12,2C6.5,2 2,6.5 2,12C2,17.5 6.5,22 12,22C17.5,22 22,17.5 22,12C22,6.5 17.5,2 12,2M12,4C15.8,4 19,6.9 19.8,10.5H16.2C15.6,9 14,8 12,8C10,8 8.4,9 7.8,10.5H4.2C5,6.9 8.2,4 12,4M4.2,13.5H7.8C8.4,15 10,16 12,16C14,16 15.6,15 16.2,13.5H19.8C19,17.1 15.8,20 12,20C8.2,20 5,17.1 4.2,13.5Z"/></svg>`;
+    }
+    if (isCoringa) {
+      iconsHtml += `<svg class="monitorIcon" viewBox="0 0 24 24" width="14" height="14" style="display:inline-block; vertical-align:middle; margin-left:6px;" title="Coringa"><path fill="#4CAF50" d="M8,7.5c0,-0.83 0.67,-1.5 1.5,-1.5h6.5V4.5c0,-0.45 0.54,-0.67 0.85,-0.35l4.5,4.5c0.2,0.2 0.2,0.5 0,0.7l-4.5,4.5c-0.31,0.32 -0.85,0.1 -0.85,-0.35V10.5h-6.5C8.67,10.5 8,9.83 8,9V7.5z"/><path fill="#E53935" d="M16,16.5c0,0.83 -0.67,1.5 -1.5,1.5h-6.5V19.5c0,0.45 -0.54,0.67 -0.85,0.35l-4.5,-4.5c-0.2,-0.2 -0.2,-0.5 0,-0.7l4.5,-4.5c0.31,-0.32 0.85,-0.1 0.85,0.35V13.5h6.5C15.33,13.5 16,14.17 16,15V16.5z"/></svg>`;
+    }
+
+    return `<li style="display:flex; align-items:center;">${escapeHtml(name)}${iconsHtml}</li>`;
+  }).join("")}</ul>`;
+}
 function detailValue(value) { if (value === null || value === undefined) return "-"; const text = String(value).trim(); return text || "-"; }
 function hasMeaningfulValue(value) { const text = detailValue(value); return text !== '-' && safeUpper(text) !== 'NULL'; }
 function getViewMode() {
@@ -605,7 +628,7 @@ function tile(item) {
   const crit = item.critico === true;
   const equipe = detailValue(item.equipe);
   const teamKey = detailValue(item.teamKey || item.equipe);
-  const participantes = participantsHtml(item.participantes, 'hoverParticipantsList');
+  const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
   const details = hoverRows(item);
   const statusLabel = stateLabel(shown);
   const hideTimeLine = shown === "DESATUALIZADO";
