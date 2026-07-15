@@ -291,9 +291,9 @@ fun HomeCard(
                             Spacer(modifier = Modifier.height(if (isCompactHeight) 1.dp else 2.dp))
                             
                             val daysToDisplay = participationDays
-                             val sphereSize = if (isCompactHeight) 11.dp else 14.dp
-                             val isSelectedSize = if (isCompactHeight) 14.dp else 16.dp
-                            val dayFontSize = if (isCompactHeight) 6.sp else 8.sp
+                             val sphereSize = if (isCompactHeight) 16.dp else 21.dp
+                             val isSelectedSize = if (isCompactHeight) 21.dp else 24.dp
+                             val dayFontSize = if (isCompactHeight) 8.sp else 10.sp
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(0.98f),
@@ -529,7 +529,7 @@ fun HomeCard(
                     )
                     if (option.subtitle != null) {
                         Spacer(modifier = Modifier.height(2.dp))
-                        val isTeamCard = option.title != "DDS" && option.title != "DISCUSSÃO DIÁRIA DE SEGURANÇA" && 
+                        val isTeamCard = option.title != "DDS" && option.title != "DIÁLOGO DIÁRIO DE SEGURANÇA" && 
                                 option.title != "Turno" && option.title != "ESTADO DO TURNO" && 
                                 option.title != "Produção" && option.title != "DESEMPENHO DA PRODUÇÃO" && 
                                 option.title != "Mensagens" && option.title != "MINHAS MENSAGENS" && 
