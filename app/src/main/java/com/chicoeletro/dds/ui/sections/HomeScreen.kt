@@ -115,8 +115,7 @@ fun HomeScreen(
             title = "ABASTECIMENTO", 
             icon = Icons.Default.LocalGasStation, 
             color = Color(0xFFD32F2F), 
-            onClick = onAbastecimentoClick,
-            subtitle = "Recente: 18,06 - Uso: 38,39"
+            onClick = onAbastecimentoClick
         ),
         HomeOption(
             title = if (equipe.isNotBlank()) equipe.uppercase() else "DEFINIR EQUIPE",
@@ -131,7 +130,7 @@ fun HomeScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F7FA))) {
         val isCompactHeight = maxHeight < 550.dp
         val spacing = if (isCompactHeight) 8.dp else 16.dp
-        val iconSize = if (isCompactHeight) 24.dp else 36.dp
+        val iconSize = if (isCompactHeight) 40.dp else 56.dp
         val fontSize = if (isCompactHeight) 14.sp else 16.sp
         val subtitleSize = if (isCompactHeight) 10.sp else 12.sp
         val subtitleMaxLines = if (isCompactHeight) 1 else 3
