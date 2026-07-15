@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -455,7 +456,9 @@ fun HomeCard(
                         Image(
                             painter = painterResource(id = option.iconResId),
                             contentDescription = option.title,
-                            modifier = Modifier.size(currentIconSize),
+                            modifier = Modifier
+                                .size(currentIconSize)
+                                .clip(CircleShape),
                             contentScale = ContentScale.Fit
                         )
                     } else if (option.icon != null) {
