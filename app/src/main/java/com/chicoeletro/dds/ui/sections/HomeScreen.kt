@@ -243,48 +243,41 @@ fun HomeCard(
                 val topPadding = if (isCompactHeight) 8.dp else 12.dp
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Top part: Logo and Frequency label
+                    // Top part: Logo only
+                    Box(
+                        modifier = Modifier
+                            .weight(1.8f)
+                            .fillMaxWidth()
+                            .padding(top = topPadding, start = 8.dp, end = 8.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (option.iconResId != null) {
+                            Image(
+                                painter = painterResource(id = option.iconResId),
+                                contentDescription = option.title,
+                                modifier = Modifier.fillMaxHeight(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+
+                    // Bottom part: Status Bar with Markers (KPI) and Frequency Label inside
                     Column(
                         modifier = Modifier
-                            .weight(2f)
+                            .weight(1.2f)
                             .fillMaxWidth()
-                            .padding(top = topPadding, start = 8.dp, end = 8.dp, bottom = 4.dp),
+                            .background(Color(0xFFE5E7EB))
+                            .padding(vertical = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (option.iconResId != null) {
-                                Image(
-                                    painter = painterResource(id = option.iconResId),
-                                    contentDescription = option.title,
-                                    modifier = Modifier.fillMaxHeight(),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
-
                         Text(
                             text = "FREQUÊNCIA: SEMANAL",
                             fontSize = subtitleSize,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 4.dp)
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(bottom = 2.dp)
                         )
-                    }
-
-                    // Bottom part: Status Bar with Markers (KPI)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .background(Color(0xFFE5E7EB)),
-                        contentAlignment = Alignment.Center
-                    ) {
                         if (participationDays.isNotEmpty()) {
                             val daysToDisplay = participationDays
                             val sphereSize = if (isCompactHeight) 11.dp else 15.dp
