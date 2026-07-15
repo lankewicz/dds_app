@@ -83,9 +83,9 @@ fun HomeScreen(
     }
 
     val options = listOf(
-        HomeOption("DISCUSSÃO DIÁRIA DE SEGURANÇA", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
+        HomeOption("LPI", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
         HomeOption(
-            title = "ESTADO DO TURNO",
+            title = "TURNO",
             icon = Icons.Default.AccessTime,
             color = Color(0xFF1976D2),
             onClick = onTurnoClick,
@@ -204,8 +204,8 @@ fun HomeCard(
     motorista: String? = null,
     coringas: List<String> = emptyList()
 ) {
-    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA"
-    val isTurnoCard = option.title == "Turno" || option.title == "ESTADO DO TURNO"
+    val isDdsCard = option.title == "DDS" || option.title == "DISCUSSÃO DIÁRIA DE SEGURANÇA" || option.title == "LPI"
+    val isTurnoCard = option.title == "Turno" || option.title == "ESTADO DO TURNO" || option.title == "TURNO"
     val context = LocalContext.current
     val isMensagensOrAbastecimento = option.title == "Mensagens" || option.title == "Abastecimento" || 
             option.title == "MINHAS MENSAGENS" || option.title == "HISTÓRICO DE ABASTECIMENTO"
