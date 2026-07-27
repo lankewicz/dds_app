@@ -282,11 +282,52 @@ function formatMinToHoursText(min) {
   return `⏱️ aprox. ${hrs} hora(s)`;
 }
 
+let isAlertUnitHours = false;
+
+function toggleAlertUnit(useHours) {
+  isAlertUnitHours = useHours;
+  const labels = [
+    document.getElementById("unitLabelAmarelo"),
+    document.getElementById("unitLabelVermelho"),
+    document.getElementById("unitLabelPisco")
+  ];
+  labels.forEach(lbl => {
+    if (lbl) lbl.textContent = useHours ? 'h' : 'min';
+  });
+
+  const inputs = [cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin];
+  inputs.forEach(inp => {
+    if (inp && inp.value !== '') {
+      let val = parseFloat(inp.value);
+      if (!isNaN(val)) {
+        if (useHours) {
+          inp.value = (val / 60).toFixed(1).replace('.0', '');
+        } else {
+          inp.value = Math.round(val * 60);
+        }
+      }
+    }
+  });
+  syncConfigSummary();
+}
+
 function fillConfigForm(config) {
   const rules = config?.rules || {};
-  if (cfgAlertaAmareloMin) cfgAlertaAmareloMin.value = rules.alertaAmareloMin ?? '';
-  if (cfgAlertaVermelhoMin) cfgAlertaVermelhoMin.value = rules.alertaVermelhoMin ?? '';
-  if (cfgAlertaPiscoMin) cfgAlertaPiscoMin.value = rules.alertaPiscoMin ?? '';
+  const isHours = Boolean(cfgAlertUnitHoursToggle && cfgAlertUnitHoursToggle.checked);
+  
+  if (cfgAlertaAmareloMin) {
+    const minVal = rules.alertaAmareloMin ?? '';
+    cfgAlertaAmareloMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
+  }
+  if (cfgAlertaVermelhoMin) {
+    const minVal = rules.alertaVermelhoMin ?? '';
+    cfgAlertaVermelhoMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
+  }
+  if (cfgAlertaPiscoMin) {
+    const minVal = rules.alertaPiscoMin ?? '';
+    cfgAlertaPiscoMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
+  }
+
   if (cfgAutoCloseOpenHours) cfgAutoCloseOpenHours.value = rules.autoCloseOpenHours ?? '';
   if (cfgFechadoViraDesatualizadoHoras) {
     cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
@@ -298,12 +339,20 @@ function fillConfigForm(config) {
 }
 
 function collectConfigPayload() {
+  const isHours = Boolean(cfgAlertUnitHoursToggle && cfgAlertUnitHoursToggle.checked);
+  
+  const parseAlertMin = (inp) => {
+    let val = parseFloat(inp?.value || 0);
+    if (isNaN(val)) return 0;
+    return isHours ? Math.round(val * 60) : Math.round(val);
+  };
+
   return {
     pollingSeconds: Number(cfgPollingSeconds?.value || 0),
     rules: {
-      alertaAmareloMin: Number(cfgAlertaAmareloMin?.value || 0),
-      alertaVermelhoMin: Number(cfgAlertaVermelhoMin?.value || 0),
-      alertaPiscoMin: Number(cfgAlertaPiscoMin?.value || 0),
+      alertaAmareloMin: parseAlertMin(cfgAlertaAmareloMin),
+      alertaVermelhoMin: parseAlertMin(cfgAlertaVermelhoMin),
+      alertaPiscoMin: parseAlertMin(cfgAlertaPiscoMin),
       autoCloseOpenHours: Number(cfgAutoCloseOpenHours?.value || 0),
       autoDesatualizaFechadoHours: Number(cfgFechadoViraDesatualizadoHoras?.value || 0),
       desatualizadoCriticoHoras: Number(cfgDesatualizadoCriticoHoras?.value || 0),
@@ -331,27 +380,25 @@ function syncConfigSummary() {
   if (hintVermelho) hintVermelho.textContent = `⏱️ ${(totalVermelho/60).toFixed(1).replace('.0','')}h acumulado`;
   if (hintPisco) hintPisco.textContent = `⏱️ ${(totalPisco/60).toFixed(1).replace('.0','')}h acumulado`;
 
-  if (!configSummary) return;
-
   const hOpen = rules.autoCloseOpenHours || 0;
   const hClosed = rules.autoDesatualizaFechadoHours || rules.fechadoViraDesatualizadoHoras || 0;
   const hCrit = rules.desatualizadoCriticoHoras || 0;
   const hInact = rules.autoInactivateHours || 0;
   
-  const totalInactHours = hOpen + hClosed + hInact;
-  const daysInact = (totalInactHours / 24).toFixed(1).replace('.0', '');
+  const acc1 = hOpen;
+  const acc2 = hOpen + hClosed;
+  const acc3 = acc2 + hCrit;
+  const acc4 = acc2 + hInact;
 
-  configSummary.innerHTML = `
-    <div class="summaryFlowBar">
-      <span class="summaryChip badgeAberto">🟢 ABERTO (${hOpen}h)</span> ➔ 
-      <span class="summaryChip badgeFechado">🔵 FECHADO (${hClosed}h)</span> ➔ 
-      <span class="summaryChip badgeDesatualizado">🟧 DESATUALIZADO (CRÍTICO em ${hCrit}h)</span> ➔ 
-      <span class="summaryChip badgeInativa">⚪ INATIVA (${hInact}h)</span>
-    </div>
-    <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
-      💡 <b>Resumo:</b> O turno abre ➔ fecha auto em <b>${hOpen}h</b> ➔ desatualiza <b>${hClosed}h</b> depois ➔ vira crítico em <b>${hCrit}h</b> em desatualizado ➔ inativa a equipe após <b>${hInact}h</b> em desatualizado. (Tolerância acumulada até inativação: <b>${totalInactHours}h / ~${daysInact} dias</b>).
-    </div>
-  `;
+  const accStep1 = document.getElementById("accStep1");
+  const accStep2 = document.getElementById("accStep2");
+  const accStep3 = document.getElementById("accStep3");
+  const accStep4 = document.getElementById("accStep4");
+
+  if (accStep1) accStep1.textContent = `Acumulado: ${acc1}h`;
+  if (accStep2) accStep2.textContent = `Acumulado: ${acc2}h (${(acc2/24).toFixed(1).replace('.0','')}d)`;
+  if (accStep3) accStep3.textContent = `Acumulado: ${acc3}h (${(acc3/24).toFixed(1).replace('.0','')}d)`;
+  if (accStep4) accStep4.textContent = `Tolerância Total: ${acc4}h (~${(acc4/24).toFixed(1).replace('.0','')} dias)`;
 }
 
 function attachConfigInputListeners() {
@@ -366,6 +413,14 @@ function attachConfigInputListeners() {
       inp.addEventListener('input', syncConfigSummary);
     }
   });
+
+  const toggleSwitch = document.getElementById("cfgAlertUnitHoursToggle");
+  if (toggleSwitch && !toggleSwitch.dataset.listenerAttached) {
+    toggleSwitch.dataset.listenerAttached = 'true';
+    toggleSwitch.addEventListener('change', (e) => {
+      toggleAlertUnit(e.target.checked);
+    });
+  }
 }
 
 function openConfigModal() {
