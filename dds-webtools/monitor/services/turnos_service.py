@@ -1762,10 +1762,10 @@ def _process_single_team(
                 extra={"reason": activity_kind},
             )
             team_active = True
-        elif has_inactive_checkpoint:
-            auto_inactivate_h = int(rules.get("autoInactivateHours") or 96)
+        elif not manual_inactive:
+            auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
             recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < auto_inactivate_h * 3600
-            if recent_contact and not manual_inactive:
+            if recent_contact:
                 _persist_team_active_state(
                     team_key,
                     active=True,
@@ -1778,11 +1778,14 @@ def _process_single_team(
     auto_state_reason = data.get("autoStateReason")
     auto_state_source_dt = to_utc_dt(data.get("autoStateSourceUpdatedAt"))
 
-    # Data inicial do estágio atual (calcula horas de permanência no estado atual)
-    state_start_dt = auto_state_source_dt or dt or last_contact_dt
+    # Data inicial do estágio atual: reseta a contagem se houve contato novo após o auto_state
+    if last_contact_dt and auto_state_source_dt and last_contact_dt > auto_state_source_dt:
+        state_start_dt = last_contact_dt
+    else:
+        state_start_dt = auto_state_source_dt or dt or last_contact_dt
     horas_estagio = int((now - state_start_dt).total_seconds() // 3600) if state_start_dt else (horas or 0)
 
-    # Inativação automática por tempo no estágio DESATUALIZADO ou inatividade extrema
+    # Inativação automática por tempo sem contato
     if estado_original in ["DESCONHECIDO", "FECHADO", "DESATUALIZADO"]:
         if team_active:
             auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
@@ -1790,9 +1793,8 @@ def _process_single_team(
             is_grace_period = reactivated_at and (now - reactivated_at).total_seconds() < auto_inactivate_h * 3600
             recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < auto_inactivate_h * 3600
 
-            # Inativa se esteve DESATUALIZADO pelo tempo de inativação OU se ficou sem contato além da carência
-            is_desat_timeout = (estado_original == "DESATUALIZADO" and horas_estagio >= auto_inactivate_h)
-            if last_contact_dt and (is_desat_timeout or not recent_contact) and not is_grace_period:
+            # Inativa APENAS se a equipe NÃO teve contato recente dentro do limite de inativação
+            if last_contact_dt and (not recent_contact) and not is_grace_period:
                 _persist_team_active_state(
                     team_key,
                     active=False,
