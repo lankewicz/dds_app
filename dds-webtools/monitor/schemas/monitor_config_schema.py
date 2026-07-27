@@ -20,17 +20,9 @@ class MonitorRulesPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_ranges(self):
-        # Fallback para garantir que temos o valor de fechado
         fechado_val = self.autoDesatualizaFechadoHours or self.fechadoViraDesatualizadoHoras
         if fechado_val is None:
             raise ValueError("O tempo para equipe fechada virar desatualizada é obrigatório.")
-
-        if self.alertaVermelhoMin < self.alertaAmareloMin:
-            raise ValueError("O alerta vermelho deve ser maior ou igual ao amarelo.")
-        if self.alertaPiscoMin < self.alertaVermelhoMin:
-            raise ValueError("O alerta em pisco deve ser maior ou igual ao vermelho.")
-        if self.autoInactivateHours is not None and self.autoInactivateHours < 1:
-            raise ValueError("O tempo de inativação deve ser de pelo menos 1 hora.")
         return self
 
 

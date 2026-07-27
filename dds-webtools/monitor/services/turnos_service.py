@@ -1928,11 +1928,15 @@ def _process_single_team(
 
     alerta = None
     if minutos is not None:
-        if minutos >= alerta_pisco_min:
+        thresh_amarelo = alerta_amarelo_min
+        thresh_vermelho = (alerta_vermelho_min if alerta_vermelho_min > alerta_amarelo_min else (alerta_amarelo_min + alerta_vermelho_min))
+        thresh_pisco = (alerta_pisco_min if alerta_pisco_min > thresh_vermelho else (thresh_vermelho + alerta_pisco_min))
+
+        if minutos >= thresh_pisco:
             alerta = "PULSE"
-        elif minutos >= alerta_vermelho_min:
+        elif minutos >= thresh_vermelho:
             alerta = "RED"
-        elif minutos >= alerta_amarelo_min:
+        elif minutos >= thresh_amarelo:
             alerta = "YELLOW"
 
     dds_history: list[str] = []

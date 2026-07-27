@@ -320,9 +320,16 @@ function syncConfigSummary() {
   const hintVermelho = document.getElementById("hintAlertaVermelho");
   const hintPisco = document.getElementById("hintAlertaPisco");
   
-  if (hintAmarelo) hintAmarelo.textContent = formatMinToHoursText(rules.alertaAmareloMin);
-  if (hintVermelho) hintVermelho.textContent = formatMinToHoursText(rules.alertaVermelhoMin);
-  if (hintPisco) hintPisco.textContent = formatMinToHoursText(rules.alertaPiscoMin);
+  const minAmarelo = rules.alertaAmareloMin || 0;
+  const minVermelho = rules.alertaVermelhoMin || 0;
+  const minPisco = rules.alertaPiscoMin || 0;
+  
+  const totalVermelho = (minVermelho > minAmarelo) ? minVermelho : (minAmarelo + minVermelho);
+  const totalPisco = (minPisco > totalVermelho) ? minPisco : (totalVermelho + minPisco);
+
+  if (hintAmarelo) hintAmarelo.textContent = `⏱️ ${(minAmarelo/60).toFixed(1).replace('.0','')}h sem contato`;
+  if (hintVermelho) hintVermelho.textContent = `⏱️ ${(totalVermelho/60).toFixed(1).replace('.0','')}h acumulado`;
+  if (hintPisco) hintPisco.textContent = `⏱️ ${(totalPisco/60).toFixed(1).replace('.0','')}h acumulado`;
 
   if (!configSummary) return;
 
