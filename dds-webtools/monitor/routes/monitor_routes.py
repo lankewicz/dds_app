@@ -82,6 +82,31 @@ def update_config(payload: MonitorConfigPayload):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/api/crash-reports")
+def get_crash_reports():
+    from services.crash_reports_service import list_crash_reports
+    reports = list_crash_reports(limit=50)
+    return JSONResponse({
+        "ok": True,
+        "count": len(reports),
+        "reports": reports
+    })
+
+
+@router.delete("/api/crash-reports/{report_id}")
+def delete_single_crash_report(report_id: str):
+    from services.crash_reports_service import delete_crash_report
+    ok = delete_crash_report(report_id)
+    return JSONResponse({"ok": ok})
+
+
+@router.delete("/api/crash-reports")
+def clear_all_reports():
+    from services.crash_reports_service import clear_all_crash_reports
+    deleted_count = clear_all_crash_reports()
+    return JSONResponse({"ok": True, "deletedCount": deleted_count})
+
+
 @router.get("/api/turnos")
 def turnos(
     empresa: str = Query(DEFAULT_EMPRESA),

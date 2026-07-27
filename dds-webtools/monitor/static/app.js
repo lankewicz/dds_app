@@ -426,10 +426,135 @@ function attachConfigInputListeners() {
 function openConfigModal() {
   fillConfigForm(cfg || {});
   attachConfigInputListeners();
+  attachCrashReportListeners();
   setConfigNotice('');
+  loadCrashReports();
 
   if (configModalMeta) configModalMeta.textContent = 'Edite os tempos e confirme para aplicar.';
   setConfigModalHidden(false);
+}
+
+function attachCrashReportListeners() {
+  const btnRefresh = document.getElementById("btnRefreshCrashReports");
+  if (btnRefresh && !btnRefresh.dataset.listenerAttached) {
+    btnRefresh.dataset.listenerAttached = 'true';
+    btnRefresh.addEventListener("click", loadCrashReports);
+  }
+  const btnClear = document.getElementById("btnClearCrashReports");
+  if (btnClear && !btnClear.dataset.listenerAttached) {
+    btnClear.dataset.listenerAttached = 'true';
+    btnClear.addEventListener("click", clearAllCrashReports);
+  }
+}
+
+async function loadCrashReports() {
+  const container = document.getElementById("crashReportsContainer");
+  const badge = document.getElementById("crashConfigBadge");
+  const btnRefresh = document.getElementById("btnRefreshCrashReports");
+
+  if (btnRefresh) btnRefresh.disabled = true;
+
+  try {
+    const res = await fetch("/api/crash-reports");
+    if (!res.ok) throw new Error("Falha ao carregar relatórios");
+    const data = await res.json();
+    const reports = data.reports || [];
+
+    if (badge) {
+      if (reports.length > 0) {
+        badge.textContent = reports.length;
+        badge.hidden = false;
+      } else {
+        badge.hidden = true;
+      }
+    }
+
+    if (!container) return;
+
+    if (reports.length === 0) {
+      container.innerHTML = `<div class="crashReportsEmpty">✅ Nenhum relatório de erro/fechamento anormal registrado até o momento.</div>`;
+      return;
+    }
+
+    container.innerHTML = reports.map(r => {
+      const errName = (r.exceptionType || "Exception").split('.').pop();
+      const deviceStr = r.device ? `${r.device} (Android ${r.androidVersion || '?'})` : "Dispositivo Desconhecido";
+      const appVerStr = r.appVersion ? `v${r.appVersion}` : "";
+      
+      return `
+        <div class="crashCard" data-id="${r.id}">
+          <div class="crashCardHeader">
+            <div class="crashCardMeta">
+              <span>📅 ${r.timestamp || '-'}</span>
+              <span class="crashBadgeDevice">📱 ${deviceStr}</span>
+              ${appVerStr ? `<span class="crashBadgeDevice">${appVerStr}</span>` : ''}
+            </div>
+            <span class="crashBadgeError">❌ ${errName}</span>
+          </div>
+          <div class="crashCardMessage">💬 ${r.message || 'Sem mensagem detalhada'}</div>
+          
+          <details class="crashCardDetails">
+            <summary>🔍 Ver Pilha de Chamadas (Stacktrace)</summary>
+            <pre class="crashStackTraceBox"><code>${r.stackTrace || 'Sem stacktrace'}</code></pre>
+          </details>
+
+          <div class="crashCardActions">
+            <button type="button" class="btnSecondary" style="font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.08); color: #fff; border: none; cursor: pointer;" onclick="copyCrashStackTrace('${r.id}')">
+              📋 Copiar Stacktrace
+            </button>
+            <button type="button" class="btnDanger" style="font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.3); cursor: pointer;" onclick="deleteCrashReport('${r.id}')">
+              🗑️ Excluir
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error("Erro ao carregar crash reports:", err);
+    if (container) container.innerHTML = `<div class="crashReportsEmpty" style="color: #f87171;">⚠️ Erro ao carregar relatórios do servidor.</div>`;
+  } finally {
+    if (btnRefresh) btnRefresh.disabled = false;
+  }
+}
+
+window.copyCrashStackTrace = function(reportId) {
+  const card = document.querySelector(`.crashCard[data-id="${reportId}"]`);
+  if (!card) return;
+  const code = card.querySelector(".crashStackTraceBox")?.textContent || "";
+  navigator.clipboard.writeText(code).then(() => {
+    alert("Stacktrace copiado para a área de transferência!");
+  }).catch(() => {
+    alert("Não foi possível copiar o texto.");
+  });
+};
+
+window.deleteCrashReport = async function(reportId) {
+  if (!confirm("Deseja realmente excluir este relatório de erro?")) return;
+  try {
+    const res = await fetch(`/api/crash-reports/${reportId}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadCrashReports();
+    } else {
+      alert("Falha ao excluir o relatório.");
+    }
+  } catch (err) {
+    alert("Erro de conexão ao excluir o relatório.");
+  }
+};
+
+async function clearAllCrashReports() {
+  if (!confirm("Deseja realmente limpar TODOS os relatórios de erros do servidor? Essa ação não pode ser desfeita.")) return;
+  try {
+    const res = await fetch("/api/crash-reports", { method: 'DELETE' });
+    if (res.ok) {
+      loadCrashReports();
+    } else {
+      alert("Falha ao limpar relatórios.");
+    }
+  } catch (err) {
+    alert("Erro ao conectar com o servidor.");
+  }
 }
 
 function closeConfigModal() {
@@ -1692,6 +1817,9 @@ if (sectorSelector) {
 
 // Lógica de Navegação Dinâmica (SPA)
 function initNavigation() {
+  // Carrega contagem de crash reports ao iniciar
+  loadCrashReports();
+
   document.querySelectorAll('.viewTab').forEach(tab => {
     // A aba de solicitações tem comportamento próprio, ignoramos aqui
     if (tab.id === 'requestsTab') return;
