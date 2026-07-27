@@ -68,26 +68,40 @@ object CrashReportManager {
         }
     }
 
-    fun sendViaWhatsApp(context: Context, report: CrashReport): Boolean {
+    fun sendViaWhatsApp(
+        context: Context,
+        report: CrashReport,
+        targetPhone: String = "5546999250836"
+    ): Boolean {
         return try {
-            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(android.content.Intent.EXTRA_TEXT, report.toFormattedText())
+            val cleanPhone = targetPhone.replace("[^0-9]".toRegex(), "")
+            val encodedText = java.net.URLEncoder.encode(report.toFormattedText(), "UTF-8")
+            val uri = android.net.Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=$encodedText")
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply {
                 setPackage("com.whatsapp")
             }
             context.startActivity(intent)
             true
         } catch (e: Exception) {
             try {
-                val genericIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(android.content.Intent.EXTRA_TEXT, report.toFormattedText())
-                }
-                context.startActivity(android.content.Intent.createChooser(genericIntent, "Enviar Relatório de Erro via..."))
+                val cleanPhone = targetPhone.replace("[^0-9]".toRegex(), "")
+                val encodedText = java.net.URLEncoder.encode(report.toFormattedText(), "UTF-8")
+                val uri = android.net.Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=$encodedText")
+                val genericIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                context.startActivity(genericIntent)
                 true
             } catch (err: Exception) {
-                Log.e("CrashReportManager", "Erro ao abrir WhatsApp", err)
-                false
+                try {
+                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, report.toFormattedText())
+                    }
+                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Enviar Relatório de Erro via..."))
+                    true
+                } catch (_: Exception) {
+                    Log.e("CrashReportManager", "Erro ao abrir WhatsApp para $targetPhone", err)
+                    false
+                }
             }
         }
     }
