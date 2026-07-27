@@ -13,8 +13,8 @@ from google.cloud import firestore
 logger = logging.getLogger(__name__)
 
 def _get_db():
-    from services.firebase_service import get_db
-    return get_db()
+    from services.firestore_client import db
+    return db
 
 def list_crash_reports(limit: int = 50) -> List[Dict[str, Any]]:
     """Lê os últimos relatórios de erros gravados pelos apps Android."""
