@@ -406,8 +406,8 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
       return "";
     }
 
-    async function downscaleTo1080p(file, { maxW = 1920, maxH = 1080, quality = 0.82 } = {}) {
-      // converte para JPEG 1080p (mantém proporção)
+    async function downscaleTo1080p(file, { maxW = 1920, maxH = 1080, quality = 0.85 } = {}) {
+      // converte qualquer imagem para WebP 1080p (mantém proporção)
       const bmp = await createImageBitmap(file);
       const ratio = Math.min(maxW / bmp.width, maxH / bmp.height, 1);
       const w = Math.round(bmp.width * ratio);
@@ -416,13 +416,13 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
-      const ctx = canvas.getContext("2d", { alpha: false });
+      const ctx = canvas.getContext("2d");
       ctx.drawImage(bmp, 0, 0, w, h);
   
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", quality));
       const base = (file.name || "slide").replace(/\.\w+$/, "");
-      const newName = base + "_1080p.jpg";
-      return new File([blob], newName, { type: "image/jpeg" });
+      const newName = base + "_1080p.webp";
+      return new File([blob], newName, { type: "image/webp" });
     }
   
     async function putToSignedUrl(uploadUrl, file) {
