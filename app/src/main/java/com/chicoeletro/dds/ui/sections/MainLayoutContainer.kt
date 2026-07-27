@@ -223,8 +223,20 @@ fun MainLayoutContainer() {
     var teamDialogMandatory by rememberSaveable { mutableStateOf(false) }
 
     // ==========================================================
-    // Turno: estado local + fluxo de KM/foto
+    // Crash Shield: Relatório de Fechamento Anormal no último acesso
     // ==========================================================
+    var pendingCrashReport by remember {
+        mutableStateOf(com.chicoeletro.dds.core.crash.CrashReportManager.getPendingCrashReport(context))
+    }
+
+    pendingCrashReport?.let { report ->
+        com.chicoeletro.dds.ui.components.CrashReportDialog(
+            report = report,
+            onDismiss = {
+                pendingCrashReport = null
+            }
+        )
+    }
     var turnoSnap by remember { mutableStateOf(TurnoSnapshot()) }
     var showTurnoControl by remember { mutableStateOf(false) }
     var errorTurnoMessage by remember { mutableStateOf<String?>(null) }

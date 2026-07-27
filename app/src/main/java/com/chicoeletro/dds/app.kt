@@ -28,6 +28,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // 0) Instalação do Crash Shield (Capturador de Fechamento Anormal)
+        com.chicoeletro.dds.core.crash.CrashHandler.install(this)
+
         // 1) Firebase
         FirebaseApp.initializeApp(this)
 
