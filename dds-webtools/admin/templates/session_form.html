@@ -86,7 +86,7 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
     </div>
 
     <!-- Picker visível (sem name) para permitir múltiplas seleções acumuladas -->
-    <input id="slidesPicker" type="file" multiple accept="image/jpeg,.jpg,.jpeg" />
+    <input id="slidesPicker" type="file" multiple accept="image/*,.jpg,.jpeg,.webp,.png" />
 
     <div class="row" style="margin-top:10px;">
       <button class="btn" type="button" id="btnAddMore">Adicionar mais arquivos</button>
@@ -96,7 +96,7 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
     <ul id="slidesPreview" class="slides"></ul>
 
     <!-- Input real enviado no POST (nome = slides) -->
-    <input id="slidesSubmit" name="slides" type="file" multiple accept="image/jpeg,.jpg,.jpeg" style="display:none;" />
+    <input id="slidesSubmit" name="slides" type="file" multiple accept="image/*,.jpg,.jpeg,.webp,.png" style="display:none;" />
  
     <!-- Contagem de slides (para backend criar package com N slides) -->
     <input id="slidesCount" name="slidesCount" type="hidden" value="1" />
