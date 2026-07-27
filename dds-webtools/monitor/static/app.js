@@ -388,7 +388,7 @@ function syncConfigSummary() {
   const acc1 = hOpen;
   const acc2 = hOpen + hClosed;
   const acc3 = acc2 + hCrit;
-  const acc4 = acc2 + hInact;
+  const acc4 = acc3 + hInact;
 
   const accStep1 = document.getElementById("accStep1");
   const accStep2 = document.getElementById("accStep2");

@@ -1764,7 +1764,7 @@ def _process_single_team(
             team_active = True
         elif not manual_inactive:
             auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
-            total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + auto_inactivate_h
+            total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + critico_desat_h + auto_inactivate_h
             recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < total_inactivate_tolerance_h * 3600
             if recent_contact:
                 _persist_team_active_state(
@@ -1790,7 +1790,7 @@ def _process_single_team(
     if estado_original in ["DESCONHECIDO", "FECHADO", "DESATUALIZADO"]:
         if team_active:
             auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
-            total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + auto_inactivate_h
+            total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + critico_desat_h + auto_inactivate_h
             reactivated_at = to_utc_dt(team_data.get("autoReactivatedAt"))
             is_grace_period = reactivated_at and (now - reactivated_at).total_seconds() < total_inactivate_tolerance_h * 3600
             recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < total_inactivate_tolerance_h * 3600
@@ -1913,7 +1913,7 @@ def _process_single_team(
     # Disparo automático de aviso pré-inativação: inicia 12 horas antes da inativação e reenvia a cada 60 min (3600s)
     if team_active and estado == "DESATUALIZADO":
         auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
-        total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + auto_inactivate_h
+        total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + critico_desat_h + auto_inactivate_h
         total_no_contact_h = int((now - last_contact_dt).total_seconds() // 3600) if last_contact_dt else horas_estagio
         horas_restantes = total_inactivate_tolerance_h - total_no_contact_h
         
