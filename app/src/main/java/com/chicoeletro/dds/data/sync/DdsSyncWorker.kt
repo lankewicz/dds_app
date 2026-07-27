@@ -154,10 +154,11 @@ class DdsSyncWorker(
         canvas.drawText("FOTO CORROMPIDA", 400f, 280f, paint)
         canvas.drawText("OU INACESSÍVEL", 400f, 350f, paint)
         
-        val f = File(context.cacheDir, "fallback_${System.currentTimeMillis()}.jpg")
+        val f = File(context.cacheDir, "fallback_${System.currentTimeMillis()}.webp")
         f.outputStream().use { 
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it)
+            com.chicoeletro.dds.core.utils.ImageCompressor.compressToWebp(bitmap, 80, it)
         }
+        bitmap.recycle()
         return f
     }
 

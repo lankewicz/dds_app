@@ -250,15 +250,19 @@ private fun gerarThumb(context: android.content.Context, uri: Uri): Uri? {
     return try {
         val bmp = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return null
         val thumb = bmp.scale(320, 180, true)
-        val f = File.createTempFile("thumb_", ".jpg", context.cacheDir)
-        FileOutputStream(f).use { out -> thumb.compress(Bitmap.CompressFormat.JPEG, 80, out) }
+        val f = File.createTempFile("thumb_", ".webp", context.cacheDir)
+        FileOutputStream(f).use { out -> 
+            com.chicoeletro.dds.core.utils.ImageCompressor.compressToWebp(thumb, 80, out)
+        }
+        bmp.recycle()
+        thumb.recycle()
         FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
     } catch (_: Exception) {
         null
     }
 }
 
-private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW: Int = 1920, minH: Int = 1080, quality: Int = 75) {
+private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW: Int = 1920, minH: Int = 1080, quality: Int = 80) {
     try {
         val optsForBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, optsForBounds) }
@@ -270,6 +274,7 @@ private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW:
                 while (halfH / samp >= minH && halfW / samp >= minW) { samp *= 2 }
             }
             inSampleSize = samp
+            inPreferredConfig = Bitmap.Config.RGB_565 // Consumo de RAM reduzido pela metade
         }
         val input: InputStream = context.contentResolver.openInputStream(uri) ?: return
         val original = BitmapFactory.decodeStream(input, null, safeOpts)
@@ -318,7 +323,7 @@ private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW:
         }
 
         val out: OutputStream = context.contentResolver.openOutputStream(uri, "w") ?: return
-        finalBmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        com.chicoeletro.dds.core.utils.ImageCompressor.compressToWebp(finalBmp, quality, out)
         out.flush()
         out.close()
         if (finalBmp != base) base.recycle()
