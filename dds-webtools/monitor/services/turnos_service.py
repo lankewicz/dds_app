@@ -1546,6 +1546,53 @@ def list_turnos_dds(empresa: str, active: bool | None = None) -> dict[str, Any]:
     return {"empresa": empresa, "items": dds_items, "cached": True}
 
 
+def _send_pre_inactivation_warning(
+    empresa: str,
+    team_key: str,
+    total_hours_no_contact: int,
+    hours_remaining: int,
+    stage_start_str: str,
+) -> None:
+    dias = total_hours_no_contact // 24
+    horas_resto = total_hours_no_contact % 24
+
+    if dias > 0:
+        tempo_str = f"{dias} dia(s) e {horas_resto} hora(s)" if horas_resto > 0 else f"{dias} dia(s)"
+    else:
+        tempo_str = f"{horas_resto} hora(s)"
+
+    msg_body = (
+        f"Você está a {tempo_str} sem comunicação com o DDS.\n\n"
+        f"Dentro de {hours_remaining} hora(s) sua equipe será marcada como INATIVA.\n\n"
+        f"Acesse o aplicativo de DDS e realize o DDS e informe o status de seu turno."
+    )
+
+    try:
+        # Atualiza a notificação no documento da equipe para ser lida pelo aplicativo Android
+        db.collection("turno").document(empresa).collection("equipes").document(team_key).set({
+            "lastPreInactiveWarningAt": firestore.SERVER_TIMESTAMP,
+            "lastPreInactiveWarningSentAt": firestore.SERVER_TIMESTAMP,
+            "lastPreInactiveWarningMsg": msg_body,
+            "lastPreInactiveWarningStage": stage_start_str,
+            "preInactiveWarningActive": True,
+        }, merge=True)
+
+        # Grava na coleção de mensagens de comunicação
+        db.collection("mensagens_comunicacao").add({
+            "empresa": empresa,
+            "fromEquipe": "SISTEMA_DDS",
+            "toEquipe": team_key,
+            "toSetor": "TODOS",
+            "mensagem": msg_body,
+            "tipo": "ALERTA_PRE_INATIVACAO",
+            "status": "NÃO LIDO",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "serverUpdatedAt": firestore.SERVER_TIMESTAMP,
+        })
+    except Exception as e:
+        print(f"[WARN] Erro ao registrar alerta pre-inativacao para {team_key}: {e}")
+
+
 def _process_single_team(
     *,
     team_key: str,
@@ -1716,7 +1763,8 @@ def _process_single_team(
             )
             team_active = True
         elif has_inactive_checkpoint:
-            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < 96 * 3600
+            auto_inactivate_h = int(rules.get("autoInactivateHours") or 96)
+            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < auto_inactivate_h * 3600
             if recent_contact and not manual_inactive:
                 _persist_team_active_state(
                     team_key,
@@ -1726,14 +1774,25 @@ def _process_single_team(
                 )
                 team_active = True
 
-    # Inativação automática: equipes ATIVAS em status passivo sem contato recente
+    estado = estado_original
+    auto_state_reason = data.get("autoStateReason")
+    auto_state_source_dt = to_utc_dt(data.get("autoStateSourceUpdatedAt"))
+
+    # Data inicial do estágio atual (calcula horas de permanência no estado atual)
+    state_start_dt = auto_state_source_dt or dt or last_contact_dt
+    horas_estagio = int((now - state_start_dt).total_seconds() // 3600) if state_start_dt else (horas or 0)
+
+    # Inativação automática por tempo no estágio DESATUALIZADO ou inatividade extrema
     if estado_original in ["DESCONHECIDO", "FECHADO", "DESATUALIZADO"]:
         if team_active:
+            auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
             reactivated_at = to_utc_dt(team_data.get("autoReactivatedAt"))
-            is_grace_period = reactivated_at and (now - reactivated_at).total_seconds() < 96 * 3600
-            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < 96 * 3600
+            is_grace_period = reactivated_at and (now - reactivated_at).total_seconds() < auto_inactivate_h * 3600
+            recent_contact = last_contact_dt and (now - last_contact_dt).total_seconds() < auto_inactivate_h * 3600
 
-            if last_contact_dt and not recent_contact and not is_grace_period:
+            # Inativa se esteve DESATUALIZADO pelo tempo de inativação OU se ficou sem contato além da carência
+            is_desat_timeout = (estado_original == "DESATUALIZADO" and horas_estagio >= auto_inactivate_h)
+            if last_contact_dt and (is_desat_timeout or not recent_contact) and not is_grace_period:
                 _persist_team_active_state(
                     team_key,
                     active=False,
@@ -1775,10 +1834,6 @@ def _process_single_team(
     if active_filter is not None and team_active is not active_filter:
         return None
 
-    estado = estado_original
-    auto_state_reason = data.get("autoStateReason")
-    auto_state_source_dt = to_utc_dt(data.get("autoStateSourceUpdatedAt"))
-
     if (
         estado_original == "FECHADO"
         and auto_state_reason == AUTO_REASON_CLOSE_OPEN
@@ -1793,7 +1848,7 @@ def _process_single_team(
             current_estado=estado_original,
             current_reason=auto_state_reason,
         )
-    elif estado_original == "ABERTO" and dt and horas is not None and horas >= auto_close_open_h:
+    elif estado_original == "ABERTO" and dt and horas_estagio >= auto_close_open_h:
         estado = "FECHADO"
         _persist_auto_turno_state(
             empresa,
@@ -1805,7 +1860,8 @@ def _process_single_team(
             reason=AUTO_REASON_CLOSE_OPEN,
             source_dt=dt,
         )
-    elif estado_original == "FECHADO" and dt and horas is not None and horas >= auto_desat_fechado_h:
+        horas_estagio = 0  # Reseta o relógio do novo estágio FECHADO
+    elif estado_original == "FECHADO" and horas_estagio >= auto_desat_fechado_h:
         estado = "DESATUALIZADO"
         _persist_auto_turno_state(
             empresa,
@@ -1817,11 +1873,10 @@ def _process_single_team(
             reason=AUTO_REASON_DESAT_FECHADO,
             source_dt=dt,
         )
+        horas_estagio = 0  # Reseta o relógio do novo estágio DESATUALIZADO
     elif (
         estado_original == "DESLOCAMENTO_ESPECIAL"
-        and dt
-        and horas is not None
-        and horas >= auto_desat_fechado_h
+        and horas_estagio >= auto_desat_fechado_h
     ):
         estado = "DESATUALIZADO"
         _persist_auto_turno_state(
@@ -1834,7 +1889,8 @@ def _process_single_team(
             reason=AUTO_REASON_DESAT_DESLOCAMENTO,
             source_dt=dt,
         )
-    elif estado_original == "INTERVALO" and dt and horas is not None and horas >= auto_desat_intervalo_h:
+        horas_estagio = 0
+    elif estado_original == "INTERVALO" and horas_estagio >= auto_desat_intervalo_h:
         estado = "DESATUALIZADO"
         _persist_auto_turno_state(
             empresa,
@@ -1846,8 +1902,29 @@ def _process_single_team(
             reason=AUTO_REASON_DESAT_INTERVALO,
             source_dt=dt,
         )
+        horas_estagio = 0
 
-    critico = bool(estado == "DESATUALIZADO" and horas is not None and horas >= critico_desat_h)
+    critico = bool(estado == "DESATUALIZADO" and horas_estagio >= critico_desat_h)
+
+    # Disparo automático de aviso pré-inativação: inicia 12 horas antes da inativação e reenvia a cada 60 min (3600s)
+    if team_active and estado == "DESATUALIZADO":
+        auto_inactivate_h = int(rules.get("autoInactivateHours") or 48)
+        horas_restantes = auto_inactivate_h - horas_estagio
+        
+        if 0 < horas_restantes <= 12:
+            last_sent_dt = to_utc_dt(team_data.get("lastPreInactiveWarningSentAt"))
+            should_send = (not last_sent_dt) or ((now - last_sent_dt).total_seconds() >= 3600)
+            
+            if should_send:
+                stage_key = str(state_start_dt)
+                total_no_contact_h = int((now - last_contact_dt).total_seconds() // 3600) if last_contact_dt else horas_estagio
+                _send_pre_inactivation_warning(
+                    empresa=empresa,
+                    team_key=team_key,
+                    total_hours_no_contact=total_no_contact_h,
+                    hours_remaining=horas_restantes,
+                    stage_start_str=stage_key,
+                )
 
     alerta = None
     if minutos is not None:

@@ -12,9 +12,11 @@ class MonitorRulesPayload(BaseModel):
     alertaAmareloMin: int = Field(..., ge=1)
     alertaVermelhoMin: int = Field(..., ge=1)
     alertaPiscoMin: int = Field(..., ge=1)
+    autoCloseOpenHours: int | None = Field(None, ge=1)
     autoDesatualizaFechadoHours: int | None = Field(None, ge=1)
     fechadoViraDesatualizadoHoras: int | None = Field(None, ge=1)
     desatualizadoCriticoHoras: int = Field(..., ge=1)
+    autoInactivateHours: int | None = Field(None, ge=1)
 
     @model_validator(mode="after")
     def validate_ranges(self):

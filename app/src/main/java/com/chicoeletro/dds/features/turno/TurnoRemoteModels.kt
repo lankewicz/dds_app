@@ -8,13 +8,13 @@
 package com.chicoeletro.dds.features.turno
 
 data class TurnoActor(
-    val deviceId: String,
-    val deviceModel: String,
-    val appVersion: String
+    val deviceId: String = "",
+    val deviceModel: String = "",
+    val appVersion: String = ""
 )
 
 data class TurnoPhotoAudit(
-    val required: Boolean,
+    val required: Boolean = false,
     val photoId: String? = null,
     val storagePath: String? = null,
     val thumbPath: String? = null
@@ -24,18 +24,18 @@ data class TurnoPhotoAudit(
  * Evento imutável (append-only) vinculado a um turnoId.
  */
 data class TurnoEventRemote(
-    val empresa: String,
-    val equipe: String,
-    val turnoId: String,
+    val empresa: String = "",
+    val equipe: String = "",
+    val turnoId: String = "",
 
-    val eventId: String,
+    val eventId: String = "",
 
     // "quando aconteceu" (client) + string ISO para debug humano
-    val occurredAtClientMs: Long,
-    val clientCreatedAtIso: String,
+    val occurredAtClientMs: Long = 0L,
+    val clientCreatedAtIso: String = "",
 
-    val from: String,
-    val to: String,
+    val from: String = "",
+    val to: String = "",
 
     // OPÇÃO 1: KM total (quando disponível) + last3 (km4)
     val kmTotalAbs: Long? = null,
@@ -54,8 +54,8 @@ data class TurnoEventRemote(
     // Auditoria forte (recomendado pelo menos em OPEN/CLOSE)
     val membersSnapshot: List<String>? = null,
 
-    val photoAudit: TurnoPhotoAudit,
-    val actor: TurnoActor,
+    val photoAudit: TurnoPhotoAudit = TurnoPhotoAudit(),
+    val actor: TurnoActor = TurnoActor(),
     val bdoList: List<BdoSs>? = null
 )
 
@@ -64,8 +64,8 @@ data class TurnoEventRemote(
  * 1 doc por equipe, sempre apontando para o turno ativo (ou fechado).
  */
 data class TurnoStateRemote(
-    val empresa: String,
-    val equipe: String,
+    val empresa: String = "",
+    val equipe: String = "",
 
     val turnoId: String? = null,
     val isOpen: Boolean = false,
@@ -75,13 +75,13 @@ data class TurnoStateRemote(
     val closedAtClientMs: Long? = null,
     val closeReason: String? = null,
 
-    val clientUpdatedAtMs: Long,
-    val updatedAtIso: String,
+    val clientUpdatedAtMs: Long = 0L,
+    val updatedAtIso: String = "",
 
     val lastEventId: String? = null,
     val lastEventAtClientMs: Long? = null,
 
-    val estado: String,
+    val estado: String = "",
     val nocSs: String? = null,
 
     // OPÇÃO 1: odometria persistida no current
@@ -95,15 +95,15 @@ data class TurnoStateRemote(
     val kmInicioTurno4: Int? = null,
     val inicioTurnoAtIso: String? = null,
 
-    val odometroVerificado: Boolean,
-    val ultimosKm4: List<Int>,
-    val eventosKmCounter: Int,
+    val odometroVerificado: Boolean = false,
+    val ultimosKm4: List<Int> = emptyList(),
+    val eventosKmCounter: Int = 0,
 
     val lastMotivo: String? = null,
     val lastMotivoOutro: String? = null,
 
     val lastWasDescansoSemanal: Boolean = false,
-    val deviceIdLastWriter: String,
+    val deviceIdLastWriter: String = "",
     val bdoList: List<BdoSs>? = null
 )
 
@@ -111,13 +111,13 @@ data class TurnoStateRemote(
  * Sessão do turno (auditoria por turnoId).
  */
 data class TurnoSessionRemote(
-    val empresa: String,
-    val equipe: String,
-    val turnoId: String,
+    val empresa: String = "",
+    val equipe: String = "",
+    val turnoId: String = "",
 
-    val membersSnapshot: List<String>,
+    val membersSnapshot: List<String> = emptyList(),
 
-    val openedAtClientMs: Long,
+    val openedAtClientMs: Long = 0L,
     val closedAtClientMs: Long? = null,
     val closeReason: String? = null,
 

@@ -61,11 +61,11 @@ class TurnoReminderWorker(
                 // Se for a primeira hora, usamos o tom de "Bom dia"
                 if (currentHour == startHour) {
                     val lastClosedMs = snap.lastClosedAtMs ?: 0L
-                    val diffHours = (System.currentTimeMillis() - lastClosedMs) / (1000 * 60 * 60)
+                    val diffHours = if (lastClosedMs > 0L) (System.currentTimeMillis() - lastClosedMs) / (1000 * 60 * 60) else 0L
 
                     if (snap.lastWasDescansoSemanal) {
                         // ART 67: Só avisa se já passou 24h
-                        if (diffHours >= NotificationConfig.INTERJORNADA_ART67_HOURS) {
+                        if (lastClosedMs > 0L && diffHours >= NotificationConfig.INTERJORNADA_ART67_HOURS) {
                             NotificationHelper.showTurnoNotification(
                                 applicationContext,
                                 "Hora de começar!",
@@ -74,7 +74,7 @@ class TurnoReminderWorker(
                         }
                     } else {
                         // Normal: Avisa se já passou o descanso de 11h
-                        if (diffHours >= NotificationConfig.INTERJORNADA_NORMAL_HOURS) {
+                        if (lastClosedMs > 0L && diffHours >= NotificationConfig.INTERJORNADA_NORMAL_HOURS) {
                             NotificationHelper.showTurnoNotification(
                                 applicationContext,
                                 "Equipe ${teamName}",
@@ -91,11 +91,11 @@ class TurnoReminderWorker(
 
         // --- LÓGICA PERIÓDICA (A cada 1h) ---
         val lastChangedMs = snap.lastEventAtClientMs
-        val timeSinceChangeHours = (System.currentTimeMillis() - lastChangedMs) / (1000 * 60 * 60)
+        val timeSinceChangeHours = if (lastChangedMs > 0L) (System.currentTimeMillis() - lastChangedMs) / (1000 * 60 * 60) else 0L
 
         when (snap.estado) {
             EstadoTurno.ABERTO -> {
-                if (timeSinceChangeHours >= NotificationConfig.SHIFT_ABERTO_MAX_HOURS) {
+                if (lastChangedMs > 0L && timeSinceChangeHours >= NotificationConfig.SHIFT_ABERTO_MAX_HOURS) {
                     if (currentHour < endHour) {
                         NotificationHelper.showTurnoNotification(
                             applicationContext,
@@ -120,7 +120,7 @@ class TurnoReminderWorker(
             }
 
             EstadoTurno.INTERVALO -> {
-                if (timeSinceChangeHours >= NotificationConfig.SHIFT_INTERVALO_MAX_HOURS) {
+                if (lastChangedMs > 0L && timeSinceChangeHours >= NotificationConfig.SHIFT_INTERVALO_MAX_HOURS) {
                     if (currentHour < endHour) {
                         NotificationHelper.showTurnoNotification(
                             applicationContext,
@@ -133,7 +133,7 @@ class TurnoReminderWorker(
             }
 
             EstadoTurno.DESLOCAMENTO_ESPECIAL -> {
-                if (timeSinceChangeHours >= NotificationConfig.SHIFT_DESLOCAMENTO_INITIAL_HOURS) {
+                if (lastChangedMs > 0L && timeSinceChangeHours >= NotificationConfig.SHIFT_DESLOCAMENTO_INITIAL_HOURS) {
                     NotificationHelper.showTurnoNotification(
                         applicationContext,
                         "Confirmação de Status",
@@ -146,7 +146,7 @@ class TurnoReminderWorker(
             EstadoTurno.FECHADO -> {
                 // Nag se estiver fechado há muito tempo (status esquecido?)
                 val threshold = if (snap.lastWasDescansoSemanal) NotificationConfig.INTERJORNADA_ART67_HOURS else NotificationConfig.INTERJORNADA_NAG_THRESHOLD
-                if (timeSinceChangeHours >= threshold && currentHour in startHour..endHour) {
+                if (lastChangedMs > 0L && timeSinceChangeHours >= threshold && currentHour in startHour..endHour) {
                     NotificationHelper.showTurnoNotification(
                         applicationContext,
                         "Verificar Status",

@@ -244,49 +244,32 @@ private fun MonthParticipationStrip(days: List<MonthParticipationDay>) {
 
 @Composable
 private fun DayParticipationCell(day: MonthParticipationDay) {
-    val borderColor = when {
+    val backgroundColor = when {
         day.isPresent -> Color(0xFF2E7D32)
         day.isAbsent -> Color(0xFFC62828)
         day.isSelected -> MaterialTheme.colorScheme.primary
-        else -> Color.Gray
+        else -> Color.Transparent
     }
 
-    val backgroundColor = if (day.isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+    val borderColor = if (day.isPresent || day.isAbsent || day.isSelected) {
+        backgroundColor
     } else {
-        Color.Transparent
+        Color.White.copy(alpha = 0.3f)
     }
 
-    val symbol = when {
-        day.isPresent -> "✓"
-        day.isAbsent -> "✕"
-        else -> ""
-    }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(width = 16.dp, height = 16.dp)
-                .background(backgroundColor, RoundedCornerShape(3.dp))
-                .border(1.dp, borderColor, RoundedCornerShape(3.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (symbol.isNotEmpty()) {
-                Text(
-                    text = symbol,
-                    fontSize = 9.sp,
-                    lineHeight = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = borderColor
-                )
-            }
-        }
-
+    Box(
+        modifier = Modifier
+            .size(width = 22.dp, height = 22.dp)
+            .background(backgroundColor, RoundedCornerShape(3.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(3.dp)),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
             text = day.dayNumber.toString(),
-            fontSize = 7.sp,
-            lineHeight = 7.sp,
-            color = if (day.isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray
+            fontSize = 8.sp,
+            lineHeight = 8.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
         )
     }
 }

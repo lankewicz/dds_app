@@ -137,11 +137,16 @@ import com.chicoeletro.dds.core.version.VersionChecker
 import com.chicoeletro.dds.core.version.VersionStatus
 import com.chicoeletro.dds.ui.components.TeamChangeReason
 import com.chicoeletro.dds.ui.components.TeamChangeReasonDialog
+import android.content.Context
+import androidx.compose.ui.text.style.TextAlign
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.location.LocationManager
+import androidx.compose.material.icons.filled.Warning
+import androidx.activity.compose.BackHandler
 
-// CameraScreen (modo odômetro)
-import com.chicoeletro.dds.features.Camera.CameraMode
-import com.chicoeletro.dds.features.Camera.CameraOdometerResult
 import com.chicoeletro.dds.storage.TrainingExecSyncState
 import com.chicoeletro.dds.core.notifications.NotificationHelper
 import com.chicoeletro.dds.core.notifications.TurnoReminderWorker
@@ -241,6 +246,69 @@ fun MainLayoutContainer() {
     var motorista by remember { mutableStateOf<String?>(null) }
     var coringas by remember { mutableStateOf(listOf<String>()) }
 
+    var gpsEnabled by remember { mutableStateOf(true) }
+
+    DisposableEffect(context) {
+        val checkGps = {
+            try {
+                val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                        locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            } catch (e: Exception) {
+                Log.e("MainLayoutContainer", "Erro ao verificar GPS no receiver", e)
+                false
+            }
+        }
+        gpsEnabled = checkGps()
+        val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                gpsEnabled = checkGps()
+            }
+        }
+        context.registerReceiver(receiver, filter)
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                gpsEnabled = try {
+                    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                } catch (e: Exception) {
+                    Log.e("MainLayoutContainer", "Erro ao verificar GPS no resume", e)
+                    false
+                }
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(teamLoaded, equipe) {
+        if (!teamLoaded) return@LaunchedEffect
+        // Inicia o serviço de monitoramento em segundo plano permanentemente (independente do turno)
+        try {
+            val serviceIntent = Intent(context, com.chicoeletro.dds.core.services.GpsMonitorService::class.java).apply {
+                putExtra("equipe", equipe)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e("GpsMonitor", "Erro ao iniciar servico de GPS", e)
+        }
+    }
+
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var capturedThumbUri by remember { mutableStateOf<Uri?>(null) }
     var abrirCamera by remember { mutableStateOf(false) }
@@ -262,7 +330,6 @@ fun MainLayoutContainer() {
     var currentUser by remember { mutableStateOf<FirebaseUser?>(auth.currentUser) }
 
     // Odômetro (fluxo do Turno)
-    var abrirCameraOdo by remember { mutableStateOf(false) }
     var odoKmTotalPrefill by remember { mutableStateOf("") }
     var odoPendingTarget by remember { mutableStateOf<EstadoTurno?>(null) }
     var odoPendingMotivo by remember { mutableStateOf<com.chicoeletro.dds.features.turno.MotivoDeslocamentoEspecial?>(null) }
@@ -693,14 +760,7 @@ fun MainLayoutContainer() {
                         )
                     }
                 },
-                onOpenOdometerCamera = { target, motivo, motivoOutro ->
-                    // salva contexto para reabrir direto no step KM depois da foto
-                    odoPendingTarget = target
-                    odoPendingMotivo = motivo
-                    odoPendingMotivoOutro = motivoOutro
-                    showTurnoControl = false
-                    abrirCameraOdo = true
-                },
+
                 prefillKmTotal = odoKmTotalPrefill,
                 startAtKmTarget = odoPendingTarget,
                 prefillMotivo = odoPendingMotivo,
@@ -913,7 +973,7 @@ fun MainLayoutContainer() {
         } else {
             Column(Modifier.fillMaxSize()) {
                 HeaderBar(
-                    overlayAlpha = 1f,
+                    overlayAlpha = if (showForm) 0.1f else 1f,
                     selectedTraining = selectedTraining,
                     isInDdsModule = isInDdsModule,
                     monthParticipationDays = headerParticipationDays,
@@ -1391,7 +1451,7 @@ fun MainLayoutContainer() {
                         FormScreen(
                             trainingName = selectedTraining!!,
                             existing = submissaoExistente?.let { it to selectedTraining!! },
-                            lastTeam = LastTeamData(equipe, eletricistas),
+                            lastTeam = lastTeamData ?: LastTeamData(equipe, eletricistas),
                             headerDate = HeaderBarState.datePart,
                             headerTitle = HeaderBarState.titlePart,
                             fotoUri = capturedPhotoUri,
@@ -1452,23 +1512,6 @@ fun MainLayoutContainer() {
                 )
             }
 
-            // ===== Camera Odômetro (para Controle de Turno) =====
-            if (abrirCameraOdo) {
-                CameraScreen(
-                    mode = CameraMode.ODOMETER,
-                    onPhotoCaptured = { _, _ -> /* não usado no modo ODO */ },
-                    onOdometerCaptured = { result: CameraOdometerResult ->
-                        val kmTotal = result.km?.toString() ?: ""
-                        odoKmTotalPrefill = kmTotal
-                        abrirCameraOdo = false
-                        showTurnoControl = true
-                    },
-                    onBack = {
-                        abrirCameraOdo = false
-                        showTurnoControl = true
-                    }
-                )
-            }
 
             if (modoTesteAtivo && showOnlineTest) {
                 Dialog(onDismissRequest = { showOnlineTest = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -1594,6 +1637,60 @@ fun MainLayoutContainer() {
                         equipeOrigem = equipe,
                         onDismiss = { showCommunicationDialog = false }
                     )
+                }
+            }
+        }
+
+        if (!gpsEnabled) {
+            BackHandler(enabled = true) { /* bloqueia voltar */ }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xE6121212)), // fundo escuro
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = "GPS Desativado",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "GPS Desativado 🚨",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Para continuar utilizando o aplicativo DDS Chico Eletro, o GPS do dispositivo deve estar ativado.\n\nO GPS é importante para segurança de toda a equipe e rastreamento em caso de perda, furto ou roubo do aparelho.\n\nPor favor, ative a localização nas configurações para liberar o acesso.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Erro ao abrir configurações", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("ATIVAR LOCALIZAÇÃO / GPS", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

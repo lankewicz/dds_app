@@ -62,8 +62,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private enum class WhyDialogMode {
-    MIN_TIME,     // DDS normal: regra dos 2 minutos
-    ONLINE_LOCK   // DDS online: bloqueio até liberar a janela (15 min)
+    MIN_TIME,            // DDS normal: regra dos 2 minutos
+    ONLINE_LOCK,         // DDS online: bloqueio até liberar a janela (15 min)
+    MAX_TIME_EXCEEDED    // DDS expirado por tempo máximo de 10 minutos
 }
 
 @Composable
@@ -406,6 +407,9 @@ fun ViewerScreen(
                                             remainMs = falta
                                             whyMode = WhyDialogMode.MIN_TIME
                                             showWhyDialog = true
+                                        } else if (ui.invalidated) {
+                                            whyMode = WhyDialogMode.MAX_TIME_EXCEEDED
+                                            showWhyDialog = true
                                         } else if (canFinish) {
                                             onOpenForm()
                                         } else {
@@ -440,7 +444,12 @@ fun ViewerScreen(
                                         Button(onClick = { showWhyDialog = false }) { Text("Entendi") }
                                     },
                                     title = {
-                                        Text(if (whyMode == WhyDialogMode.MIN_TIME) "Quase lá! ⏱️" else "DDS Online programado")
+                                        val titleText = when (whyMode) {
+                                            WhyDialogMode.MIN_TIME -> "Quase lá! ⏱️"
+                                            WhyDialogMode.MAX_TIME_EXCEEDED -> "Tempo Limite Excedido 🚨"
+                                            else -> "DDS Online programado"
+                                        }
+                                        Text(titleText)
                                     },
                                     text = {
                                         val msg = when (whyMode) {
@@ -449,6 +458,8 @@ fun ViewerScreen(
                                             WhyDialogMode.ONLINE_LOCK ->
                                                 if (scheduledStartMs == null) "Este DDS é online. O acesso é liberado 15 minutos antes do horário agendado."
                                                 else "O acesso ao DDS Online é liberado 15 minutos antes do horário agendado.\n\n⏳ Liberação ${formatRemainingForMessage(remainingMin)}."
+                                            WhyDialogMode.MAX_TIME_EXCEEDED ->
+                                                "O tempo limite de 10 minutos para a realização deste DDS foi ultrapassado.\n\nPor favor, saia deste treinamento e abra-o novamente para reiniciar o cronômetro."
                                         }
                                         Text(msg)
                                     }

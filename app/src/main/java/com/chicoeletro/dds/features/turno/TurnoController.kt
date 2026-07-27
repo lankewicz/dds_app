@@ -77,6 +77,7 @@ class TurnoController(
             isOpen = false,
             clientUpdatedAtMs = maxOf(snap.clientUpdatedAtMs, nowMs),
             lastEventAtClientMs = maxOf(snap.lastEventAtClientMs, nowMs),
+            lastClosedAtMs = nowMs,
             // encerra o ciclo operacional (próximo turno começa limpo)
             estado = EstadoTurno.FECHADO,
             kmInicioTotalAbs = null,

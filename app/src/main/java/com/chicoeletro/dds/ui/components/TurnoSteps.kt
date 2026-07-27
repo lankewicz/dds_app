@@ -93,7 +93,6 @@ fun KmStep(
     kmTotalFromPhoto: Long?,
     manualKm: String,
     onManualKmChange: (String) -> Unit,
-    onOpenCamera: () -> Unit,
     onConfirm: () -> Unit,
     canConfirm: Boolean
 ) {
@@ -178,30 +177,11 @@ fun KmStep(
         }
     }
 
-    if (kmTotalFromPhoto != null) {
-        OutlinedTextField(
-            value = kmTotalFromPhoto.toString(),
-            onValueChange = {},
-            label = { Text("KM Total (via Câmera)") },
-            enabled = false,
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                disabledLabelColor = MaterialTheme.colorScheme.primary
-            ),
-            trailingIcon = {
-                IconButton(onClick = onOpenCamera) {
-                    Icon(Icons.Filled.PhotoCamera, "Recapturar", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-        )
-        Text("Leitura automática via OCR. A foto é opcional neste fluxo.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-    } else {
-        // Box input UI
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+    // Box input UI
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
             Text(
                 text = "Digite a nova quilometragem:",
                 style = MaterialTheme.typography.bodyMedium,
@@ -234,12 +214,12 @@ fun KmStep(
                         modifier = Modifier
                             .size(width = 44.dp, height = 54.dp)
                             .background(
-                                color = if (isEditable) Color.White else Color(0xFFF0F0F0),
+                                color = Color(0xFFECEFF1), // Sempre cor GELO
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .border(
                                 width = if (isFocused) 2.dp else 1.dp,
-                                color = if (isFocused) MaterialTheme.colorScheme.primary else Color(0xFFCCCCCC),
+                                color = if (isFocused) MaterialTheme.colorScheme.primary else Color(0xFFB0BEC5),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
@@ -252,18 +232,9 @@ fun KmStep(
                         Text(
                             text = text,
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = if (isEditable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            color = if (isEditable) Color.Black else Color(0xFF78909C) // Preto se editável, Cinza se não alterado
                         )
                     }
-                }
-                
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onOpenCamera) {
-                    Icon(
-                        imageVector = Icons.Filled.PhotoCamera,
-                        contentDescription = "Usar Câmera",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
                 }
             }
             
@@ -305,10 +276,9 @@ fun KmStep(
                 modifier = Modifier.align(Alignment.Start)
             )
         }
-    }
 
     Spacer(Modifier.height(24.dp))
-    val canConfirmManual = kmTotalFromPhoto != null || isFullyFilled
+    val canConfirmManual = isFullyFilled
     Button(
         onClick = onConfirm,
         enabled = canConfirmManual,
@@ -357,29 +327,63 @@ fun ReciboFinalStep(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = Icons.Filled.CheckCircle,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(64.dp)
-        )
+        // Recibo Superior: Mensagem à esquerda, Botão Concluir à direita
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(38.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Turno Encerrado!",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Você rodou $deltaKm KM neste turno.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = onConfirm,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Concluir",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Turno Encerrado!",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Você rodou $deltaKm KM neste turno.",
-            style = MaterialTheme.typography.bodyLarge
-        )
-        
-        Spacer(Modifier.height(24.dp))
-        
+
         if (showPredictionBanner) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -409,7 +413,7 @@ fun ReciboFinalStep(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = 4.dp),
             shape = MaterialTheme.shapes.medium
         ) {
             Row(
@@ -438,15 +442,6 @@ fun ReciboFinalStep(
                     )
                 }
             }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Button(
-            onClick = onConfirm,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Concluir Fechamento")
         }
     }
 }

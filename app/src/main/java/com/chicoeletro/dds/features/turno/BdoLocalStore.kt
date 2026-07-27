@@ -20,14 +20,14 @@ enum class SsStatus {
 }
 
 data class SsTransition(
-    val status: SsStatus,
-    val timestampMs: Long,
+    val status: SsStatus = SsStatus.DESLOCAMENTO,
+    val timestampMs: Long = 0L,
     val km: Long? = null
 )
 
 data class BdoSs(
-    val ssId: String,
-    val status: SsStatus,
+    val ssId: String = "",
+    val status: SsStatus = SsStatus.DESLOCAMENTO,
     val transitions: List<SsTransition> = emptyList(),
     val cancelReason: String? = null
 ) {

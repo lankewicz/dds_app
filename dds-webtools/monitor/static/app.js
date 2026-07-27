@@ -39,6 +39,8 @@ const cfgAlertaVermelhoMin = document.getElementById("cfgAlertaVermelhoMin");
 const cfgAlertaPiscoMin = document.getElementById("cfgAlertaPiscoMin");
 const cfgFechadoViraDesatualizadoHoras = document.getElementById("cfgFechadoViraDesatualizadoHoras");
 const cfgDesatualizadoCriticoHoras = document.getElementById("cfgDesatualizadoCriticoHoras");
+const cfgAutoCloseOpenHours = document.getElementById("cfgAutoCloseOpenHours");
+const cfgAutoInactivateHours = document.getElementById("cfgAutoInactivateHours");
 const cfgPollingSeconds = document.getElementById("cfgPollingSeconds");
 const activityFeedPanel = document.getElementById("activityFeedPanel");
 const activityFeedList = document.getElementById("activityFeedList");
@@ -274,15 +276,23 @@ function setConfigNotice(message = '', type = '') {
   if (type) configNotice.classList.add(type);
 }
 
+function formatMinToHoursText(min) {
+  if (!min || min <= 0) return '-';
+  const hrs = (min / 60).toFixed(1).replace('.0', '');
+  return `⏱️ aprox. ${hrs} hora(s)`;
+}
+
 function fillConfigForm(config) {
   const rules = config?.rules || {};
   if (cfgAlertaAmareloMin) cfgAlertaAmareloMin.value = rules.alertaAmareloMin ?? '';
   if (cfgAlertaVermelhoMin) cfgAlertaVermelhoMin.value = rules.alertaVermelhoMin ?? '';
   if (cfgAlertaPiscoMin) cfgAlertaPiscoMin.value = rules.alertaPiscoMin ?? '';
+  if (cfgAutoCloseOpenHours) cfgAutoCloseOpenHours.value = rules.autoCloseOpenHours ?? '';
   if (cfgFechadoViraDesatualizadoHoras) {
     cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
   }
   if (cfgDesatualizadoCriticoHoras) cfgDesatualizadoCriticoHoras.value = rules.desatualizadoCriticoHoras ?? '';
+  if (cfgAutoInactivateHours) cfgAutoInactivateHours.value = rules.autoInactivateHours ?? '';
   if (cfgPollingSeconds) cfgPollingSeconds.value = config?.pollingSeconds ?? '';
   syncConfigSummary();
 }
@@ -294,22 +304,66 @@ function collectConfigPayload() {
       alertaAmareloMin: Number(cfgAlertaAmareloMin?.value || 0),
       alertaVermelhoMin: Number(cfgAlertaVermelhoMin?.value || 0),
       alertaPiscoMin: Number(cfgAlertaPiscoMin?.value || 0),
+      autoCloseOpenHours: Number(cfgAutoCloseOpenHours?.value || 0),
       autoDesatualizaFechadoHours: Number(cfgFechadoViraDesatualizadoHoras?.value || 0),
       desatualizadoCriticoHoras: Number(cfgDesatualizadoCriticoHoras?.value || 0),
+      autoInactivateHours: Number(cfgAutoInactivateHours?.value || 0),
     },
   };
 }
 
 function syncConfigSummary() {
-  if (!configSummary) return;
   const payload = collectConfigPayload();
   const rules = payload.rules || {};
-  const closedDesat = rules.autoDesatualizaFechadoHours || rules.fechadoViraDesatualizadoHoras || '-';
-  configSummary.textContent = `Amarelo em ${rules.alertaAmareloMin || '-'} min, vermelho em ${rules.alertaVermelhoMin || '-'} min, pisco em ${rules.alertaPiscoMin || '-'} min. FECHADO vira DESATUALIZADO em ${closedDesat}h e CRÍTICO em ${rules.desatualizadoCriticoHoras || '-'}h. Atualização automática a cada ${payload.pollingSeconds || '-'}s.`;
+  
+  const hintAmarelo = document.getElementById("hintAlertaAmarelo");
+  const hintVermelho = document.getElementById("hintAlertaVermelho");
+  const hintPisco = document.getElementById("hintAlertaPisco");
+  
+  if (hintAmarelo) hintAmarelo.textContent = formatMinToHoursText(rules.alertaAmareloMin);
+  if (hintVermelho) hintVermelho.textContent = formatMinToHoursText(rules.alertaVermelhoMin);
+  if (hintPisco) hintPisco.textContent = formatMinToHoursText(rules.alertaPiscoMin);
+
+  if (!configSummary) return;
+
+  const hOpen = rules.autoCloseOpenHours || 0;
+  const hClosed = rules.autoDesatualizaFechadoHours || rules.fechadoViraDesatualizadoHoras || 0;
+  const hCrit = rules.desatualizadoCriticoHoras || 0;
+  const hInact = rules.autoInactivateHours || 0;
+  
+  const totalInactHours = hOpen + hClosed + hInact;
+  const daysInact = (totalInactHours / 24).toFixed(1).replace('.0', '');
+
+  configSummary.innerHTML = `
+    <div class="summaryFlowBar">
+      <span class="summaryChip badgeAberto">🟢 ABERTO (${hOpen}h)</span> ➔ 
+      <span class="summaryChip badgeFechado">🔵 FECHADO (${hClosed}h)</span> ➔ 
+      <span class="summaryChip badgeDesatualizado">🟧 DESATUALIZADO (CRÍTICO em ${hCrit}h)</span> ➔ 
+      <span class="summaryChip badgeInativa">⚪ INATIVA (${hInact}h)</span>
+    </div>
+    <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
+      💡 <b>Resumo:</b> O turno abre ➔ fecha auto em <b>${hOpen}h</b> ➔ desatualiza <b>${hClosed}h</b> depois ➔ vira crítico em <b>${hCrit}h</b> em desatualizado ➔ inativa a equipe após <b>${hInact}h</b> em desatualizado. (Tolerância acumulada até inativação: <b>${totalInactHours}h / ~${daysInact} dias</b>).
+    </div>
+  `;
+}
+
+function attachConfigInputListeners() {
+  const inputs = [
+    cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin,
+    cfgAutoCloseOpenHours, cfgFechadoViraDesatualizadoHoras,
+    cfgDesatualizadoCriticoHoras, cfgAutoInactivateHours, cfgPollingSeconds
+  ];
+  inputs.forEach(inp => {
+    if (inp && !inp.dataset.listenerAttached) {
+      inp.dataset.listenerAttached = 'true';
+      inp.addEventListener('input', syncConfigSummary);
+    }
+  });
 }
 
 function openConfigModal() {
   fillConfigForm(cfg || {});
+  attachConfigInputListeners();
   setConfigNotice('');
 
   if (configModalMeta) configModalMeta.textContent = 'Edite os tempos e confirme para aplicar.';
@@ -1260,8 +1314,36 @@ function renderData(items, meta, kpiSourceItems) {
   lastSync.textContent = `Atualizado: ${fmtTimeOnly(meta.serverTime)}`;
   lastData = meta;
 
-  syncTeamSelect(items);
-  currentItems = items;
+  const teamTypeOrder = {
+    "cesto": 1,
+    "stc_cesto": 1,
+    "stc": 2,
+    "ep": 3,
+    "linha_viva": 4,
+    "linha viva": 4,
+    "lv": 4,
+    "construcao": 5,
+    "construção": 5,
+    "rocada": 6,
+    "roçada": 6
+  };
+
+  const sortedItems = [...(items || [])].sort((a, b) => {
+    const typeA = (a.teamType || '').trim().toLowerCase();
+    const typeB = (b.teamType || '').trim().toLowerCase();
+    const orderA = teamTypeOrder[typeA] !== undefined ? teamTypeOrder[typeA] : 99;
+    const orderB = teamTypeOrder[typeB] !== undefined ? teamTypeOrder[typeB] : 99;
+
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    const nameA = (a.equipe || '').trim().toLowerCase();
+    const nameB = (b.equipe || '').trim().toLowerCase();
+    return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+  });
+
+  syncTeamSelect(sortedItems);
+  currentItems = sortedItems;
 
   if (getViewMode() !== 'trash') {
     renderKpis(kpiSourceItems || items);

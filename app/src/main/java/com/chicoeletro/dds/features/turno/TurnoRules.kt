@@ -24,10 +24,7 @@ object TurnoRules {
     }
 
     fun pedeKm(from: EstadoTurno, to: EstadoTurno): Boolean {
-        return (from == EstadoTurno.FECHADO && to == EstadoTurno.ABERTO) ||
-                (from == EstadoTurno.FECHADO && to == EstadoTurno.DESLOCAMENTO_ESPECIAL) ||
-                (from == EstadoTurno.ABERTO && to == EstadoTurno.FECHADO) ||
-                (from == EstadoTurno.INTERVALO && to == EstadoTurno.DESLOCAMENTO_ESPECIAL)
+        return true
     }
 
     fun pedeMotivo(to: EstadoTurno): Boolean = (to == EstadoTurno.DESLOCAMENTO_ESPECIAL)

@@ -155,14 +155,47 @@ private fun PermissionsGate(
                     PackageManager.PERMISSION_GRANTED
         )
     }
+    val locationGranted = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val notificationGranted = remember {
+        mutableStateOf(
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
 
-    val allGranted = cameraGranted.value && audioGranted.value
+    val allGranted = cameraGranted.value && audioGranted.value && locationGranted.value && notificationGranted.value
+
+    val permissionsArray = remember {
+        mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ).apply {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         cameraGranted.value = results[Manifest.permission.CAMERA] == true
         audioGranted.value = results[Manifest.permission.RECORD_AUDIO] == true
+        locationGranted.value = results[Manifest.permission.ACCESS_FINE_LOCATION] == true &&
+                results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            notificationGranted.value = results[Manifest.permission.POST_NOTIFICATIONS] == true
+        }
     }
 
     // Se já estiver tudo concedido, marca onboarding como feito e segue.
@@ -178,31 +211,19 @@ private fun PermissionsGate(
         // Primeiro acesso (ou ainda não concluiu onboarding)
         !onboardingDone -> PermissionsOnboardingScreen(
             onGrant = {
-                launcher.launch(
-                    arrayOf(
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO
-                    )
-                )
+                launcher.launch(permissionsArray)
             },
             onSkip = {
-                // Se quiser forçar, remova o "Pular".
-                // Mantive para não travar o app: mas o DDS Online/câmera não funcionarão sem permissão.
-                CoroutineScope(Dispatchers.IO).launch {
-                    TrainingDataStore.setPermissionsOnboardingDone(context, true)
-                }
+                // Para garantir o funcionamento das regras de segurança de GPS, desativamos o pulo
+                // e forçamos a concessão das permissões.
+                launcher.launch(permissionsArray)
             }
         )
 
         // Onboarding já rodou, mas usuário negou permissões (ou revogou nas configs)
         else -> PermissionsDeniedScreen(
             onTryAgain = {
-                launcher.launch(
-                    arrayOf(
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO
-                    )
-                )
+                launcher.launch(permissionsArray)
             }
         )
     }
@@ -223,7 +244,7 @@ private fun PermissionsOnboardingScreen(
         ) {
             Text("Permissões necessárias", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Para usar as funcionalidades de foto e reunião online (Agora), o DDS precisa de acesso à câmera e ao microfone."
+                "O aplicativo necessita de acesso à Câmera, Microfone (reuniões e fotos), Localização / GPS (segurança e jornada de trabalho) e Notificações (alertas críticos)."
             )
 
             Spacer(Modifier.height(8.dp))
@@ -231,12 +252,9 @@ private fun PermissionsOnboardingScreen(
             Button(onClick = onGrant) {
                 Text("Conceder permissões")
             }
-            OutlinedButton(onClick = onSkip) {
-                Text("Pular por enquanto")
-            }
 
             Text(
-                "Observação: sem essas permissões, a câmera e o DDS Online não funcionarão.",
+                "Observação: por questões de segurança e regulamentação, o acesso à localização é obrigatório para utilizar este aplicativo durante o expediente.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -257,7 +275,7 @@ private fun PermissionsDeniedScreen(
             horizontalAlignment = Alignment.Start
         ) {
             Text("Permissões não concedidas", style = MaterialTheme.typography.titleLarge)
-            Text("Sem câmera e microfone, os recursos de foto e reunião online não estarão disponíveis.")
+            Text("Todas as permissões (Câmera, Microfone, Localização e Notificações) são obrigatórias para utilizar o aplicativo DDS.")
             Button(onClick = onTryAgain) {
                 Text("Tentar novamente")
             }

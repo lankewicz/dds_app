@@ -474,51 +474,117 @@
         <div class="formNotice" id="configNotice" hidden></div>
 
         <form id="configForm" class="teamForm">
+          <!-- SEÇÃO 1: ALERTAS VISUAIS DE COR DA BORDA -->
           <section class="modalSection formSection">
-            <div class="modalSectionTitle">Avisos por Tempo</div>
-            <div class="formGrid">
+            <div class="modalSectionHeader">
+              <div class="modalSectionTitle">🔔 Alertas Visuais no Painel</div>
+              <div class="modalSectionSubtitle">Altera a cor do cartão da equipe no monitor conforme o tempo sem contato</div>
+            </div>
+            <div class="formGrid formGrid3">
               <label class="formField">
-                <span class="formLabel">Alerta amarelo (min)</span>
+                <span class="formLabel">🟡 Alerta amarelo (min)</span>
                 <input id="cfgAlertaAmareloMin" type="number" min="1" step="1" />
+                <span class="fieldHint" id="hintAlertaAmarelo">-</span>
               </label>
 
               <label class="formField">
-                <span class="formLabel">Alerta vermelho (min)</span>
+                <span class="formLabel">🔴 Alerta vermelho (min)</span>
                 <input id="cfgAlertaVermelhoMin" type="number" min="1" step="1" />
+                <span class="fieldHint" id="hintAlertaVermelho">-</span>
               </label>
 
               <label class="formField">
-                <span class="formLabel">Alerta em pisco (min)</span>
+                <span class="formLabel">⚡ Alerta em pisco (min)</span>
                 <input id="cfgAlertaPiscoMin" type="number" min="1" step="1" />
+                <span class="fieldHint" id="hintAlertaPisco">-</span>
               </label>
+            </div>
 
-              <label class="formField">
-                <span class="formLabel">Polling automático (seg)</span>
+            <div style="margin-top: 10px;">
+              <label class="formField" style="max-width: 280px;">
+                <span class="formLabel">🔄 Atualização do site (polling seg)</span>
                 <input id="cfgPollingSeconds" type="number" min="15" step="1" />
               </label>
             </div>
           </section>
 
+          <!-- SEÇÃO 2: CICLO DE VIDA DA EQUIPE (LINHA DO TEMPO) -->
           <section class="modalSection formSection formSectionDark">
-            <div class="modalSectionTitle">Fechado / Desatualizado</div>
-            <div class="formGrid">
-              <label class="formField">
-                <span class="formLabel">FECHADO vira DESATUALIZADO (h)</span>
-                <input id="cfgFechadoViraDesatualizadoHoras" type="number" min="1" step="1" />
-              </label>
+            <div class="modalSectionHeader">
+              <div class="modalSectionTitle">🔄 Ciclo de Vida da Equipe (Inatividade por Etapas)</div>
+              <div class="modalSectionSubtitle">Fluxo sequencial: Cada etapa conta as horas a partir do ingresso naquele estado</div>
+            </div>
 
-              <label class="formField">
-                <span class="formLabel">DESATUALIZADO vira CRÍTICO (h)</span>
-                <input id="cfgDesatualizadoCriticoHoras" type="number" min="1" step="1" />
-              </label>
+            <div class="timelineConfigGrid">
+              <!-- Passo 1 -->
+              <div class="timelineStepCard">
+                <div class="stepHeader">
+                  <span class="stepBadge badgeAberto">1. ABERTO</span>
+                  <span class="stepArrow">➜</span>
+                </div>
+                <div class="stepBody">
+                  <span class="stepLabel">Permanece aberto até:</span>
+                  <div class="stepInputWrap">
+                    <input id="cfgAutoCloseOpenHours" type="number" min="1" step="1" />
+                    <span class="stepUnit">h</span>
+                  </div>
+                </div>
+                <div class="stepFooter">Ao estourar ➔ Auto-fecha</div>
+              </div>
 
-              <div class="configSummary formFieldFull" id="configSummary">
-                Os cartões usam estes tempos para definir bordas, status desatualizado e destaque crítico.
+              <!-- Passo 2 -->
+              <div class="timelineStepCard">
+                <div class="stepHeader">
+                  <span class="stepBadge badgeFechado">2. FECHADO</span>
+                  <span class="stepArrow">➜</span>
+                </div>
+                <div class="stepBody">
+                  <span class="stepLabel">Permanece fechado até:</span>
+                  <div class="stepInputWrap">
+                    <input id="cfgFechadoViraDesatualizadoHoras" type="number" min="1" step="1" />
+                    <span class="stepUnit">h</span>
+                  </div>
+                </div>
+                <div class="stepFooter">Ao estourar ➔ Desatualiza</div>
+              </div>
+
+              <!-- Passo 3 -->
+              <div class="timelineStepCard">
+                <div class="stepHeader">
+                  <span class="stepBadge badgeDesatualizado">3. CRÍTICO</span>
+                  <span class="stepArrow">➜</span>
+                </div>
+                <div class="stepBody">
+                  <span class="stepLabel">Desatualizado vira crítico:</span>
+                  <div class="stepInputWrap">
+                    <input id="cfgDesatualizadoCriticoHoras" type="number" min="1" step="1" />
+                    <span class="stepUnit">h</span>
+                  </div>
+                </div>
+                <div class="stepFooter">Ao estourar ➔ Destaque crítico</div>
+              </div>
+
+              <!-- Passo 4 -->
+              <div class="timelineStepCard">
+                <div class="stepHeader">
+                  <span class="stepBadge badgeInativa">4. INATIVA</span>
+                </div>
+                <div class="stepBody">
+                  <span class="stepLabel">Desatualizado inativa:</span>
+                  <div class="stepInputWrap">
+                    <input id="cfgAutoInactivateHours" type="number" min="1" step="1" />
+                    <span class="stepUnit">h</span>
+                  </div>
+                </div>
+                <div class="stepFooter">Ao estourar ➔ Inativa equipe</div>
               </div>
             </div>
+
+            <!-- Resumo Visual em Linha do Tempo -->
+            <div class="configSummaryTimeline" id="configSummary">
+              <!-- Preenchido via JavaScript -->
+            </div>
           </section>
-
-
         </form>
       </div>
 

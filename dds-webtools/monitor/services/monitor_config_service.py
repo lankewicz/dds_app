@@ -24,9 +24,10 @@ DEFAULT_MONITOR_RULES = {
     "alertaVermelhoMin": int(os.getenv("DDS_ALERTA_VERMELHO", "30")),
     "alertaPiscoMin": int(os.getenv("DDS_ALERTA_PISCO", "60")),
     "autoCloseOpenHours": int(os.getenv("DDS_AUTO_CLOSE_OPEN", "24")),
-    "autoDesatualizaFechadoHours": int(os.getenv("DDS_FECHADO_DESATUALIZA", "8")),
+    "autoDesatualizaFechadoHours": int(os.getenv("DDS_FECHADO_DESATUALIZA", "48")),
     "autoDesatualizaIntervaloHours": int(os.getenv("DDS_INTERVALO_DESATUALIZA", "4")),
-    "desatualizadoCriticoHoras": int(os.getenv("DDS_CRITICO_DESATUALIZA", "16")),
+    "desatualizadoCriticoHoras": int(os.getenv("DDS_CRITICO_DESATUALIZA", "24")),
+    "autoInactivateHours": int(os.getenv("DDS_AUTO_INACTIVATE", "48")),
 }
 DEFAULT_POLLING_SECONDS = int(os.getenv("DDS_POLLING_SEGUNDOS", "600"))
 
@@ -92,6 +93,7 @@ def _merge_with_defaults(stored: dict[str, Any]) -> dict[str, Any]:
         ),
         "autoDesatualizaIntervaloHours": _coerce_int(raw_rules.get("autoDesatualizaIntervaloHours"), DEFAULT_MONITOR_RULES["autoDesatualizaIntervaloHours"]),
         "desatualizadoCriticoHoras": _coerce_int(raw_rules.get("desatualizadoCriticoHoras"), DEFAULT_MONITOR_RULES["desatualizadoCriticoHoras"]),
+        "autoInactivateHours": _coerce_int(raw_rules.get("autoInactivateHours"), DEFAULT_MONITOR_RULES["autoInactivateHours"]),
     }
     return {
         "pollingSeconds": _coerce_int(stored.get("pollingSeconds"), DEFAULT_POLLING_SECONDS),
@@ -111,6 +113,7 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     auto_desat_fechado = max(1, _coerce_int(rules.get("autoDesatualizaFechadoHours"), DEFAULT_MONITOR_RULES["autoDesatualizaFechadoHours"]))
     auto_desat_intervalo = max(1, _coerce_int(rules.get("autoDesatualizaIntervaloHours"), DEFAULT_MONITOR_RULES["autoDesatualizaIntervaloHours"]))
     desat_critico = max(auto_desat_fechado, _coerce_int(rules.get("desatualizadoCriticoHoras"), DEFAULT_MONITOR_RULES["desatualizadoCriticoHoras"]))
+    auto_inactivate = max(1, _coerce_int(rules.get("autoInactivateHours"), DEFAULT_MONITOR_RULES["autoInactivateHours"]))
 
     return {
         "pollingSeconds": polling_seconds,
@@ -122,6 +125,7 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "autoDesatualizaFechadoHours": auto_desat_fechado,
             "autoDesatualizaIntervaloHours": auto_desat_intervalo,
             "desatualizadoCriticoHoras": desat_critico,
+            "autoInactivateHours": auto_inactivate,
         },
     }
 

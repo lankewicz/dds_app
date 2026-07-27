@@ -162,6 +162,28 @@ fun TeamEditDialog(
                     motorista = formation.motorista?.uppercase(ptBr)
                     coringas.clear()
                     coringas.addAll(formation.coringas.map { it.uppercase(ptBr) })
+
+                    if (!formation.teamType.isNullOrBlank()) {
+                        teamType = formation.teamType
+                    }
+
+                    formation.workSchedule?.let { map ->
+                        val daysList = (map["days"] as? List<*>)?.mapNotNull { it as? Map<*, *> }
+                        if (daysList != null) {
+                            val dailySchedules = daysList.map { m ->
+                                com.chicoeletro.dds.core.DailySchedule(
+                                    dayOfWeek = (m["dayOfWeek"] as? Long)?.toInt() ?: 1,
+                                    entry1 = m["entry1"] as? String ?: "08:00",
+                                    exit1 = m["exit1"] as? String ?: "12:00",
+                                    entry2 = m["entry2"] as? String ?: "14:00",
+                                    exit2 = m["exit2"] as? String ?: "18:00",
+                                    isRestDay = m["isRestDay"] as? Boolean ?: false
+                                )
+                            }
+                            workSchedule = com.chicoeletro.dds.core.WorkSchedule(dailySchedules)
+                        }
+                    }
+
                     Toast.makeText(context, "Formação carregada para $key", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(

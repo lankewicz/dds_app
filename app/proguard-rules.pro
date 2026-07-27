@@ -40,3 +40,15 @@
 -keepclasseswithmembers class * {
     native <methods>;
 }
+
+############################################
+# MODELOS FIRESTORE (EVITA CRASH NO RELEASE)
+############################################
+
+# Mantém classes de modelo para evitar erro de desserialização (no-arg constructor / ofuscação de campos)
+-keep class com.chicoeletro.dds.features.turno.** { *; }
+-keep class com.chicoeletro.dds.features.online.** { *; }
+-keep class com.chicoeletro.dds.features.communication.** { *; }
+-keep class com.chicoeletro.dds.features.team.** { *; }
+-keep class com.chicoeletro.dds.data.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod

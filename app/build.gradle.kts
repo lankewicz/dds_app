@@ -190,9 +190,6 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
 
 
-    // OCR local (on-device)
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-
     // Para usar Tasks.await(...) de forma estável (geralmente já vem, mas é melhor garantir)
     implementation("com.google.android.gms:play-services-tasks:18.4.1")
 

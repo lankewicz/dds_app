@@ -273,7 +273,7 @@ fun HomeCard(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "FREQUÊNCIA: SEMANAL",
+                            text = "FREQUÊNCIA SEMANAL",
                             fontSize = subtitleSize,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),

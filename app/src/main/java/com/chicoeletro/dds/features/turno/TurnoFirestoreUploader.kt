@@ -78,9 +78,29 @@ object TurnoFirestoreUploader {
             }
             null
         }.addOnSuccessListener {
-            Log.d(TAG, "State salvo (safe): $empresa/$equipe clientUpdatedAtMs=${state.clientUpdatedAtMs}")
+            val teamKey = normalizeTeamKey(equipe)
+            Log.d(TAG, "State salvo (safe): $empresa/$teamKey clientUpdatedAtMs=${state.clientUpdatedAtMs}")
+            notifyMonitorServer(empresa, teamKey)
         }.addOnFailureListener { e ->
             Log.w(TAG, "Falha ao salvar state (safe) ${empresa}/${equipe}: ${e.message}")
+        }
+    }
+
+    private fun notifyMonitorServer(empresa: String, teamKey: String) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val urlStr = "https://dds-monitor.chicoeletro.com/api/internal/sync-realtime/team?empresa=$empresa&team=$teamKey"
+                val url = java.net.URL(urlStr)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
+                val code = conn.responseCode
+                Log.d(TAG, "Notificado monitor web ($teamKey): code=$code")
+                conn.disconnect()
+            } catch (e: Exception) {
+                Log.w(TAG, "Notificação ao monitor web ignorada ou offline: ${e.message}")
+            }
         }
     }
 
@@ -136,11 +156,14 @@ object TurnoFirestoreUploader {
                 .collection("turnos")
                 .document(turnoId)
 
+        private fun normalizeTeamKey(raw: String): String =
+            raw.trim().uppercase().replace(Regex("[^A-Z0-9_-]"), "_")
+
         private fun teamDoc(db: FirebaseFirestore, empresa: String, equipe: String) =
             db.collection("turno")
                 .document(empresa)
                 .collection("equipes")
-                .document(equipe)
+                .document(normalizeTeamKey(equipe))
 
     private fun TurnoEventRemote.toFirestoreMap(): Map<String, Any?> = mapOf(
         "empresa" to empresa,

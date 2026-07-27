@@ -240,9 +240,9 @@ fun FormScreen(
 
                                     onSubmit(
                                         savedSubmission,
-                                        LastTeamData(
-                                            savedSubmission.equipe,
-                                            savedSubmission.eletricistas
+                                        lastTeam.copy(
+                                            equipe = savedSubmission.equipe,
+                                            eletricistas = savedSubmission.eletricistas
                                         )
                                     )
                                     onCompleted(
@@ -453,9 +453,9 @@ fun FormScreen(
 
                                     onSubmit(
                                         submissionDepoisAviso,
-                                        LastTeamData(
-                                            equipe.trim(),
-                                            nomes.filter { it.isNotBlank() }
+                                        lastTeam.copy(
+                                            equipe = equipe.trim(),
+                                            eletricistas = nomes.filter { it.isNotBlank() }
                                         )
                                     )
 

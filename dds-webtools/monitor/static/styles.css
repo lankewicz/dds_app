@@ -1351,9 +1351,181 @@ button:disabled {
   width: min(760px, calc(100vw - 28px));
 }
 
-.importDialog {
-  width: 90vw;
-  max-width: 1400px;
+.configDialog {
+  width: min(860px, calc(100vw - 28px));
+}
+
+.modalSectionHeader {
+  margin-bottom: 12px;
+}
+
+.modalSectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modalSectionSubtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.formGrid3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fieldHint {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 600;
+  margin-top: 4px;
+  display: block;
+}
+
+.timelineConfigGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .timelineConfigGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.timelineStepCard {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.timelineStepCard:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  transform: translateY(-2px);
+}
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stepBadge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badgeAberto {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.badgeFechado {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badgeDesatualizado {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badgeInativa {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.stepArrow {
+  color: #64748b;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stepLabel {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.stepInputWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepInputWrap input {
+  width: 100%;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 6px 10px;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+}
+
+.stepUnit {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.stepFooter {
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.3;
+  margin-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
+.configSummaryTimeline {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.summaryFlowBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 
 .configSummary {

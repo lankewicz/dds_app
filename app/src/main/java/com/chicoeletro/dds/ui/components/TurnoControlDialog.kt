@@ -14,6 +14,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.chicoeletro.dds.features.turno.*
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 
 private enum class Step { MENU, MOTIVO, KM, RECIBO_FINAL, AVISO_INTERJORNADA }
 
@@ -45,7 +49,6 @@ fun TurnoControlScreen(
     onDismiss: () -> Unit,
     onSaveNocSs: (String?) -> Unit,
     onRequestTransition: (RequisicaoTransicao) -> Boolean,
-    onOpenOdometerCamera: (EstadoTurno?, MotivoDeslocamentoEspecial?, String) -> Unit = { _, _, _ -> },
     prefillKmTotal: String? = null,
     startAtKmTarget: EstadoTurno? = null,
     prefillMotivo: MotivoDeslocamentoEspecial? = null,
@@ -70,6 +73,24 @@ fun TurnoControlScreen(
     var pendingRequest by remember { mutableStateOf<RequisicaoTransicao?>(null) }
     var showHighKmConfirmation by remember { mutableStateOf<RequisicaoTransicao?>(null) }
     var highKmDelta by remember { mutableStateOf(0L) }
+    var showExitConfirmationDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = step == Step.KM || step == Step.RECIBO_FINAL) {
+        showExitConfirmationDialog = true
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, step) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && (step == Step.KM || step == Step.RECIBO_FINAL)) {
+                showExitConfirmationDialog = true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val context = LocalContext.current
     var bdoList by remember(equipe) {
@@ -403,6 +424,39 @@ fun TurnoControlScreen(
         )
     }
 
+    if (showExitConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmationDialog = false },
+            title = { Text("Concluir Turno") },
+            text = { Text("Deseja concluir o fechamento do turno ou precisa corrigir as informações?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitConfirmationDialog = false
+                        pendingRequest?.let { req ->
+                            val success = onRequestTransition(req.copy(isDescansoSemanal = isDescansoSemanal))
+                            if (success) {
+                                onDismiss()
+                            }
+                        }
+                    }
+                ) {
+                    Text("Gravar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showExitConfirmationDialog = false
+                        step = Step.KM
+                    }
+                ) {
+                    Text("Corrigir")
+                }
+            }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -422,15 +476,9 @@ fun TurnoControlScreen(
                             when (step) {
                                 Step.MENU -> onDismiss()
                                 Step.MOTIVO -> step = Step.MENU
-                                Step.KM -> {
-                                    step = if (target == EstadoTurno.DESLOCAMENTO_ESPECIAL) {
-                                        Step.MOTIVO
-                                    } else {
-                                        Step.MENU
-                                    }
-                                }
+                                Step.KM -> showExitConfirmationDialog = true
                                 Step.AVISO_INTERJORNADA -> step = Step.MENU
-                                Step.RECIBO_FINAL -> {}
+                                Step.RECIBO_FINAL -> showExitConfirmationDialog = true
                             }
                         }
                     ) {
@@ -452,7 +500,15 @@ fun TurnoControlScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
+                    IconButton(
+                        onClick = {
+                            if (step == Step.KM || step == Step.RECIBO_FINAL) {
+                                showExitConfirmationDialog = true
+                            } else {
+                                onDismiss()
+                            }
+                        }
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Fechar"
@@ -524,7 +580,6 @@ fun TurnoControlScreen(
                                 kmTotalFromPhoto = kmTotalFromPhoto,
                                 manualKm = kmOutro,
                                 onManualKmChange = { kmOutro = it },
-                                onOpenCamera = { onOpenOdometerCamera(target, motivo, motivoOutro) },
                                 onConfirm = { confirmarKmDoTopo() },
                                 canConfirm = podeConfirmarKm
                             )
