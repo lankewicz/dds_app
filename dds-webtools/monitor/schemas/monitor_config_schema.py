@@ -29,8 +29,8 @@ class MonitorRulesPayload(BaseModel):
             raise ValueError("O alerta vermelho deve ser maior ou igual ao amarelo.")
         if self.alertaPiscoMin < self.alertaVermelhoMin:
             raise ValueError("O alerta em pisco deve ser maior ou igual ao vermelho.")
-        if self.desatualizadoCriticoHoras < fechado_val:
-            raise ValueError("O crítico deve ser maior ou igual ao tempo para virar desatualizado.")
+        if self.autoInactivateHours is not None and self.autoInactivateHours < 1:
+            raise ValueError("O tempo de inativação deve ser de pelo menos 1 hora.")
         return self
 
 

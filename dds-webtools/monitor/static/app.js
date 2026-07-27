@@ -397,11 +397,13 @@ async function saveConfigModal() {
       rules: data.rules || {},
     };
     pollingSeconds = Number(cfg.pollingSeconds) || 600;
-    fillConfigForm(cfg);
     setConfigNotice(data?.message || 'Configurações salvas com sucesso.', 'success');
     if (configModalMeta) configModalMeta.textContent = 'Configurações salvas com sucesso.';
     await load();
     startPolling();
+    setTimeout(() => {
+      closeConfigModal();
+    }, 600);
   } catch (error) {
     setConfigNotice(error?.message || 'Não foi possível salvar as configurações.', 'error');
     if (configModalMeta) configModalMeta.textContent = 'Falha ao salvar';
