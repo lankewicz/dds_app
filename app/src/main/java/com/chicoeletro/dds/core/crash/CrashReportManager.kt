@@ -68,6 +68,30 @@ object CrashReportManager {
         }
     }
 
+    fun sendViaWhatsApp(context: Context, report: CrashReport): Boolean {
+        return try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_TEXT, report.toFormattedText())
+                setPackage("com.whatsapp")
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            try {
+                val genericIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, report.toFormattedText())
+                }
+                context.startActivity(android.content.Intent.createChooser(genericIntent, "Enviar Relatório de Erro via..."))
+                true
+            } catch (err: Exception) {
+                Log.e("CrashReportManager", "Erro ao abrir WhatsApp", err)
+                false
+            }
+        }
+    }
+
     fun sendToFirestore(
         context: Context,
         report: CrashReport,

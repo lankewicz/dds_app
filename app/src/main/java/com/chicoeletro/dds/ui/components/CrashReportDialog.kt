@@ -143,12 +143,26 @@ fun CrashReportDialog(
                     }
                 }
 
-                // Opções de Ação
+                // Opções de Ação: WhatsApp, Copiar, Servidor
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Botão WhatsApp
+                    Button(
+                        onClick = {
+                            CrashReportManager.sendViaWhatsApp(context, report)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF25D366),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     // Botão Copiar
                     OutlinedButton(
                         onClick = {
@@ -166,15 +180,13 @@ fun CrashReportDialog(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copiar",
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text("Copiar", fontSize = 11.sp)
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Botão Enviar ao Suporte (Firestore)
+                    // Botão Enviar ao Servidor (Firestore)
                     Button(
                         onClick = {
                             if (!isSending && !sendSuccess) {
@@ -185,13 +197,13 @@ fun CrashReportDialog(
                                         sendSuccess = true
                                         Toast.makeText(
                                             context,
-                                            "Relatório de erro enviado ao suporte!",
+                                            "Relatório enviado ao servidor!",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     } else {
                                         Toast.makeText(
                                             context,
-                                            "Não foi possível enviar agora. Use o botão Copiar.",
+                                            "Não foi possível enviar ao servidor. Use o WhatsApp ou Copiar.",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -206,7 +218,7 @@ fun CrashReportDialog(
                     ) {
                         if (isSending) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(14.dp),
                                 color = Color.White,
                                 strokeWidth = 2.dp
                             )
@@ -214,18 +226,18 @@ fun CrashReportDialog(
                             Icon(
                                 imageVector = Icons.Default.Done,
                                 contentDescription = "Enviado",
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Enviado", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("Enviado", fontSize = 10.sp)
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Send,
-                                contentDescription = "Enviar",
-                                modifier = Modifier.size(16.dp)
+                                contentDescription = "Servidor",
+                                modifier = Modifier.size(14.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Enviar", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("Servidor", fontSize = 10.sp)
                         }
                     }
                 }
