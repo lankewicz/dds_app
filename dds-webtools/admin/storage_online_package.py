@@ -352,13 +352,13 @@ def render_placeholder_slide(payload: Dict[str, Any], size: Tuple[int, int] = (1
     y = box_y1 + 40
  
     # -----------------------------
-    # Footer + encode JPEG (SEMPRE por último)
+    # Footer + encode WEBP (SEMPRE por último)
     # -----------------------------
     footer = "Gerado automaticamente pelo painel DDS."
     draw.text((margin_x, height - 80), footer, font=font_body, fill=C_FOOT)
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90, optimize=True)
+    img.save(buf, format="WEBP", quality=85)
     return buf.getvalue()
 
 
@@ -510,7 +510,7 @@ def create_or_update_online_package(
     folder_prefix = f"{base_prefix}/{folder_id}".replace("//", "/")
     slides_count = max(1, int(slides_count))
     slide_paths = [
-        f"{folder_prefix}/Slide{n}.JPG"
+        f"{folder_prefix}/Slide{n}.webp"
         for n in range(1, slides_count + 1)
     ]
     meta_path = f"{folder_prefix}/reuniao.json"
@@ -538,7 +538,7 @@ def create_or_update_online_package(
         slide_bytes = render_placeholder_slide(payload, size=(1920, 1080))
         bucket.blob(slide_path).upload_from_string(
             slide_bytes,
-            content_type="image/jpeg",
+            content_type="image/webp",
         )
 
     # Upload reuniao.json

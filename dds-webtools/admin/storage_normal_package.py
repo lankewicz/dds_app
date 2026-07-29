@@ -256,7 +256,7 @@ def render_placeholder_slide_normal(payload: Dict[str, Any], size: Tuple[int, in
     draw.text((margin_x, height - 80), footer, font=font_body, fill=C_FOOT)
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90, optimize=True)
+    img.save(buf, format="WEBP", quality=85)
     return buf.getvalue()
 
 
@@ -280,20 +280,40 @@ def create_normal_package_and_update_lista_json(
     slides_count: int = 1,
     status: str = "scheduled",
 ) -> NormalPackageResult:
+    return create_or_update_normal_package(
+        bucket_name=bucket_name,
+        base_prefix=base_prefix,
+        date_yyyy_mm_dd=date_yyyy_mm_dd,
+        subject=subject,
+        timezone_name=timezone_name,
+        slides_count=slides_count,
+        status=status,
+    )
+
+
+def create_or_update_normal_package(
+    *,
+    bucket_name: str,
+    base_prefix: str,
+    date_yyyy_mm_dd: str,
+    subject: str,
+    timezone_name: str = "America/Sao_Paulo",
+    slides_count: int = 1,
+    status: str = "scheduled",
+) -> NormalPackageResult:
     client = storage.Client()
     bucket = client.bucket(bucket_name)
 
     date_yyyy_mm_dd = parse_date_yyyy_mm_dd(date_yyyy_mm_dd)
-    subject_clean = _sanitize_subject_for_folder(subject)
+    subject_clean = (subject or "DDS").strip().upper()
 
-    # Pasta nomeada por data + assunto (como você pediu)
     base_folder = f"{date_yyyy_mm_dd} - {subject_clean}"
 
     # Evita colisão se existir outra pasta idêntica:
     # tenta "- 2", "- 3", ... usando a existência do reuniao.json como sinal
     folder_id = base_folder
     for n in range(2, 50):
-        test_slide1 = f"{base_prefix}/{folder_id}/Slide1.JPG".replace("//", "/")
+        test_slide1 = f"{base_prefix}/{folder_id}/Slide1.webp".replace("//", "/")
         if not bucket.blob(test_slide1).exists():
             break
         folder_id = f"{base_folder} - {n}"
@@ -302,7 +322,7 @@ def create_normal_package_and_update_lista_json(
     slides_count = max(1, int(slides_count))
 
     # IMPORTANTE: DDS NORMAL -> lista.json deve conter SOMENTE slides
-    slide_paths = [f"{folder_prefix}/Slide{n}.JPG" for n in range(1, slides_count + 1)]
+    slide_paths = [f"{folder_prefix}/Slide{n}.webp" for n in range(1, slides_count + 1)]
     lista_path = f"{base_prefix}/lista.json"
 
     session_id = make_session_id_normal(date_yyyy_mm_dd, folder_id)
@@ -324,7 +344,7 @@ def create_normal_package_and_update_lista_json(
     # Placeholders: criamos Slide1..SlideN (o usuário pode sobrescrever via upload)
     for slide_path in slide_paths:
         slide_bytes = render_placeholder_slide_normal(payload, size=(1920, 1080))
-        bucket.blob(slide_path).upload_from_string(slide_bytes, content_type="image/jpeg")
+        bucket.blob(slide_path).upload_from_string(slide_bytes, content_type="image/webp")
 
     # DDS NORMAL: lista.json inclui apenas os slides
     new_paths = slide_paths

@@ -431,7 +431,10 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
         headers: { "Content-Type": file.type || "application/octet-stream" },
         body: file
       });
-      if (!res.ok) throw new Error(`Falha upload: ${file.name}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`Falha upload (${res.status}): ${file.name}${errText ? ' - ' + errText.slice(0, 100) : ''}`);
+      }
     }
   
     // =========
@@ -536,8 +539,18 @@ FUNCTION: Form to create or edit a DDS session (NORMAL or ONLINE).
           setProgress(i, totalUp, `Enviando Slide ${item.index})…`, upName);
           await putToSignedUrl(item.uploadUrl, optimized[i]);
         }
-        setProgress(totalUp, totalUp, "Finalizando…", "");
-  
+        // 3.5) Notifica servidor para limpar placeholders antigos e reconstruir lista.json
+        try {
+          await fetch("{{ url_for('admin.session_finalize_uploads') }}", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folderPrefix: prep.folderPrefix })
+          });
+        } catch (err) {
+          console.warn("Falha ao finalizar sessão:", err);
+        }
+
         // 4) Redireciona para edição da sessão (ou dashboard)
         window.removeEventListener("beforeunload", onBeforeUnload);
 

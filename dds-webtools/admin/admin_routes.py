@@ -1254,8 +1254,12 @@ def session_prepare_uploads():
     upload_count = int(data.get("slidesCount") or len(slides) or 0)
     upload_count = max(0, min(59, upload_count))  # reserva 1 p/ placeholder
 
-    # Por padrão, manter placeholder como Slide1
-    include_placeholder = bool(data.get("includePlaceholder", True))
+    # DDS Normal não necessita de capa/placeholder quando o usuário envia fotos dos slides
+    if dds_type == "normal":
+        include_placeholder = False if upload_count > 0 else True
+    else:
+        include_placeholder = bool(data.get("includePlaceholder", True)) if upload_count > 0 else True
+
     slides_count = upload_count + (1 if include_placeholder else 0)
     slides_count = max(1, min(60, slides_count))
 
@@ -1292,11 +1296,14 @@ def session_prepare_uploads():
             # DDS NORMAL: uploads começam em Slide1 (overwrite do placeholder)
             for i in range(upload_count):
                 idx = 1 + i
-                object_name = f"{folder_prefix}/Slide{idx}.JPG"
+                slide_meta = slides[i] if i < len(slides) and isinstance(slides[i], dict) else {}
+                c_type = slide_meta.get("type") or "image/webp"
+                ext = ".JPG" if c_type == "image/jpeg" or c_type == "image/jpg" else (".png" if c_type == "image/png" else ".webp")
+                object_name = f"{folder_prefix}/Slide{idx}{ext}"
                 upload_url = _sign_put_url(
                     bucket_name=bucket,
                     object_name=object_name,
-                    content_type="image/jpeg",
+                    content_type=c_type,
                     minutes=20,
                 )
                 items.append({
@@ -1358,17 +1365,20 @@ def session_prepare_uploads():
 
         folder_prefix = f"{base_prefix}/{folder_id}".replace("//", "/").strip("/")
 
-        # 2) gera signed urls APENAS para os uploads do usuário.
-        #    Se placeholder estiver ativo, começamos no Slide2.
+        # 2) gera signed urls APENAS para os uploads do usuário (Slide1..SlideN).
+        #    O slide de placeholder (se ativo) fica posicionado como o último slide (SlideN+1).
         items = []
-        start_index = 2 if include_placeholder else 1
+        start_index = 1
         for i in range(upload_count):
             idx = start_index + i
-            object_name = f"{folder_prefix}/Slide{idx}.JPG"
+            slide_meta = slides[i] if i < len(slides) and isinstance(slides[i], dict) else {}
+            c_type = slide_meta.get("type") or "image/webp"
+            ext = ".JPG" if c_type == "image/jpeg" or c_type == "image/jpg" else (".png" if c_type == "image/png" else ".webp")
+            object_name = f"{folder_prefix}/Slide{idx}{ext}"
             upload_url = _sign_put_url(
                 bucket_name=bucket,
                 object_name=object_name,
-                content_type="image/jpeg",
+                content_type=c_type,
                 minutes=20,
             )
             items.append({
@@ -1566,26 +1576,85 @@ def explorer_slides():
     blobs = list(bucket.list_blobs(prefix=prefix))
     
     # Filtra slides
-    slide_regex = re.compile(r"(?i)slide\s*(\d+)\.(jpg|jpeg|png)")
-    slides = []
+    slide_regex = re.compile(r"(?i)slide\s*(\d+)\.(jpg|jpeg|png|webp)")
+    slides_by_idx = {}
     
     for blob in blobs:
         filename = blob.name.split("/")[-1]
         match = slide_regex.search(filename)
         if match:
             idx = int(match.group(1))
+            ext = filename.split(".")[-1].lower()
+            
+            # Dá preferência a webp sobre jpg/jpeg para evitar exibir placeholders antigos do mesmo slide
+            if idx in slides_by_idx:
+                existing_ext = slides_by_idx[idx]["ext"]
+                if existing_ext == "webp":
+                    continue
+            
+            resp_type = "image/webp" if ext == "webp" else ("image/png" if ext == "png" else "image/jpeg")
             url = _sign_get_url(
                 bucket_name=bucket_name,
                 object_name=blob.name,
                 minutes=20,
-                response_type="image/jpeg"
+                filename=filename,
+                response_type=resp_type
             )
-            slides.append({"index": idx, "url": url})
+            slides_by_idx[idx] = {"index": idx, "url": url, "ext": ext}
     
-    # Ordena por índice
+    slides = list(slides_by_idx.values())
     slides.sort(key=lambda x: x["index"])
     
     return jsonify({"ok": True, "slides": slides})
+
+
+@admin_bp.post("/sessions/finalize")
+@login_required
+def session_finalize_uploads():
+    """
+    Chamado pelo frontend após concluir todos os uploads via Signed URL.
+    Remove placeholders .JPG antigos e reconstrói o DDSv2/lista.json.
+    """
+    bucket_name = current_app.config.get("BUCKET_NAME")
+    base_prefix = current_app.config.get("BASE_PREFIX")
+    tz = (current_app.config.get("TIMEZONE_NAME") or "America/Sao_Paulo").strip()
+
+    data = request.get_json(silent=True) or {}
+    folder_prefix = (data.get("folderPrefix") or "").strip()
+
+    if bucket_name and folder_prefix:
+        try:
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blobs = list(bucket.list_blobs(prefix=f"{folder_prefix}/"))
+            
+            # Conjunto de nomes base (sem extensão) dos arquivos .webp enviados pelo usuário
+            webps = {b.name.split("/")[-1].rsplit(".", 1)[0].lower() for b in blobs if b.name.lower().endswith(".webp")}
+            
+            for b in blobs:
+                filename = b.name.split("/")[-1]
+                if not filename.lower().endswith((".jpg", ".jpeg")):
+                    continue
+                
+                name_no_ext = filename.rsplit(".", 1)[0].lower()
+                
+                # Deleta .JPG APENAS se o usuário enviou um .webp correspondente para a mesma posição (ex: Slide1.webp sobrescreve Slide1.JPG).
+                # O slide de placeholder no final (ex: Slide7.JPG) não possui .webp equivalente e portanto é PRESERVADO como último slide.
+                if name_no_ext in webps:
+                    try:
+                        b.delete()
+                    except Exception:
+                        pass
+        except Exception as e:
+            current_app.logger.warning(f"Erro ao limpar placeholders em finalize: {e}")
+
+    try:
+        from training_management.indexing import rebuild_lista_json
+        rebuild_lista_json(bucket_name=bucket_name, base_prefix=base_prefix, timezone_name=tz)
+    except Exception as e:
+        current_app.logger.warning(f"Erro ao reconstruir índice em finalize: {e}")
+
+    return jsonify({"ok": True})
 
 
 @admin_bp.get("/explorer/download")

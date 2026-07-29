@@ -91,7 +91,7 @@ def rebuild_lista_json(
     new_files_list: List[str] = []
     
     # Regex for slides (case insensitive)
-    slide_regex = re.compile(r"(?i)slide\s*\d+\.jpg")
+    slide_regex = re.compile(r"(?i)slide\s*\d+\.(jpg|jpeg|webp|png)")
     
     # Sort selected folders descending (latest first) for the final json
     for folder_id in sorted(list(selected_folders), reverse=True):
