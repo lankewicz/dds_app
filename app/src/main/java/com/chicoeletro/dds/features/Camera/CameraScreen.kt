@@ -248,13 +248,13 @@ fun CameraScreen(
 
 private fun gerarThumb(context: android.content.Context, uri: Uri): Uri? {
     return try {
-        val bmp = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return null
+        val bmp = com.chicoeletro.dds.core.utils.ImageCompressor.decodeSampledBitmapFromUri(context, uri, maxWidth = 320, maxHeight = 180) ?: return null
         val thumb = bmp.scale(320, 180, true)
         val f = File.createTempFile("thumb_", ".webp", context.cacheDir)
         FileOutputStream(f).use { out -> 
             com.chicoeletro.dds.core.utils.ImageCompressor.compressToWebp(thumb, 80, out)
         }
-        bmp.recycle()
+        if (bmp != thumb) bmp.recycle()
         thumb.recycle()
         FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
     } catch (_: Exception) {

@@ -65,9 +65,9 @@ object ImageCompressor {
                 inPreferredConfig = Bitmap.Config.RGB_565 // Consome a metade da RAM (16-bit)
             }
 
-            val input: InputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val bitmap = BitmapFactory.decodeStream(input, null, safeOpts)
-            input.close()
+            val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, safeOpts)
+            }
             bitmap
         } catch (e: Exception) {
             Log.e("ImageCompressor", "Erro ao decodificar Bitmap com inSampleSize", e)
