@@ -69,8 +69,12 @@ fun CameraScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var previewFotoUri by remember { mutableStateOf<Uri?>(null) }
+    var previewThumbUri by remember { mutableStateOf<Uri?>(null) }
 
     DisposableEffect(Unit) {
+        executor.execute {
+            com.chicoeletro.dds.core.utils.ImageCompressor.clearStaleCache(context)
+        }
         onDispose {
             try { executor.shutdown() } catch (_: Exception) {}
         }
@@ -207,11 +211,18 @@ fun CameraScreen(
                                 executor.execute {
                                     try {
                                         ensureLandscape169(context, savedUri)
-                                        ContextCompat.getMainExecutor(context).execute {
-                                            previewFotoUri = savedUri
-                                        }
                                     } catch (t: Throwable) {
                                         Log.e("DDS-CAM", "Falha ao normalizar imagem", t)
+                                    }
+                                    val generatedThumbUri = try {
+                                        gerarThumb(context, savedUri)
+                                    } catch (t: Throwable) {
+                                        Log.e("DDS-CAM", "Falha ao gerar thumb", t)
+                                        null
+                                    }
+                                    ContextCompat.getMainExecutor(context).execute {
+                                        previewFotoUri = savedUri
+                                        previewThumbUri = generatedThumbUri
                                     }
                                 }
                             }
@@ -228,15 +239,19 @@ fun CameraScreen(
 
             } else {
                 OutlinedButton(onClick = {
-                    runCatching { previewFotoUri?.let { context.contentResolver.delete(it, null, null) } }
+                    runCatching {
+                        previewFotoUri?.let { context.contentResolver.delete(it, null, null) }
+                        previewThumbUri?.let { context.contentResolver.delete(it, null, null) }
+                    }
                     previewFotoUri = null
+                    previewThumbUri = null
                 }) {
                     Text("🔁 Refazer")
                 }
 
                 Button(onClick = {
                     val uri = previewFotoUri ?: return@Button
-                    val thumbUri = gerarThumb(context, uri)
+                    val thumbUri = previewThumbUri ?: gerarThumb(context, uri)
                     onPhotoCaptured(uri, thumbUri)
                 }) {
                     Text("✅ Usar Foto")
@@ -312,7 +327,7 @@ private fun ensureLandscape169(context: android.content.Context, uri: Uri, minW:
             val sw = (cropped.width * scale).toInt()
             val sh = (cropped.height * scale).toInt()
             val scaled = Bitmap.createScaledBitmap(cropped, sw, sh, true)
-            val canvasBmp = Bitmap.createBitmap(minW, minH, Bitmap.Config.ARGB_8888)
+            val canvasBmp = Bitmap.createBitmap(minW, minH, Bitmap.Config.RGB_565)
             val c = Canvas(canvasBmp)
             c.drawColor(Color.BLACK)
             val dx = ((minW - sw) / 2f)

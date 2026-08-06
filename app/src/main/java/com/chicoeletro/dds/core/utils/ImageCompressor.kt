@@ -67,11 +67,44 @@ object ImageCompressor {
 
             val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
                 BitmapFactory.decodeStream(input, null, safeOpts)
-            }
-            bitmap
+            } ?: return null
+
+            rotateBitmapIfRequired(context, uri, bitmap)
         } catch (e: Exception) {
             Log.e("ImageCompressor", "Erro ao decodificar Bitmap com inSampleSize", e)
             null
+        }
+    }
+
+    /**
+     * Ajusta a rotação do Bitmap conforme os metadados EXIF da imagem.
+     */
+    fun rotateBitmapIfRequired(context: Context, uri: Uri, bitmap: Bitmap): Bitmap {
+        return try {
+            val inputStream: InputStream = context.contentResolver.openInputStream(uri) ?: return bitmap
+            val exif = androidx.exifinterface.media.ExifInterface(inputStream)
+            val orientation = exif.getAttributeInt(
+                androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+            )
+            inputStream.close()
+
+            val degrees = when (orientation) {
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+
+            if (degrees == 0f) return bitmap
+
+            val matrix = Matrix().apply { postRotate(degrees) }
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated != bitmap) bitmap.recycle()
+            rotated
+        } catch (e: Exception) {
+            Log.w("ImageCompressor", "Erro ao verificar metadados EXIF: ${e.message}")
+            bitmap
         }
     }
 
@@ -118,6 +151,27 @@ object ImageCompressor {
         } catch (e: Exception) {
             Log.e("ImageCompressor", "Erro ao comprimir imagem para WebP", e)
             null
+        }
+    }
+
+    /**
+     * Remove arquivos temporários de imagens antigas (mais de maxAgeHours) dos diretórios de cache e armazenamento.
+     */
+    fun clearStaleCache(context: Context, maxAgeHours: Long = 24) {
+        try {
+            val cutoff = System.currentTimeMillis() - (maxAgeHours * 60 * 60 * 1000)
+            context.cacheDir.listFiles()?.forEach { file ->
+                if ((file.name.startsWith("thumb_") || file.name.startsWith("opt_")) && file.lastModified() < cutoff) {
+                    file.delete()
+                }
+            }
+            context.filesDir.listFiles()?.forEach { file ->
+                if (file.name.startsWith("dds_") && file.lastModified() < cutoff) {
+                    file.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("ImageCompressor", "Erro ao limpar arquivos obsoletos do cache: ${e.message}")
         }
     }
 }

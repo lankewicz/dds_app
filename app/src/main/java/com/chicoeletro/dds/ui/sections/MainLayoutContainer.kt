@@ -1067,14 +1067,17 @@ fun MainLayoutContainer() {
                                 val vContext = LocalContext.current
                                 val viewerVM = remember { ViewerViewModel(vContext) }
                                 val currentId = selectedTraining!!
-                                val canConcludeCurrent = canConcludeTrainingId(currentId)
+                                val canConcludeCurrent = canConcludeTrainingId(currentId) && submissaoExistente == null && trainingStatus[currentId] == null
+                                val currentStatus = trainingStatus[currentId] ?: submissaoExistente?.let { 
+                                    TrainingStatus(it.dataConclusao, it.horaConclusao, it.duracao, TrainingExecSyncState.LOCAL_ONLY) 
+                                }
                                 ViewerScreen(
                                     trainingId = currentId,
                                     viewModel  = viewerVM,
-                                    status     = trainingStatus[currentId],
+                                    status     = currentStatus,
                                     canConclude = canConcludeCurrent,
                                     onOpenForm = {
-                                        if (!canConcludeCurrent) return@ViewerScreen
+                                        if (!canConcludeCurrent || submissaoExistente != null) return@ViewerScreen
                                         if (equipe.isBlank() || eletricistas.isEmpty()) {
                                             showEditDialog = true
                                         } else {
@@ -1220,14 +1223,17 @@ fun MainLayoutContainer() {
                                 val vContext = LocalContext.current
                                 val viewerVM = remember { ViewerViewModel(vContext) }
                                 val currentId = selectedTraining!!
-                                val canConcludeCurrent = canConcludeTrainingId(currentId)
+                                val canConcludeCurrent = canConcludeTrainingId(currentId) && submissaoExistente == null && trainingStatus[currentId] == null
+                                val currentStatus = trainingStatus[currentId] ?: submissaoExistente?.let { 
+                                    TrainingStatus(it.dataConclusao, it.horaConclusao, it.duracao, TrainingExecSyncState.LOCAL_ONLY) 
+                                }
                                 ViewerScreen(
                                     trainingId = currentId,
                                     viewModel  = viewerVM,
-                                    status     = trainingStatus[currentId],
+                                    status     = currentStatus,
                                     canConclude = canConcludeCurrent,
                                     onOpenForm = {
-                                        if (!canConcludeCurrent) return@ViewerScreen
+                                        if (!canConcludeCurrent || submissaoExistente != null) return@ViewerScreen
                                         if (equipe.isBlank() || eletricistas.isEmpty()) {
                                             showEditDialog = true
                                         } else {

@@ -167,6 +167,7 @@ dependencies {
     // ─── AndroidX Core e Ciclo de Vida ────────────────────────────────────────
     implementation(libs.androidx.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     // ─── DataStore Preferences ────────────────────────────────────────────────
     implementation(libs.datastore.preferences)
