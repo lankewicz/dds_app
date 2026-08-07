@@ -97,6 +97,9 @@ from controle_projetos.routes.projeto_routes import router as projeto_router
 # Boletim Cidades (Financeiro) import
 from boletim_cidades.routes.cidades_routes import router as cidades_router
 
+# NFS-e Manager import
+from nfse.routes import router as nfse_router
+
 listener_manager = None
 
 @asynccontextmanager
@@ -173,7 +176,8 @@ async def auth_middleware(request: Request, call_next):
         "/controle-projetos/api/mit-import",
         "/controle-projetos/estruturas",
         "/controle-projetos/api/estruturas",
-        "/boletim-cidades"
+        "/boletim-cidades",
+        "/api/nfse"
     ]
     if not any(request.url.path.startswith(p) for p in public_paths):
         user_email = request.cookies.get("__session")
@@ -244,6 +248,7 @@ app.include_router(produtividade_router)
 app.include_router(boletim_router)
 app.include_router(projeto_router)
 app.include_router(cidades_router)
+app.include_router(nfse_router)
 
 if __name__ == "__main__":
     import uvicorn

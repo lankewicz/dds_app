@@ -5,6 +5,8 @@ import json
 import re
 import io
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -119,7 +121,10 @@ def _load_parquet() -> pd.DataFrame:
     if _PARQUET.exists():
         try:
             df = pd.read_parquet(_PARQUET)
-            df["Copiado"] = df["Copiado"].astype(bool)
+            if "Copiado" in df.columns:
+                df["Copiado"] = df["Copiado"].astype(bool)
+            if "NF_Emitida" in df.columns:
+                df["NF_Emitida"] = df["NF_Emitida"].astype(bool)
             return df
         except Exception:
             pass
@@ -170,6 +175,10 @@ def _df_to_rows(df: pd.DataFrame, overrides: dict) -> list[dict]:
             "copiado": bool(row.get("Copiado", False)),
             "codigo": codigo,
             "aliq": aliq_default,
+            "nf_emitida": bool(row.get("NF_Emitida", False)),
+            "nf_numero": str(row.get("NF_Numero") or ""),
+            "nf_pdf_url": str(row.get("NF_PdfUrl") or ""),
+            "nf_status": str(row.get("NF_Status") or "pendente"),
         })
     return rows
 
@@ -440,3 +449,154 @@ async def increment_counter(request: Request):
             return JSONResponse({"ok": False, "message": str(ex)}, status_code=500)
             
     return JSONResponse({"ok": False, "message": "Firestore indisponível."})
+
+
+@router.post("/boletim-cidades/api/emitir-nfe")
+async def emitir_nfe(request: Request):
+    """Processa a emissão de NFS-e para um registro de boletim."""
+    try:
+        from boletim_cidades.services.nfse_service import emitir_nfse
+    except ImportError:
+        return JSONResponse({"ok": False, "message": "Módulo de serviço NFS-e não disponível."}, status_code=500)
+
+    body = await request.json()
+    row_id = body.get("id")
+    if row_id is None:
+        return JSONResponse({"ok": False, "message": "ID do registro não fornecido."}, status_code=400)
+
+    df = _load_parquet()
+    if df.empty or row_id not in df["ID"].values:
+        return JSONResponse({"ok": False, "message": "Registro não encontrado."}, status_code=404)
+
+    # Localizar a linha do DataFrame
+    mask = df["ID"] == row_id
+    row_data = df[mask].iloc[0]
+
+    overrides = _load_overrides()
+    codigo_muni = str(row_data.get("CodigoMunicipio", "")).strip()
+    aliq_val = float(body.get("aliquota_iss") or row_data.get("ALIQ_ISS") or 0.0)
+
+    payload_dados = {
+        "boletim": str(row_data.get("Boletim", "")),
+        "contrato": str(row_data.get("Contrato", "")),
+        "valor_servicos": float(body.get("valor") or row_data.get("Valor_num") or 0.0),
+        "aliquota_iss": aliq_val,
+        "codigo_municipio": codigo_muni,
+        "tomador_cnpj": str(body.get("tomador_cnpj", "")).strip(),
+        "tomador_razao": str(body.get("tomador_razao", "Tomador de Serviços")).strip(),
+        "item_lista_servico": str(body.get("item_lista_servico", "07.02")).strip(),
+        "discriminacao": str(body.get("discriminacao") or f"Prestação de Serviços referente ao Boletim: {row_data.get('Boletim', '')} / Pedido: {row_data.get('Pedido', '')}").strip(),
+    }
+
+    res_nfse = emitir_nfse(payload_dados)
+
+    if res_nfse.get("ok"):
+        # Atualizar no DataFrame
+        for col in ["NF_Emitida", "NF_Numero", "NF_PdfUrl", "NF_Status", "Copiado"]:
+            if col not in df.columns:
+                df[col] = None
+
+        df.loc[mask, "NF_Emitida"] = True
+        df.loc[mask, "NF_Numero"] = str(res_nfse.get("numero_nf", ""))
+        df.loc[mask, "NF_PdfUrl"] = str(res_nfse.get("pdf_url", ""))
+        df.loc[mask, "NF_Status"] = str(res_nfse.get("status", "autorizada"))
+        df.loc[mask, "Copiado"] = True
+
+        _save_parquet(df)
+
+        # Incrementa contador universal no Firestore se autorizada
+        updated_counters = {}
+        try:
+            db = _get_firestore_db()
+            if db:
+                doc_ref = db.collection("boletim_cidades").document("universal_counters")
+                doc_ref.set({"nf_emitidas": firestore.Increment(1)}, merge=True)
+                updated_counters = (doc_ref.get().to_dict() or {})
+        except Exception:
+            pass
+
+        rows = _df_to_rows(df, overrides)
+        updated_row = next((r for r in rows if r["id"] == row_id), None)
+
+        return JSONResponse({
+            "ok": True,
+            "message": res_nfse.get("mensagem", "NFS-e emitida com sucesso!"),
+            "row": updated_row,
+            "result": res_nfse,
+            "counters": updated_counters
+        })
+    else:
+        return JSONResponse({
+            "ok": False,
+            "message": res_nfse.get("mensagem", "Falha ao emitir NFS-e.")
+        }, status_code=400)
+
+
+@router.get("/boletim-cidades/api/nfse/pdf-simulado/{ref}", response_class=HTMLResponse)
+async def ver_pdf_simulado(ref: str):
+    """Exibe um modelo espelho visual de DANFE NFS-e para ambiente de simulação/teste."""
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <title>NFS-e Simulação - {ref}</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; margin: 0; }}
+            .card {{ max-width: 800px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
+            .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #38bdf8; padding-bottom: 16px; margin-bottom: 20px; }}
+            .badge {{ background: #0284c7; color: white; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; }}
+            .section {{ background: #0f172a; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #1e293b; }}
+            .section h3 {{ margin-top: 0; color: #38bdf8; font-size: 1rem; border-bottom: 1px solid #334155; padding-bottom: 8px; }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9rem; }}
+            .val-box {{ background: #0369a1; padding: 12px; border-radius: 8px; text-align: center; margin-top: 12px; }}
+            .val-box h2 {{ margin: 0; font-size: 1.5rem; color: #ffffff; }}
+            .footer {{ text-align: center; font-size: 0.75rem; color: #94a3b8; margin-top: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <div>
+                    <h2 style="margin:0; color:#f8fafc;">NOTA FISCAL DE SERVIÇOS ELETRÔNICA - NFS-e</h2>
+                    <small style="color:#94a3b8;">Documento de Simulação / Homologação Local</small>
+                </div>
+                <span class="badge">AUTORIZADA</span>
+            </div>
+            
+            <div class="section">
+                <h3>Dados da Nota Fiscal</h3>
+                <div class="grid">
+                    <div><strong>Número da NFS-e:</strong> NF-SIM-{ref[-6:].upper()}</div>
+                    <div><strong>Data de Emissão:</strong> {time.strftime('%d/%m/%Y %H:%M:%S')}</div>
+                    <div><strong>Código de Verificação:</strong> {uuid.uuid4().hex[:8].upper()}</div>
+                    <div><strong>Ambiente:</strong> Simulação Integrada (Local)</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Prestador de Serviços</h3>
+                <div class="grid">
+                    <div><strong>Razão Social:</strong> Chico Eletro DDS Tecnologia Ltda</div>
+                    <div><strong>CNPJ:</strong> 00.000.000/0001-91</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Serviço & Tributação (ISS)</h3>
+                <p><strong>Discriminação:</strong> Prestação de serviços técnicos de engenharia e boletim financeiro de cidades.</p>
+                <div class="val-box">
+                    <span>Valor Total da Nota Fiscal</span>
+                    <h2>R$ 1.250,00</h2>
+                </div>
+            </div>
+
+            <div class="footer">
+                Documento emitido para fins de simulação de workflow no Boletim Cidades DDS.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+

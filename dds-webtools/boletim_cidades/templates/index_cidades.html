@@ -604,9 +604,12 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
                     <div id="det-preview" class="preview" title="Clique para copiar"></div>
                     <div class="copy-hint">Clique no texto para copiar</div>
                 </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" id="btn-copied">Marcar como Copiado (✔)</button>
-                    <button class="btn btn-secondary" id="btn-pending">Marcar como Pendente</button>
+                <div class="btn-row" style="flex-direction: column; gap: 8px;">
+                    <button class="btn btn-primary" id="btn-emitir-nfse" onclick="openNfseModal()" style="background: #0284c7; color: white; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">⚡ Emitir NFS-e</button>
+                    <div style="display: flex; gap: 8px; width: 100%;">
+                        <button class="btn btn-primary" id="btn-copied" style="flex: 1;">Marcar como Copiado (✔)</button>
+                        <button class="btn btn-secondary" id="btn-pending" style="flex: 1;">Marcar como Pendente</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -627,6 +630,62 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
 
 <!-- Toast notification -->
 <div class="toast" id="toast"></div>
+
+<!-- Modal de Emissão de NFS-e -->
+<div id="nfse-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div class="modal-content" style="background: var(--card) !important; border: 1px solid var(--border); border-radius: 12px; width: 90%; max-width: 620px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+            <div>
+                <h3 style="margin: 0; font-size: 1.2rem; color: var(--text); display: flex; align-items: center; gap: 8px;">⚡ Emissão de NFS-e <span style="font-size: 0.75rem; background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px;">API REST</span></h3>
+                <small style="color: var(--text-muted);">Confirme os dados de tributação e do tomador antes de transmitir.</small>
+            </div>
+            <button onclick="closeNfseModal()" style="background: transparent; border: none; font-size: 1.4rem; cursor: pointer; color: var(--text-muted); font-weight: bold;">&times;</button>
+        </div>
+        
+        <!-- Form Content -->
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; border: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem;">
+                <div><strong>Boletim:</strong> <span id="nfse-info-boletim">-</span></div>
+                <div><strong>Contrato:</strong> <span id="nfse-info-contrato">-</span></div>
+                <div><strong>Município:</strong> <span id="nfse-info-muni">-</span></div>
+                <div><strong>Alíquota ISS:</strong> <span id="nfse-info-aliq" style="color: var(--accent); font-weight: 700;">-</span></div>
+                <div style="grid-column: span 2; font-size: 1.05rem; font-weight: 700; color: var(--green); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px;">
+                    Valor do Serviço: <span id="nfse-info-valor">R$ 0,00</span>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label class="lbl" style="font-size: 0.8rem; font-weight: 600;">CNPJ / CPF do Tomador</label>
+                        <input type="text" id="nfse-tomador-cnpj" placeholder="00.000.000/0001-91" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.85rem;">
+                    </div>
+                    <div>
+                        <label class="lbl" style="font-size: 0.8rem; font-weight: 600;">Código do Serviço (LC 116/03)</label>
+                        <input type="text" id="nfse-codigo-servico" value="07.02" placeholder="Ex: 07.02" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.85rem;">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="lbl" style="font-size: 0.8rem; font-weight: 600;">Razão Social do Tomador</label>
+                    <input type="text" id="nfse-tomador-razao" placeholder="Nome / Razão Social do Cliente" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.85rem;">
+                </div>
+
+                <div>
+                    <label class="lbl" style="font-size: 0.8rem; font-weight: 600;">Discriminação dos Serviços</label>
+                    <textarea id="nfse-discriminacao" rows="3" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 14px;">
+            <button onclick="closeNfseModal()" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;">Cancelar</button>
+            <button id="btn-confirm-nfse" onclick="confirmEmitirNfse()" class="btn btn-primary" style="padding: 8px 18px; font-size: 0.85rem; background: #0284c7; color: white; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                <span id="nfse-btn-icon">⚡</span> Transmitir & Emitir NFS-e
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal de Alíquotas -->
 <div id="overrides-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
@@ -788,9 +847,20 @@ function renderTable() {
         const tr = document.createElement('tr');
         tr.dataset.id = row.id;
         if (row.id === currentId) tr.classList.add('selected');
-        const badge = row.copiado
-            ? `<span class="badge badge-green">✔ Copiado</span>`
-            : `<span class="badge badge-red" data-action="badge">Pendente</span>`;
+        
+        let badge = '';
+        if (row.nf_emitida) {
+            const nfNum = row.nf_numero ? `#${row.nf_numero}` : 'OK';
+            const pdfBtn = row.nf_pdf_url 
+                ? ` <a href="${row.nf_pdf_url}" target="_blank" onclick="event.stopPropagation()" style="text-decoration:none; margin-left:4px; font-size:0.75rem; background:#0284c7; color:white; padding:2px 6px; border-radius:4px; font-weight:600;" title="Abrir DANFE / PDF Simulado">📄 PDF</a>`
+                : '';
+            badge = `<span class="badge badge-green" style="background: rgba(2,132,199,0.15); color: #0284c7; border: 1px solid rgba(2,132,199,0.3);">⚡ NF ${nfNum}</span>${pdfBtn}`;
+        } else if (row.copiado) {
+            badge = `<span class="badge badge-green">✔ Copiado</span>`;
+        } else {
+            badge = `<span class="badge badge-red" data-action="badge">Pendente</span>`;
+        }
+        
         const val = row.valor ? fmtValor(row.valor) : '-';
         tr.innerHTML = `
             <td class="td-ok">${badge}</td>
@@ -980,6 +1050,92 @@ function cancelAliqOverride() {
     if (btnSave) btnSave.style.display = 'none';
     if (btnCancel) btnCancel.style.display = 'none';
     recalc();
+}
+
+function openNfseModal() {
+    const row = ROWS.find(r => r.id === currentId);
+    if (!row) {
+        showToast('Nenhum registro selecionado.', 'danger');
+        return;
+    }
+    
+    document.getElementById('nfse-info-boletim').textContent = row.boletim || '-';
+    document.getElementById('nfse-info-contrato').textContent = row.contrato || '-';
+    document.getElementById('nfse-info-muni').textContent = row.municipio || '-';
+    const aliqVal = document.getElementById('det-aliq').value || row.aliq || '0';
+    document.getElementById('nfse-info-aliq').textContent = aliqVal + '%';
+    document.getElementById('nfse-info-valor').textContent = fmtValor(row.valor || 0);
+
+    // Preenche defaults
+    document.getElementById('nfse-discriminacao').value = `Prestação de serviços técnicos referente ao Boletim: ${row.boletim || ''} / Contrato: ${row.contrato || ''} / Pedido: ${row.pedido || ''}`;
+    
+    const modal = document.getElementById('nfse-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeNfseModal() {
+    const modal = document.getElementById('nfse-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function confirmEmitirNfse() {
+    const row = ROWS.find(r => r.id === currentId);
+    if (!row) return;
+
+    const btn = document.getElementById('btn-confirm-nfse');
+    const icon = document.getElementById('nfse-btn-icon');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; }
+    if (icon) icon.textContent = '⏳';
+
+    const aliqVal = parseFloat((document.getElementById('det-aliq').value || '0').replace(',', '.'));
+    const payload = {
+        id: row.id,
+        aliquota_iss: aliqVal,
+        valor: row.valor,
+        tomador_cnpj: document.getElementById('nfse-tomador-cnpj').value,
+        tomador_razao: document.getElementById('nfse-tomador-razao').value,
+        item_lista_servico: document.getElementById('nfse-codigo-servico').value,
+        discriminacao: document.getElementById('nfse-discriminacao').value
+    };
+
+    try {
+        const resp = await fetch('/boletim-cidades/api/emitir-nfe', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            showToast(data.message || 'NFS-e emitida com sucesso!', 'success');
+            if (data.row) {
+                Object.assign(row, data.row);
+            } else {
+                row.nf_emitida = true;
+                row.copiado = true;
+                row.nf_numero = data.result?.numero_nf || '';
+                row.nf_pdf_url = data.result?.pdf_url || '';
+            }
+            renderTable();
+            closeNfseModal();
+
+            if (data.counters?.nf_emitidas !== undefined) {
+                const cntEl = document.getElementById('cnt-nfs');
+                if (cntEl) cntEl.textContent = data.counters.nf_emitidas;
+            }
+
+            if (data.result?.pdf_url) {
+                window.open(data.result.pdf_url, '_blank');
+            }
+        } else {
+            showToast(data.message || 'Erro ao emitir NFS-e', 'danger');
+        }
+    } catch(err) {
+        console.error(err);
+        showToast('Erro de comunicação com o servidor NFS-e.', 'danger');
+    } finally {
+        if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+        if (icon) icon.textContent = '⚡';
+    }
 }
 
 async function markCopied(id) {

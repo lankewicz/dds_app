@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }}</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- React & ReactDOM via CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone for JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .badge-rascunho { background: #334155; color: #94a3b8; }
+    .badge-pendente { background: #854d0e; color: #fef08a; }
+    .badge-aprovado { background: #1e3a8a; color: #93c5fd; }
+    .badge-autorizado { background: #14532d; color: #86efac; }
+    .badge-rejeitado { background: #7f1d1d; color: #fca5a5; }
+    .badge-cancelado { background: #450a0a; color: #f87171; }
+  </style>
+</head>
+<body class="h-full overflow-hidden">
+  <div id="root" class="h-full"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const INITIAL_PEDIDOS = {{ pedidos_json | safe }};
+    const INITIAL_RASCUNHOS = {{ rascunhos_json | safe }};
+    const EMISSOR_RAZAO = "{{ emissor_razao }}";
+    const EMISSOR_CNPJ = "{{ emissor_cnpj }}";
+    const AMBIENTE = "{{ ambiente }}";
+
+    function App() {
+      const [pedidos, setPedidos] = useState(INITIAL_PEDIDOS);
+      const [rascunhos, setRascunhos] = useState(INITIAL_RASCUNHOS);
+      const [selectedId, setSelectedId] = useState(INITIAL_PEDIDOS[0]?.id || 1);
+      const [filterStatus, setFilterStatus] = useState("TODOS");
+      const [searchTerm, setSearchTerm] = useState("");
+      const [copySuccess, setCopySuccess] = useState(false);
+      const [loading, setLoading] = useState(false);
+      const [activeTab, setActiveTab] = useState("CONFERENCIA"); // CONFERENCIA | AUDITORIA | PERFIS
+      const [auditoriaLogs, setAuditoriaLogs] = useState([]);
+
+      const selectedPedido = pedidos.find(p => p.id === selectedId) || pedidos[0];
+      const selectedRascunho = rascunhos[selectedId] || {};
+
+      const filteredPedidos = pedidos.filter(p => {
+        const matchesStatus = filterStatus === "TODOS" || p.status === filterStatus;
+        const matchesSearch = p.numero_pedido.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              p.municipio_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              p.contrato_numero.includes(searchTerm);
+        return matchesStatus && matchesSearch;
+      });
+
+      const handleAprovar = async () => {
+        setLoading(true);
+        try {
+          const resp = await fetch(`/api/nfse/rascunhos/${selectedId}/aprovar`, { method: "POST" });
+          if (resp.ok) {
+            setPedidos(prev => prev.map(p => p.id === selectedId ? { ...p, status: "Aprovado" } : p));
+            setRascunhos(prev => ({
+              ...prev,
+              [selectedId]: {
+                ...prev[selectedId],
+                aprovado: true,
+                divergencias: (prev[selectedId]?.divergencias || []).filter(d => !d.includes("sem aprovação humana"))
+              }
+            }));
+            alert("NFS-e aprovada com sucesso para emissão!");
+          }
+        } catch (e) {
+          alert("Erro ao aprovar: " + e.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleEmitir = async () => {
+        setLoading(true);
+        try {
+          const resp = await fetch("/api/nfse/emitir", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pedido_id: selectedId, provedor: "mock" })
+          });
+          const data = await resp.json();
+          if (resp.ok) {
+            setPedidos(prev => prev.map(p => p.id === selectedId ? { ...p, status: "Autorizado", faturado: true, nf_numero: data.numero_nfse } : p));
+            alert(`NFS-e N° ${data.numero_nfse} emitida e autorizada com sucesso!`);
+          } else {
+            alert("Erro na emissão: " + (data.detail || data.mensagem));
+          }
+        } catch (e) {
+          alert("Falha de conexão: " + e.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      };
+
+      return (
+        <div class="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
+          {/* Header Superior */}
+          <header class="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-[#center] justify-between flex-shrink-0">
+            <div class="flex items-center space-x-4">
+              <div class="w-10 h-10 rounded-lg bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-500/20">
+                <i class="fa-solid font-bold fa-file-invoice"></i>
+              </div>
+              <div>
+                <h1 class="text-lg font-bold text-white tracking-wide">{EMISSOR_RAZAO}</h1>
+                <p class="text-xs text-slate-400">CNPJ: {EMISSOR_CNPJ} • Pato Branco/PR</p>
+              </div>
+            </div>
+
+            {/* Abas e Controles */}
+            <div class="flex items-center space-x-6">
+              <nav class="flex space-x-1 bg-slate-800/60 p-1 rounded-lg border border-slate-700/50">
+                <button 
+                  onClick={() => setActiveTab("CONFERENCIA")}
+                  class={`px-4 py-1.5 rounded-md text-xs font-semibold transition ${activeTab === 'CONFERENCIA' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                  <i class="fa-solid fa-list-check mr-2"></i>Conferência e Emissão
+                </button>
+                <button 
+                  onClick={() => { setActiveTab("AUDITORIA"); fetch("/api/nfse/auditoria").then(r=>r.json()).then(setAuditoriaLogs); }}
+                  class={`px-4 py-1.5 rounded-md text-xs font-semibold transition ${activeTab === 'AUDITORIA' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                  <i class="fa-solid fa-shield-halved mr-2"></i>Trilha de Auditoria
+                </button>
+              </nav>
+
+              <div class="flex items-center space-x-2 text-xs bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-full font-medium">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Ambiente: {AMBIENTE.toUpperCase()}</span>
+              </div>
+            </div>
+          </header>
+
+          {/* Conteúdo Principal (2 Painéis) */}
+          {activeTab === "CONFERENCIA" ? (
+            <div class="flex flex-1 overflow-hidden">
+              
+              {/* Painel Esquerdo: Lista de Registros Fiscais */}
+              <div class="w-96 bg-slate-900/90 border-r border-slate-800 flex flex-col flex-shrink-0">
+                
+                {/* Busca e Filtros */}
+                <div class="p-4 border-b border-slate-800 space-y-3">
+                  <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-500 text-xs"></i>
+                    <input 
+                      type="text" 
+                      placeholder="Buscar pedido, contrato ou município..." 
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition"
+                    />
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <select 
+                      value={filterStatus}
+                      onChange={e => setFilterStatus(e.target.value)}
+                      class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500">
+                      <option value="TODOS">Todos os Status</option>
+                      <option value="Pendente de conferência">Pendente de conferência</option>
+                      <option value="Aprovado">Aprovado</option>
+                      <option value="Autorizado">Autorizado</option>
+                      <option value="Rejeitado">Rejeitado</option>
+                    </select>
+                    <span class="text-xs text-slate-500 font-medium">{filteredPedidos.length} registros</span>
+                  </div>
+                </div>
+
+                {/* Lista Scrollável */}
+                <div class="flex-1 overflow-y-auto p-3 space-y-2.5">
+                  {filteredPedidos.map(p => {
+                    const r = rascunhos[p.id] || {};
+                    const hasDivergencias = (r.divergencias || []).length > 0;
+                    const isSelected = p.id === selectedId;
+
+                    let badgeClass = "badge-pendente";
+                    if (p.status === "Aprovado") badgeClass = "badge-aprovado";
+                    if (p.status === "Autorizado") badgeClass = "badge-autorizado";
+                    if (p.status === "Rejeitado") badgeClass = "badge-rejeitado";
+
+                    return (
+                      <div 
+                        key={p.id}
+                        onClick={() => setSelectedId(p.id)}
+                        class={`p-3.5 rounded-xl transition cursor-pointer border ${isSelected ? 'bg-slate-800/90 border-blue-500/80 shadow-lg shadow-blue-500/10' : 'glass-card border-slate-800/60 hover:bg-slate-800/40'}`}>
+                        
+                        <div class="flex items-center justify-between mb-2">
+                          <span class={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeClass}`}>
+                            {p.status}
+                          </span>
+                          <span class="text-xs font-bold text-emerald-400">
+                            R$ {p.valor_bruto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+
+                        <div class="space-y-1">
+                          <div class="flex items-center justify-between text-xs font-semibold text-white">
+                            <span>Pedido: {p.numero_pedido}</span>
+                            {p.nf_numero && <span class="text-slate-400">NFS-e: {p.nf_numero}</span>}
+                          </div>
+                          <div class="text-[11px] text-slate-400 flex items-center justify-between">
+                            <span>Contrato: {p.contrato_numero}</span>
+                            <span>{p.municipio_nome}</span>
+                          </div>
+                        </div>
+
+                        {hasDivergencias && (
+                          <div class="mt-2.5 pt-2 border-t border-slate-700/40 flex items-center space-x-1.5 text-[10px] text-amber-400 font-medium">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>{(r.divergencias || []).length} alerta(s) de conciliação</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Painel Direito: Espelho Analítico de Conferência Fiscal */}
+              <div class="flex-1 bg-slate-950 overflow-y-auto p-6 space-y-6">
+                
+                {/* Barra de Ações Superiores do Registro Selecionado */}
+                <div class="glass-card rounded-2xl p-5 flex items-center justify-between border border-slate-800">
+                  <div>
+                    <div class="flex items-center space-x-3 mb-1">
+                      <h2 class="text-xl font-extrabold text-white">Pedido #{selectedPedido.numero_pedido}</h2>
+                      <span class="text-xs px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 font-mono">
+                        Contrato: {selectedPedido.contrato_numero}
+                      </span>
+                    </div>
+                    <p class="text-xs text-slate-400">
+                      Município de Prestação: <strong class="text-white">{selectedPedido.municipio_nome}</strong> (IBGE: {selectedRascunho.codigo_ibge_prestacao})
+                    </p>
+                  </div>
+
+                  <div class="flex items-center space-x-3">
+                    {!selectedRascunho.aprovado ? (
+                      <button 
+                        onClick={handleAprovar}
+                        disabled={loading}
+                        class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition shadow-lg shadow-blue-600/30 flex items-center space-x-2">
+                        <i class="fa-solid fa-check-double"></i>
+                        <span>Aprovar para Emissão</span>
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={handleEmitir}
+                        disabled={loading || selectedPedido.status === "Autorizado"}
+                        class={`px-5 py-2.5 rounded-xl font-semibold text-xs transition shadow-lg flex items-center space-x-2 ${selectedPedido.status === 'Autorizado' ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'}`}>
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>{selectedPedido.status === 'Autorizado' ? 'NFS-e Emitida' : 'Transmitir NFS-e'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Banner de Alertas e Discrepâncias */}
+                {(selectedRascunho.divergencias || []).length > 0 && (
+                  <div class="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-4 text-amber-200 text-xs space-y-2">
+                    <div class="flex items-center space-x-2 font-bold text-amber-400">
+                      <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                      <span>Alertas de Inconsistência e Trava de Conferência ({selectedRascunho.divergencias.length})</span>
+                    </div>
+                    <ul class="list-disc list-inside space-y-1 text-[11px] text-amber-200/90 pl-1">
+                      {selectedRascunho.divergencias.map((div, idx) => (
+                        <li key={idx}>{div}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Grid Visual de Valores e Tributos */}
+                <div class="grid grid-cols-4 gap-4">
+                  <div class="glass-card p-4 rounded-xl space-y-1">
+                    <span class="text-[10px] font-semibold uppercase text-slate-400 tracking-wider">Valor Bruto</span>
+                    <p class="text-lg font-bold text-white">R$ {(selectedRascunho.valor_bruto || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                  </div>
+                  <div class="glass-card p-4 rounded-xl space-y-1">
+                    <span class="text-[10px] font-semibold uppercase text-slate-400 tracking-wider">ISS ({selectedRascunho.aliquota_iss || 0}%)</span>
+                    <p class="text-lg font-bold text-blue-400">R$ {(selectedRascunho.valor_iss || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                    <span class="text-[9px] text-emerald-400 font-semibold">{selectedRascunho.iss_retido ? 'Retido pelo Tomador' : 'Não Retido'}</span>
+                  </div>
+                  <div class="glass-card p-4 rounded-xl space-y-1">
+                    <span class="text-[10px] font-semibold uppercase text-slate-400 tracking-wider">Retenções Federais</span>
+                    <p class="text-lg font-bold text-amber-400">R$ {(selectedRascunho.total_retencoes_federais || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                    <span class="text-[9px] text-slate-400">PIS (0,65%) + COFINS (3%) + CSLL (1%)</span>
+                  </div>
+                  <div class="glass-card p-4 rounded-xl space-y-1 border border-emerald-500/30 bg-emerald-950/20">
+                    <span class="text-[10px] font-semibold uppercase text-emerald-400 tracking-wider">Valor Líquido</span>
+                    <p class="text-xl font-black text-emerald-300">R$ {(selectedRascunho.valor_liquido || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                  </div>
+                </div>
+
+                {/* Detalhamento Completo de Retenções */}
+                <div class="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+                  <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-calculator text-blue-400"></i>
+                    <span>Detalhamento Tributário e Conciliação Estrita (Decimal)</span>
+                  </h3>
+
+                  <div class="grid grid-cols-6 gap-3 text-xs">
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">INSS (3,5%)</span>
+                      <strong class="text-white">R$ {(selectedRascunho.valor_inss || 0).toFixed(2)}</strong>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">IR (1,5%)</span>
+                      <strong class="text-white">R$ {(selectedRascunho.valor_ir || 0).toFixed(2)}</strong>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">PIS (0,65%)</span>
+                      <strong class="text-white">R$ {(selectedRascunho.valor_pis || 0).toFixed(2)}</strong>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">COFINS (3,0%)</span>
+                      <strong class="text-white">R$ {(selectedRascunho.valor_cofins || 0).toFixed(2)}</strong>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">CSLL (1,0%)</span>
+                      <strong class="text-white">R$ {(selectedRascunho.valor_csll || 0).toFixed(2)}</strong>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                      <span class="text-[10px] text-slate-400 block mb-0.5">CBS / IBS</span>
+                      <strong class="text-slate-400">R$ 0,00</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quadro de Códigos Territoriais e Serviços */}
+                <div class="glass-card rounded-2xl p-5 border border-slate-800 space-y-3">
+                  <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-map-location-dot text-emerald-400"></i>
+                    <span>Códigos Fiscais e Enquadramento Nacional / Municipal</span>
+                  </h3>
+
+                  <div class="grid grid-cols-4 gap-4 text-xs font-mono">
+                    <div>
+                      <span class="text-[10px] text-slate-400 block">Item LC 116</span>
+                      <span class="text-white font-bold">{selectedRascunho.item_lc116 || '7.05'}</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-slate-400 block">Cod. Trib. Nacional</span>
+                      <span class="text-white font-bold">{selectedRascunho.codigo_tributacao_nacional || '07.05.02'}</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-slate-400 block">Cod. Trib. Municipal</span>
+                      <span class="text-white font-bold">{selectedRascunho.codigo_tributacao_municipal || '4221903'}</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-slate-400 block">NBS</span>
+                      <span class="text-white font-bold">{selectedRascunho.nbs || '101024220'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quadro de Geração e Cópia da Descrição do Serviço */}
+                <div class="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+                      <i class="fa-solid fa-font text-blue-400"></i>
+                      <span>Descrição Estruturada do Serviço (Formato Analítico)</span>
+                    </h3>
+
+                    <button 
+                      onClick={() => copyToClipboard(selectedRascunho.descricao_analitica)}
+                      class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center space-x-1.5 border border-slate-700">
+                      <i class="fa-solid fa-copy"></i>
+                      <span>{copySuccess ? 'Copiado!' : 'Copiar Texto Analítico'}</span>
+                    </button>
+                  </div>
+
+                  <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 leading-relaxed break-all select-all">
+                    {selectedRascunho.descricao_analitica}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          ) : (
+            /* Aba de Trilha de Auditoria Imutável */
+            <div class="flex-1 bg-slate-950 p-6 overflow-y-auto">
+              <div class="glass-card rounded-2xl p-6 border border-slate-800 space-y-4">
+                <h2 class="text-lg font-bold text-white flex items-center space-x-2">
+                  <i class="fa-solid fa-shield-halved text-blue-400"></i>
+                  <span>Trilha Imutável de Auditoria de Operações Fiscais</span>
+                </h2>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-900 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th class="p-3">ID</th>
+                        <th class="p-3">Data / Hora</th>
+                        <th class="p-3">Usuário</th>
+                        <th class="p-3">Ação</th>
+                        <th class="p-3">Entidade</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                      {auditoriaLogs.map(log => (
+                        <tr key={log.id} class="hover:bg-slate-900/50">
+                          <td class="p-3 font-mono">#{log.id}</td>
+                          <td class="p-3 text-slate-400">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                          <td class="p-3 font-semibold text-white">{log.usuario}</td>
+                          <td class="p-3 font-bold text-emerald-400">{log.acao}</td>
+                          <td class="p-3 text-slate-400">{log.entidade} #{log.entidade_id}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>

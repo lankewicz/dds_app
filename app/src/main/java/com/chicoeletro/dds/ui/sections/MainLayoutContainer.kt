@@ -308,13 +308,24 @@ fun MainLayoutContainer() {
         if (!teamLoaded) return@LaunchedEffect
         // Inicia o serviço de monitoramento em segundo plano permanentemente (independente do turno)
         try {
-            val serviceIntent = Intent(context, com.chicoeletro.dds.core.services.GpsMonitorService::class.java).apply {
-                putExtra("equipe", equipe)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
+            val hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (hasLocationPermission) {
+                val serviceIntent = Intent(context, com.chicoeletro.dds.core.services.GpsMonitorService::class.java).apply {
+                    putExtra("equipe", equipe)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
             } else {
-                context.startService(serviceIntent)
+                Log.w("MainLayoutContainer", "Permissão de localização ausente. GpsMonitorService não iniciado.")
             }
         } catch (e: Exception) {
             Log.e("GpsMonitor", "Erro ao iniciar servico de GPS", e)
@@ -585,9 +596,9 @@ fun MainLayoutContainer() {
         if (!teamLoaded || isInitializing) return@LaunchedEffect
         val currentTeamData = lastTeamData
         val missingTeam = currentTeamData?.equipe.isNullOrBlank() || 
-                currentTeamData?.eletricistas.isNullOrEmpty() || 
-                currentTeamData?.motorista.isNullOrBlank() || 
-                currentTeamData?.teamType.isNullOrBlank()
+                currentTeamData.eletricistas.isNullOrEmpty() || 
+                currentTeamData.motorista.isNullOrBlank() || 
+                currentTeamData.teamType.isNullOrBlank()
         if (missingTeam) {
             teamDialogMandatory = true
             showEditDialog = true
@@ -1062,7 +1073,7 @@ fun MainLayoutContainer() {
 
                         val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
 
-                        Box(Modifier.weight(1f).fillMaxHeight().background(fundoPainelDireito).padding(8.dp)) {
+                        Box(Modifier.weight(1f).fillMaxHeight().background(fundoPainelDireito).padding(2.dp)) {
                             if (selectedTraining != null) {
                                 val vContext = LocalContext.current
                                 val viewerVM = remember { ViewerViewModel(vContext) }
@@ -1219,7 +1230,7 @@ fun MainLayoutContainer() {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         if (selectedTraining != null) {
                             val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
-                            Box(Modifier.fillMaxSize().background(fundoPainelDireito).padding(8.dp)) {
+                            Box(Modifier.fillMaxSize().background(fundoPainelDireito).padding(2.dp)) {
                                 val vContext = LocalContext.current
                                 val viewerVM = remember { ViewerViewModel(vContext) }
                                 val currentId = selectedTraining!!

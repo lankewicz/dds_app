@@ -81,17 +81,41 @@ class GpsMonitorService : Service() {
         }
 
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                createNotification(),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, createNotification())
+
+        val hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !hasLocationPermission) {
+            Log.w("GpsMonitorService", "Permissão de localização ausente no Android 14+. Encerrando serviço.")
+            stopSelf()
+            return
         }
 
-        registerReceiver(gpsReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    createNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, createNotification())
+            }
+        } catch (e: Exception) {
+            Log.e("GpsMonitorService", "Falha ao iniciar Foreground Service (SecurityException ou ForegroundServiceStartNotAllowedException)", e)
+            stopSelf()
+            return
+        }
+
+        try {
+            registerReceiver(gpsReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        } catch (e: Exception) {
+            Log.e("GpsMonitorService", "Erro ao registrar gpsReceiver", e)
+        }
 
         // Executa primeira verificação imediatamente
         checkGpsState()
@@ -99,7 +123,9 @@ class GpsMonitorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(gpsReceiver)
+        try {
+            unregisterReceiver(gpsReceiver)
+        } catch (_: Exception) {}
         hideOverlay()
         stopBeeping()
         try {

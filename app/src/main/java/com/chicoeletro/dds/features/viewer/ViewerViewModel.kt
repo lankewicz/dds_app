@@ -400,12 +400,14 @@ class ViewerViewModel(
         ticker = viewModelScope.launch {
             while (isActive) {
                 delay(250)
+                if (_ui.value.conclusionInfo != null || _ui.value.invalidated) break
                 val now = SystemClock.elapsedRealtime()
                 val elapsed = activeAccumMs + (now - (lastResumeMono ?: now))
                 _ui.update { it.copy(elapsedMs = elapsed) }
                 
                 if (elapsed >= MAX_SESSION_MS) {
                     invalidateSession("Tempo máximo de 10 minutos atingido.")
+                    break
                 }
                 
                 checkGates()
@@ -468,6 +470,7 @@ class ViewerViewModel(
             var lastBeepMono = 0L
             while (isActive) {
                 delay(5_000)
+                if (_ui.value.conclusionInfo != null || _ui.value.invalidated) break
                 val now = SystemClock.elapsedRealtime()
                 val inactiveTime = now - lastInteractionMono
                 val totalTime = _ui.value.elapsedMs
@@ -502,7 +505,9 @@ class ViewerViewModel(
         } catch (_: Exception) {}
     }
     private fun invalidateSession(reason: String) {
+        if (_ui.value.conclusionInfo != null || _ui.value.invalidated) return
         pauseAll()
+        inactivityJob?.cancel()
         _ui.update { it.copy(invalidated = true, invalidateReason = reason) }
     }
 }

@@ -193,7 +193,7 @@ fun CameraScreen(
                     Log.d("DDS-CAM", "Disparando captura de imagem (lens=$lensFacing)")
                     val name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
 
-                    val photoFile = File(context.filesDir, "dds_$name.jpg")
+                    val photoFile = File(context.filesDir, "dds_$name.webp")
                     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
                     capture.takePicture(

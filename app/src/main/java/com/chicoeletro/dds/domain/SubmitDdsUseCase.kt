@@ -38,11 +38,11 @@ class SubmitDdsUseCase(
 
         // Converta o Uri de FileProvider em File real (armazenamento privado)
         // Se o Uri não for file://, usamos copy para filesDir
-        val photoFile = fotoUri?.let { uriToPrivateFile(it, "dds_${submission.submissionId}.jpg", context.filesDir) }
+        val photoFile = fotoUri?.let { uriToPrivateFile(it, "dds_${submission.submissionId}.webp", context.filesDir) }
 
         val thumbFile = thumbUri?.let {
             runCatching { 
-                uriToPrivateFile(it, "thumb_${submission.submissionId}.jpg", context.cacheDir) 
+                uriToPrivateFile(it, "thumb_${submission.submissionId}.webp", context.cacheDir) 
             }.onFailure { e ->
                 android.util.Log.e("SubmitDdsUseCase", "Falha ao processar thumbUri: ${e.message}", e)
             }.getOrNull()

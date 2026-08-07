@@ -75,8 +75,8 @@ object OnlineConclusionRepository {
         ensureAuth()
         val uid = auth.currentUser!!.uid
 
-        val photoPath = "dds_sessions/$sessionId/conclusions/$uid/photo.jpg"
-        val thumbPath = "dds_sessions/$sessionId/conclusions/$uid/thumb.jpg"
+        val photoPath = "dds_sessions/$sessionId/conclusions/$uid/photo.webp"
+        val thumbPath = "dds_sessions/$sessionId/conclusions/$uid/thumb.webp"
 
         val photoRef = storage.reference.child(photoPath)
         photoRef.putFile(photoUri).await()
@@ -131,8 +131,8 @@ object OnlineConclusionRepository {
         ensureAuth()
         val uid = auth.currentUser!!.uid
 
-        val photoPath = "dds_sessions/$sessionId/conclusions/$uid/photo.jpg"
-        val thumbPath = "dds_sessions/$sessionId/conclusions/$uid/thumb.jpg"
+        val photoPath = "dds_sessions/$sessionId/conclusions/$uid/photo.webp"
+        val thumbPath = "dds_sessions/$sessionId/conclusions/$uid/thumb.webp"
 
         val photoRef = storage.reference.child(photoPath)
         photoRef.putFile(photoUri).await()

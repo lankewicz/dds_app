@@ -28,7 +28,7 @@ class RemoteDdsUploader(
         validateSubmissionWindow(submission)
 
         val nowNome = submission.submittedAt.replace(" ", "_").replace(":", "-")
-        val nomeFoto = "${submission.trainingName}_${submission.equipe}_$nowNome.jpg"
+        val nomeFoto = "${submission.trainingName}_${submission.equipe}_$nowNome.webp"
 
         val photoPath = requireNotNull(submission.localPhotoPath) { "localPhotoPath vazio" }
         val photoFile = File(photoPath)

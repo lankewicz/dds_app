@@ -14,6 +14,18 @@ import kotlinx.coroutines.runBlocking
 class GpsStateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == LocationManager.PROVIDERS_CHANGED_ACTION) {
+            val hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (!hasLocationPermission) {
+                Log.w("GpsStateReceiver", "Sem permissão de localização. Ignorando evento.")
+                return
+            }
+
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val isGpsEnabled = try {
                 locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||

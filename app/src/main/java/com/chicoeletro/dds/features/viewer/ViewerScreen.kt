@@ -44,6 +44,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -132,11 +135,33 @@ fun ViewerScreen(
     }
 
 
-    // Tela cheia
+    // Tela cheia (inicia no painel e maximiza ao clicar em INICIAR ou na imagem)
     var fullscreen by remember { mutableStateOf(false) }
+    var isFillWidth by remember { mutableStateOf(false) }
     // 🔁 Troca de treinamento → zera sessão atual
     LaunchedEffect(trainingId) {
         viewModel.resetSession()
+        fullscreen = false
+    }
+
+    // 📺 Controle de Modo Imersivo (Oculta barras no fullscreen e restaura 100% ao sair)
+    DisposableEffect(fullscreen) {
+        val window = (context as? android.app.Activity)?.window
+        if (fullscreen) {
+            window?.let { win ->
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(win, false)
+                val controller = androidx.core.view.WindowCompat.getInsetsController(win, win.decorView)
+                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            window?.let { win ->
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(win, true)
+                val controller = androidx.core.view.WindowCompat.getInsetsController(win, win.decorView)
+                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
     }
 
     // 🔄 Auto-start removido a pedido do usuário: agora exige clique em "INICIAR"
@@ -199,10 +224,10 @@ fun ViewerScreen(
                 return@remember null
             }
             else -> {
-                "Tempo: ${formatMs(ui.elapsedMs)}  •  Sessão: ${ui.sessionId.take(8)}"
+                "Tempo: ${formatMs(ui.elapsedMs)}"
             }
         }
-        "Status: $inner"
+        inner
     }
 
     // Rodapé com severidade:
@@ -280,6 +305,7 @@ fun ViewerScreen(
                         Image(
                             painter = it,
                             contentDescription = null,
+                            contentScale = if (isFillWidth) ContentScale.FillWidth else ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clickable { fullscreen = true }
@@ -325,7 +351,17 @@ fun ViewerScreen(
                     enabled = currentIndex > 0
                 ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Anterior") }
 
-                Text("${currentIndex + 1} de ${ui.images.size}")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${currentIndex + 1} de ${ui.images.size}")
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { isFillWidth = !isFillWidth }) {
+                        Icon(
+                            if (isFillWidth) Icons.Filled.FitScreen else Icons.Filled.AspectRatio,
+                            contentDescription = if (isFillWidth) "Ajustar à tela" else "Preencher largura",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
 
                 // ➡️ Próximo / ✅ Concluir / 🚀 Iniciar
                 val isLast = currentIndex >= ui.images.lastIndex && ui.images.isNotEmpty()
@@ -482,195 +518,207 @@ fun ViewerScreen(
             val offset = remember { mutableStateOf(Offset.Zero) }
             val origin = remember { mutableStateOf(TransformOrigin.Center) }
 
-            Scaffold(
-                containerColor = Color.Black,
-                modifier = Modifier.fillMaxSize(),
-                topBar = {
-                    Row(
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                // 1. Imagem Principal em Tela Cheia (100% do Espaço)
+                Crossfade(targetState = painter, label = "viewer-fullscreen", modifier = Modifier.fillMaxSize()) { p ->
+                    Image(
+                        painter = p,
+                        contentDescription = null,
+                        contentScale = if (isFillWidth) ContentScale.FillWidth else ContentScale.Fit,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        IconButton(onClick = { fullscreen = false }) {
-                            Icon(Icons.Filled.Close, "Fechar", tint = Color.White)
-                        }
-                    }
-                },
-                bottomBar = {
-                    // Reutiliza a lógica de navegação dentro do Scaffold do diálogo
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale.floatValue,
+                                scaleY = scale.floatValue,
+                                translationX = offset.value.x,
+                                translationY = offset.value.y,
+                                transformOrigin = origin.value
+                            )
+                            .pointerInput(Unit) {
+                                detectTransformGestures { centroid, pan, zoom, _ ->
+                                    scale.floatValue = (scale.floatValue * zoom).coerceIn(1f, 5f)
+                                    offset.value += pan
+                                    origin.value = TransformOrigin(
+                                        pivotFractionX = centroid.x / size.width,
+                                        pivotFractionY = centroid.y / size.height
+                                    )
+                                }
+                            }
+                            .pointerInput(Unit) {
+                                detectTapGestures(onDoubleTap = {
+                                    scale.floatValue = 1f
+                                    offset.value = Offset.Zero
+                                    origin.value = TransformOrigin.Center
+                                })
+                            }
+                    )
+                }
+
+                // 2. Alerta de inatividade no topo (se houver)
+                if (ui.inactivityWarning) {
                     Surface(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        contentColor = Color.White
+                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 56.dp, start = 16.dp, end = 16.dp),
+                        color = Color.Red.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Column {
-                            // Status bar superior (opcional no fullscreen, mas útil p/ tempo)
-                            footerStatus?.let {
-                                Text(
-                                    text = it.text,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (it.kind == FooterStatusKind.WARNING) Color.Yellow else Color.White
+                        Text(
+                            "⚠️ ATENÇÃO: CONCLUA O DDS AGORA PARA NÃO PERDER O TEMPO DECORRIDO!",
+                            color = Color.White,
+                            modifier = Modifier.padding(12.dp),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // 3. Barra Superior Flutuante (Pílula compacta sem tarja preta)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { isFillWidth = !isFillWidth }) {
+                                Icon(
+                                    if (isFillWidth) Icons.Filled.FitScreen else Icons.Filled.AspectRatio,
+                                    contentDescription = if (isFillWidth) "Ajustar à tela" else "Preencher largura",
+                                    tint = Color.White
                                 )
                             }
-                            
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(64.dp)
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Anterior
-                                IconButton(
-                                    onClick = {
-                                        val target = (currentIndex - 1).coerceAtLeast(0)
-                                        if (readOnlyMode) viewModel.showSlideReadOnly(target) else viewModel.requestGoToSlide(target)
-                                    },
-                                    enabled = currentIndex > 0
-                                ) { 
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.ArrowBack, 
-                                        "Anterior", 
-                                        tint = if (currentIndex > 0) Color.White else Color.Gray 
-                                    ) 
-                                }
-
-                                Text("${currentIndex + 1} de ${ui.images.size}", color = Color.White)
-
-                                // Próximo / Concluir
-                                val isLast = currentIndex >= ui.images.lastIndex && ui.images.isNotEmpty()
-                                if (!isLast) {
-                                    Button(
-                                        onClick = {
-                                            val target = (currentIndex + 1).coerceAtMost(ui.images.lastIndex)
-                                            if (readOnlyMode) viewModel.showSlideReadOnly(target) else viewModel.requestGoToSlide(target)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                    ) {
-                                        Text("Próximo")
-                                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
-                                    }
-                                } else if (!readOnlyMode && canConclude) {
-                                    // REGRAS DE CONCLUSÃO NO FULLSCREEN
-                                    var showWhyDialogFull by remember { mutableStateOf(false) }
-                                    var whyModeFull by remember { mutableStateOf(WhyDialogMode.MIN_TIME) }
-                                    
-                                    Button(
-                                        onClick = {
-                                            if (isOnlineDDS) {
-                                                if (canEnterOnline) {
-                                                    fullscreen = false
-                                                    onEnterAgora()
-                                                } else {
-                                                    whyModeFull = WhyDialogMode.ONLINE_LOCK
-                                                    showWhyDialogFull = true
-                                                }
-                                            } else {
-                                                val minTotalMs = 120_000L
-                                                val falta = minTotalMs - ui.elapsedMs
-                                                if (falta > 0L) {
-                                                    whyModeFull = WhyDialogMode.MIN_TIME
-                                                    showWhyDialogFull = true
-                                                } else if (ui.canTakePhoto && !ui.invalidated) {
-                                                    fullscreen = false
-                                                    onOpenForm()
-                                                } else {
-                                                    // Feedback para quando o tempo total deu mas falta o tempo por slide
-                                                    whyModeFull = WhyDialogMode.MIN_TIME
-                                                    showWhyDialogFull = true
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (isOnlineDDS) MaterialTheme.colorScheme.secondary else Color(0xFF2E7D32)
-                                        )
-                                    ) {
-                                        if (isOnlineDDS) {
-                                            Text("Acessar Online")
-                                            Icon(Icons.Filled.VideoCall, null)
-                                        } else {
-                                            Text("Concluir")
-                                            Icon(Icons.Filled.Check, null)
-                                        }
-                                    }
-
-                                    if (showWhyDialogFull) {
-                                        AlertDialog(
-                                            onDismissRequest = { showWhyDialogFull = false },
-                                            confirmButton = { Button(onClick = { showWhyDialogFull = false }) { Text("OK") } },
-                                            title = { Text(if (whyModeFull == WhyDialogMode.MIN_TIME) "Quase lá!" else "DDS Agendado") },
-                                            text = {
-                                                if (whyModeFull == WhyDialogMode.MIN_TIME) {
-                                                    Text("Este DDS requer 2 minutos de dedicação para garantir a fixação do conteúdo.")
-                                                } else {
-                                                    Text("O acesso ao DDS Online será liberado 15min antes do horário agendado.")
-                                                }
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    Spacer(Modifier.width(48.dp))
-                                }
+                            IconButton(onClick = { fullscreen = false }) {
+                                Icon(Icons.Filled.Close, "Fechar", tint = Color.White)
                             }
                         }
                     }
                 }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (ui.inactivityWarning) {
-                        Surface(
-                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(16.dp),
-                            color = Color.Red.copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                "⚠️ ATENÇÃO: CONCLUA O DDS AGORA PARA NÃO PERDER O TEMPO DECORRIDO!",
-                                color = Color.White,
-                                modifier = Modifier.padding(12.dp),
-                                textAlign = TextAlign.Center,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
 
-                    Crossfade(targetState = painter, label = "viewer-fullscreen") { p ->
-                        Image(
-                            painter = p,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale.floatValue,
-                                    scaleY = scale.floatValue,
-                                    translationX = offset.value.x,
-                                    translationY = offset.value.y,
-                                    transformOrigin = origin.value
+                // 4. Barra Inferior Flutuante (Linha Única Fina de 44dp: Navegação + Tempo)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter),
+                    color = Color.Black.copy(alpha = 0.5f),
+                    contentColor = Color.White
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    val target = (currentIndex - 1).coerceAtLeast(0)
+                                    if (readOnlyMode) viewModel.showSlideReadOnly(target) else viewModel.requestGoToSlide(target)
+                                },
+                                enabled = currentIndex > 0
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    "Anterior",
+                                    tint = if (currentIndex > 0) Color.White else Color.Gray
                                 )
-                                .pointerInput(Unit) {
-                                    detectTransformGestures { centroid, pan, zoom, _ ->
-                                        scale.floatValue = (scale.floatValue * zoom).coerceIn(1f, 5f)
-                                        offset.value += pan
-                                        origin.value = TransformOrigin(
-                                            pivotFractionX = centroid.x / size.width,
-                                            pivotFractionY = centroid.y / size.height
-                                        )
+                            }
+                            footerStatus?.let {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = it.text,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (it.kind == FooterStatusKind.WARNING) Color.Yellow else Color.White
+                                )
+                            }
+                        }
+
+                            Text("${currentIndex + 1} de ${ui.images.size}", color = Color.White)
+
+                            val isLast = currentIndex >= ui.images.lastIndex && ui.images.isNotEmpty()
+                            if (!isLast) {
+                                Button(
+                                    onClick = {
+                                        val target = (currentIndex + 1).coerceAtMost(ui.images.lastIndex)
+                                        if (readOnlyMode) viewModel.showSlideReadOnly(target) else viewModel.requestGoToSlide(target)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Text("Próximo")
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
+                                }
+                            } else if (!readOnlyMode && canConclude) {
+                                var showWhyDialogFull by remember { mutableStateOf(false) }
+                                var whyModeFull by remember { mutableStateOf(WhyDialogMode.MIN_TIME) }
+
+                                Button(
+                                    onClick = {
+                                        if (isOnlineDDS) {
+                                            if (canEnterOnline) {
+                                                fullscreen = false
+                                                onEnterAgora()
+                                            } else {
+                                                whyModeFull = WhyDialogMode.ONLINE_LOCK
+                                                showWhyDialogFull = true
+                                            }
+                                        } else {
+                                            val minTotalMs = 120_000L
+                                            val falta = minTotalMs - ui.elapsedMs
+                                            if (falta > 0L) {
+                                                whyModeFull = WhyDialogMode.MIN_TIME
+                                                showWhyDialogFull = true
+                                            } else if (ui.canTakePhoto && !ui.invalidated) {
+                                                fullscreen = false
+                                                onOpenForm()
+                                            } else {
+                                                whyModeFull = WhyDialogMode.MIN_TIME
+                                                showWhyDialogFull = true
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isOnlineDDS) MaterialTheme.colorScheme.secondary else Color(0xFF2E7D32)
+                                    )
+                                ) {
+                                    if (isOnlineDDS) {
+                                        Text("Acessar Online")
+                                        Icon(Icons.Filled.VideoCall, null)
+                                    } else {
+                                        Text("Concluir")
+                                        Icon(Icons.Filled.Check, null)
                                     }
                                 }
-                                .pointerInput(Unit) {
-                                    detectTapGestures(onDoubleTap = {
-                                        scale.floatValue = 1f
-                                        offset.value = Offset.Zero
-                                        origin.value = TransformOrigin.Center
-                                    })
+
+                                if (showWhyDialogFull) {
+                                    AlertDialog(
+                                        onDismissRequest = { showWhyDialogFull = false },
+                                        confirmButton = { Button(onClick = { showWhyDialogFull = false }) { Text("OK") } },
+                                        title = { Text(if (whyModeFull == WhyDialogMode.MIN_TIME) "Quase lá!" else "DDS Agendado") },
+                                        text = {
+                                            if (whyModeFull == WhyDialogMode.MIN_TIME) {
+                                                Text("Este DDS requer 2 minutos de dedicação para garantir a fixação do conteúdo.")
+                                            } else {
+                                                Text("O acesso ao DDS Online será liberado 15min antes do horário agendado.")
+                                            }
+                                        }
+                                    )
                                 }
-                        )
+                            } else {
+                                Spacer(Modifier.width(48.dp))
+                        }
                     }
                 }
             }
