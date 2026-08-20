@@ -55,7 +55,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import com.chicoeletro.dds.ui.sections.TrainingStatus
+import com.chicoeletro.dds.viewmodel.TrainingStatus
 import com.chicoeletro.dds.components.FooterStatus
 import com.chicoeletro.dds.components.FooterStatusKind
 import java.time.LocalDate
@@ -77,6 +77,7 @@ fun ViewerScreen(
     status: TrainingStatus?,
     canConclude: Boolean = true,
     onOpenForm: () -> Unit,
+    onCloseViewer: () -> Unit = {},
     onEnterAgora: () -> Unit = {},
     onStatusChanged: (FooterStatus?) -> Unit = {},
     forceLandscape: Boolean = true
@@ -413,7 +414,19 @@ fun ViewerScreen(
                     else -> {
                         // Slide Final: Concluir ou Mensagem de Status
                         if (jaConcluido) {
-                            Text("DDS já executado", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF2E7D32))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("DDS já executado", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF2E7D32))
+                                Spacer(Modifier.height(6.dp))
+                                Button(
+                                    onClick = onCloseViewer,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                    shape = RoundedCornerShape(28.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Voltar para Treinamentos")
+                                }
+                            }
                         } else if (!canConclude) {
                             Text("Treinamento expirado", style = MaterialTheme.typography.bodyMedium)
                         } else if (!ui.started) {
@@ -716,9 +729,18 @@ fun ViewerScreen(
                                         }
                                     )
                                 }
+                            } else if (readOnlyMode) {
+                                Button(
+                                    onClick = onCloseViewer,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Voltar")
+                                }
                             } else {
                                 Spacer(Modifier.width(48.dp))
-                        }
+                            }
                     }
                 }
             }

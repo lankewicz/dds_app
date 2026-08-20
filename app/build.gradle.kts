@@ -14,33 +14,33 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
     id("com.google.gms.google-services")
 }
 // ─── Versionamento automático (ANO + DATA + HORA) ──────────────────────────────
-val versionCodeAuto by extra {
+fun calculateVersionCodeAuto(): Int {
     val now = LocalDateTime.now(ZoneId.of("America/Sao_Paulo"))
-
     val aa = (now.year % 100).toString().padStart(2, '0')
     val mm = now.monthValue.toString().padStart(2, '0')
     val dd = now.dayOfMonth.toString().padStart(2, '0')
     val hh = now.hour.toString().padStart(2, '0')
-
-    // AAMMDDHH  → ex.: 25122609
-    "$aa$mm$dd$hh".toInt()
+    return "$aa$mm$dd$hh".toInt()
 }
 
-val versionNameAuto by extra {
+fun calculateVersionNameAuto(): String {
     val now = LocalDateTime.now(ZoneId.of("America/Sao_Paulo"))
-
     val aa = (now.year % 100).toString().padStart(2, '0')
     val mm = now.monthValue.toString().padStart(2, '0')
     val dd = now.dayOfMonth.toString().padStart(2, '0')
-
-    // AA.MM.DD → ex.: 26.03.26
-    "$aa.$mm.$dd"
+    return "$aa.$mm.$dd"
 }
+
+val versionCodeAuto = calculateVersionCodeAuto()
+val versionNameAuto = calculateVersionNameAuto()
 
 
 android {
@@ -103,10 +103,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -184,6 +182,12 @@ dependencies {
 
     // ─── AGORA.IO ────────
     implementation("io.agora.rtc:lite-rtc-basic:4.6.3")
+
+    // ─── HILT ────────
+    implementation(libs.hilt.android)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.navigation.compose)
+    ksp(libs.hilt.compiler)
 
 
     // Dependência Retrofit + Gson no Android

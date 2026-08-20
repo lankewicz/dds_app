@@ -1,9 +1,8 @@
 // Módulo: app/src/main/java/com/chicoeletro/dds/ui/sections/MainLayoutContainer.kt
 // Função: Container principal da interface. Organiza a estrutura de navegação, barras latrais 
 //         e a área de conteúdo dinâmico utilizando uma arquitetura baseada em Scaffold.
-// Tecnologias: Jetpack Compose, Material3, Scaffold.
+// Tecnologias: Jetpack Compose, Material3, Scaffold, Jetpack Navigation.
 // Autor: Valdinei Lankewicz
-// Histórico de Alterações:
 
 package com.chicoeletro.dds.ui.sections
 
@@ -13,141 +12,49 @@ import android.widget.Toast
 import android.os.Build
 import android.net.Uri
 import android.provider.Settings
-import android.provider.Settings.Secure
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.foundation.layout.offset
-import com.chicoeletro.dds.ui.training.buildRollingParticipationDays
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.chicoeletro.dds.R
-import com.chicoeletro.dds.components.FooterStatus
-import com.chicoeletro.dds.components.FooterVersion
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.chicoeletro.dds.components.HeaderBar
-import com.chicoeletro.dds.components.HeaderBarState
 import com.chicoeletro.dds.core.LastTeamData
-import com.chicoeletro.dds.core.agora.AgoraConfig
 import com.chicoeletro.dds.data.FormSubmission
-import com.chicoeletro.dds.features.Camera.CameraScreen
-import com.chicoeletro.dds.features.form.FormScreen
-import com.chicoeletro.dds.features.online.AgoraMeetingEntry
 import com.chicoeletro.dds.features.online.MeetingRepository
 import com.chicoeletro.dds.features.online.DdsSession
 import com.chicoeletro.dds.features.team.TeamConfigSync
-import com.chicoeletro.dds.features.team.TeamEditDialog
 import com.chicoeletro.dds.features.team.TeamChangeRequestRepository
-import com.chicoeletro.dds.features.team.RequestStatus
-import com.chicoeletro.dds.features.team.TeamChangeRequest
 import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
-import com.chicoeletro.dds.features.viewer.ViewerScreen
-import com.chicoeletro.dds.features.viewer.ViewerViewModel
-import com.chicoeletro.dds.storage.ExecCacheEntry
 import com.chicoeletro.dds.storage.FormDataStore
 import com.chicoeletro.dds.storage.TrainingExecLocalStore
-import com.chicoeletro.dds.ui.sections.sidebar.LeftSidebarSection
 import com.chicoeletro.dds.ui.training.buildMonthParticipationDays
-import com.chicoeletro.dds.ui.training.canConcludeTrainingId
-import com.chicoeletro.dds.ui.training.shouldShowTraining
-import com.chicoeletro.dds.ui.training.trainingIsoDateFromId
 import com.chicoeletro.dds.viewmodel.NetworkViewModel
 import com.chicoeletro.dds.viewmodel.TrainingSyncViewModel
 import com.chicoeletro.dds.viewmodel.TrainingViewModel
-import com.chicoeletro.dds.viewmodel.TrainingViewModelFactory
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.YearMonth
-import java.time.format.DateTimeFormatter
-
-import com.chicoeletro.dds.features.turno.EstadoTurno
-import com.chicoeletro.dds.features.turno.RequisicaoTransicao
-import com.chicoeletro.dds.features.turno.TurnoSnapshot
-import com.chicoeletro.dds.features.turno.TurnoController
-import com.chicoeletro.dds.features.turno.TurnoPendingStore
-import com.chicoeletro.dds.features.turno.TurnoFirestoreUploader
-import com.chicoeletro.dds.ui.components.CommunicationDialog
+import com.chicoeletro.dds.features.turno.TurnoViewModel
 import com.chicoeletro.dds.features.communication.CommunicationRepository
-import com.chicoeletro.dds.features.communication.TeamMessage
-import com.chicoeletro.dds.ui.components.MessageHistoryDialog
-import com.chicoeletro.dds.features.turno.TurnoEventRemote
-import com.chicoeletro.dds.features.turno.TurnoStateRemote
-import com.chicoeletro.dds.features.turno.TurnoSessionRemote
-import com.chicoeletro.dds.features.turno.TurnoActor
-import com.chicoeletro.dds.features.turno.TurnoPhotoAudit
-import com.chicoeletro.dds.ui.components.TurnoControlScreen
-import com.chicoeletro.dds.ui.components.TeamTypeSelectionScreen
-import com.chicoeletro.dds.ui.components.CommunicationScreen
-import com.chicoeletro.dds.ui.components.DdsWarningDialog
-import com.chicoeletro.dds.ui.components.UpdateBanner
-import com.chicoeletro.dds.ui.components.InterjornadaNotice
 import com.chicoeletro.dds.core.version.VersionChecker
 import com.chicoeletro.dds.core.version.VersionStatus
 import com.chicoeletro.dds.ui.components.TeamChangeReason
-import com.chicoeletro.dds.ui.components.TeamChangeReasonDialog
 import android.content.Context
-import androidx.compose.ui.text.style.TextAlign
-import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.location.LocationManager
-import androidx.compose.material.icons.filled.Warning
-import androidx.activity.compose.BackHandler
-
-import com.chicoeletro.dds.storage.TrainingExecSyncState
 import com.chicoeletro.dds.core.notifications.NotificationHelper
 import com.chicoeletro.dds.core.notifications.TurnoReminderWorker
 import com.chicoeletro.dds.core.notifications.DdsReminderWorker
@@ -158,95 +65,48 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import java.util.Calendar
 
-
-
-data class TrainingStatus(
-    val dataConclusao: String,
-    val horaConclusao: String,
-    val duracao: String,
-    val syncState: String = TrainingExecSyncState.SYNCED
-)
-
-data class PendingTeamChange(
-    val name: String,
-    val members: List<String>,
-    val schedule: com.chicoeletro.dds.core.WorkSchedule,
-    val teamType: String?,
-    val motorista: String?,
-    val coringas: List<String>
-)
-
 @Composable
 fun MainLayoutContainer() {
     val context = LocalContext.current
-    val application = context.applicationContext as Application
     val scope = rememberCoroutineScope()
-    // ==========================================================
-    // Turno (remoto): multiempresa + deviceId + appVersion
-    // ==========================================================
-    // FUTURO: virá de config/multiempresa real
-    val empresa = remember { "ChicoEletro" }
-    val deviceId = remember {
-        Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
-    }
-    val appVersion = remember {
-        runCatching {
-            val pm = context.packageManager
-            val pkg = context.packageName
-            @Suppress("DEPRECATION")
-            val pInfo = pm.getPackageInfo(pkg, 0)
-            pInfo.versionName ?: "unknown"
-        }.getOrElse { "unknown" }
-    }
+    val navController = rememberNavController()
+    
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
-    val trainingViewModel: TrainingViewModel = viewModel(factory = TrainingViewModelFactory(application))
-    val networkViewModel: NetworkViewModel = viewModel()
-    val syncViewModel: TrainingSyncViewModel = viewModel()
+    val trainingViewModel: TrainingViewModel = hiltViewModel()
+    val networkViewModel: NetworkViewModel = hiltViewModel()
+    val syncViewModel: TrainingSyncViewModel = hiltViewModel()
+    val turnoViewModel: TurnoViewModel = hiltViewModel()
 
-    // ✅ Mensagens centralizadas do SyncViewModel (offline/timeout/erro)
+    val trainings by trainingViewModel.trainings.collectAsState()
+    val trainingStatus by trainingViewModel.trainingStatus.collectAsState()
+    val online by networkViewModel.isOnline.collectAsState()
+    val syncState by syncViewModel.state.collectAsState()
+    val turnoSnap by turnoViewModel.turnoSnapshot.collectAsState()
+    val isInitializing by trainingViewModel.isInitializing.collectAsState()
+
+    // ✅ Mensagens centralizadas do SyncViewModel
     LaunchedEffect(syncViewModel) {
         syncViewModel.uiMessages.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
     }
 
-    val isInitializing by trainingViewModel.isInitializing.collectAsState(initial = true)
-    val trainings by trainingViewModel.trainings.collectAsState(initial = emptyList())
-    val online by networkViewModel.isOnline.collectAsState(initial = false)
-    val syncState by syncViewModel.state.collectAsState()
-
     var selectedTraining by rememberSaveable { mutableStateOf<String?>(null) }
-    var isInDdsModule by rememberSaveable { mutableStateOf(false) }
     var showAbastecimento by rememberSaveable { mutableStateOf(false) }
     var showForm by rememberSaveable { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var teamDialogMandatory by rememberSaveable { mutableStateOf(false) }
 
-    // ==========================================================
-    // Crash Shield: Relatório de Fechamento Anormal no último acesso
-    // ==========================================================
     var pendingCrashReport by remember {
         mutableStateOf(com.chicoeletro.dds.core.crash.CrashReportManager.getPendingCrashReport(context))
     }
 
-    pendingCrashReport?.let { report ->
-        com.chicoeletro.dds.ui.components.CrashReportDialog(
-            report = report,
-            onDismiss = {
-                pendingCrashReport = null
-            }
-        )
-    }
-    var turnoSnap by remember { mutableStateOf(TurnoSnapshot()) }
-    var showTurnoControl by remember { mutableStateOf(false) }
-    var errorTurnoMessage by remember { mutableStateOf<String?>(null) }
     var showCommunicationDialog by rememberSaveable { mutableStateOf(false) }
     val commRepo = remember { CommunicationRepository() }
     var unreadIncomingCount by remember { mutableStateOf(0) }
     var unreadOutgoingCount by remember { mutableStateOf(0) }
-    var showHistoryDialog by remember { mutableStateOf(false) }
-    var historyMessages by remember { mutableStateOf<List<TeamMessage>>(emptyList()) }
-
 
     var teamLoaded by remember { mutableStateOf(false) }
     var lastTeamData by remember { mutableStateOf<LastTeamData?>(null) }
@@ -260,76 +120,42 @@ fun MainLayoutContainer() {
 
     var gpsEnabled by remember { mutableStateOf(true) }
 
+    LaunchedEffect(equipe) {
+        trainingViewModel.updateTeamAndMonth(equipe, YearMonth.now())
+        turnoViewModel.init(equipe)
+    }
+
     DisposableEffect(context) {
         val checkGps = {
             try {
                 val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
                 locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
                         locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-            } catch (e: Exception) {
-                Log.e("MainLayoutContainer", "Erro ao verificar GPS no receiver", e)
-                false
-            }
+            } catch (e: Exception) { false }
         }
         gpsEnabled = checkGps()
         val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
         val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                gpsEnabled = checkGps()
-            }
+            override fun onReceive(context: Context, intent: Intent) { gpsEnabled = checkGps() }
         }
         context.registerReceiver(receiver, filter)
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
-    }
-
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                gpsEnabled = try {
-                    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-                } catch (e: Exception) {
-                    Log.e("MainLayoutContainer", "Erro ao verificar GPS no resume", e)
-                    false
-                }
-            }
-        }
-        lifecycle.addObserver(observer)
-        onDispose {
-            lifecycle.removeObserver(observer)
-        }
+        onDispose { context.unregisterReceiver(receiver) }
     }
 
     LaunchedEffect(teamLoaded, equipe) {
         if (!teamLoaded) return@LaunchedEffect
-        // Inicia o serviço de monitoramento em segundo plano permanentemente (independente do turno)
         try {
             val hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                context, Manifest.permission.ACCESS_FINE_LOCATION
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
             if (hasLocationPermission) {
                 val serviceIntent = Intent(context, com.chicoeletro.dds.core.services.GpsMonitorService::class.java).apply {
                     putExtra("equipe", equipe)
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
-            } else {
-                Log.w("MainLayoutContainer", "Permissão de localização ausente. GpsMonitorService não iniciado.")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(serviceIntent)
+                else context.startService(serviceIntent)
             }
-        } catch (e: Exception) {
-            Log.e("GpsMonitor", "Erro ao iniciar servico de GPS", e)
-        }
+        } catch (e: Exception) { Log.e("GpsMonitor", "Erro ao iniciar servico", e) }
     }
 
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -337,37 +163,24 @@ fun MainLayoutContainer() {
     var abrirCamera by remember { mutableStateOf(false) }
     var tempoInicioDDS by remember { mutableStateOf<Long?>(null) }
 
-    var trainingStatus by remember { mutableStateOf<Map<String, TrainingStatus>>(emptyMap()) }
-    var viewerStatus by remember { mutableStateOf<FooterStatus?>(null) }
     var showPresenceReport by rememberSaveable { mutableStateOf(false) }
     var showDdsWarning by rememberSaveable { mutableStateOf(false) }
     var presenceReportAccessed by rememberSaveable { mutableStateOf(false) }
 
     var versionStatus by remember { mutableStateOf(VersionStatus.UP_TO_DATE) }
-    var updateUrl by remember { mutableStateOf<String?>(null) }
-
     var modoTesteAtivo by rememberSaveable { mutableStateOf(false) }
     var cliqueLogo by remember { mutableStateOf(0) }
 
     val auth = remember { FirebaseAuth.getInstance() }
     var currentUser by remember { mutableStateOf<FirebaseUser?>(auth.currentUser) }
 
-    // Odômetro (fluxo do Turno)
-    var odoKmTotalPrefill by remember { mutableStateOf("") }
-    var odoPendingTarget by remember { mutableStateOf<EstadoTurno?>(null) }
-    var odoPendingMotivo by remember { mutableStateOf<com.chicoeletro.dds.features.turno.MotivoDeslocamentoEspecial?>(null) }
-    var odoPendingMotivoOutro by remember { mutableStateOf("") }
-
     DisposableEffect(auth) {
-        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            currentUser = firebaseAuth.currentUser
-        }
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth -> currentUser = firebaseAuth.currentUser }
         auth.addAuthStateListener(listener)
         onDispose { auth.removeAuthStateListener(listener) }
     }
 
     var showOnlineTest by remember { mutableStateOf(false) }
-
     val meetingRepo = remember { MeetingRepository() }
     val activeSessions by meetingRepo.observeActiveSessions().collectAsState(initial = emptyList())
     var activeSessionChannel by remember { mutableStateOf<String?>(null) }
@@ -377,99 +190,27 @@ fun MainLayoutContainer() {
     var showReasonDialog by remember { mutableStateOf(false) }
     var pendingTeamChange by remember { mutableStateOf<PendingTeamChange?>(null) }
     var pendingRequestId by rememberSaveable { mutableStateOf<String?>(null) }
-    var activeRequest by remember { mutableStateOf<TeamChangeRequest?>(null) }
     val requestRepo = remember { TeamChangeRequestRepository() }
-
-    val execRepo = remember { TeamTrainingExecutionRepository() }
-    val statusMonth = remember(selectedTraining) {
-        selectedTraining
-            ?.let(::trainingIsoDateFromId)
-            ?.let(YearMonth::from)
-            ?: YearMonth.now()
-    }
-    val currentMonthId = remember(statusMonth) { statusMonth.toString() }
-    val teamKey = remember(equipe) { TeamTrainingExecutionRepository.teamKeyOf(equipe) }
-
-    LaunchedEffect(teamKey, currentMonthId) {
-        if (equipe.isBlank()) return@LaunchedEffect
-        TrainingExecLocalStore
-            .flowMonth(context, teamKey, currentMonthId)
-            .collect { localMap ->
-                trainingStatus = localMap.mapValues { (_, st) ->
-                    TrainingStatus(st.dataConclusao, st.horaConclusao, st.duracao, st.syncState)
-                }
-            }
-    }
-
-    DisposableEffect(equipe, currentMonthId) {
-        if (equipe.isBlank()) {
-            trainingStatus = emptyMap()
-            onDispose { }
-        } else {
-            val reg = execRepo.listenMonth(
-                teamName = equipe,
-                ym = statusMonth,
-                onUpdate = { map ->
-                    val newStatus = map.mapValues { (_, st) ->
-                        TrainingStatus(st.dataConclusao, st.horaConclusao, st.duracao)
-                    }
-                    trainingStatus = newStatus
-                    scope.launch {
-                        val cache = map.mapValues { (_, st) ->
-                            ExecCacheEntry(
-                                st.dataConclusao,
-                                st.horaConclusao,
-                                st.duracao,
-                                TrainingExecSyncState.SYNCED
-                            )
-                        }
-                        TrainingExecLocalStore.mergeRemoteMonth(context,
-                            teamKey,
-                            currentMonthId,
-                            cache)
-                    }
-                }
-            )
-            onDispose { reg.remove() }
-        }
-    }
 
     LaunchedEffect(pendingRequestId) {
         val rid = pendingRequestId ?: return@LaunchedEffect
         requestRepo.observeRequest(rid).collect { req ->
-            activeRequest = req
             if (req?.status == "APPROVED") {
-                // Confirmado pelo monitor: Podemos limpar o pedido e seguir a vida
                 pendingRequestId = null
-                activeRequest = null
-                pendingTeamChange = null
                 requestRepo.deleteRequest(rid)
-                Log.d("TeamChange", "Alteração confirmada remotamente pelo monitor.")
             } else if (req?.status == "REJECTED") {
-                // REJEITADO! Precisamos reverter tudo
                 val oldName = req.oldPrefix
                 val currentName = req.newPrefix
-                val reason = req.reason
-                
-                // 1. Reverte o histórico local (faz a migração de volta)
-                if (reason == "VEHICLE_CHANGE") {
+                if (req.reason == "VEHICLE_CHANGE") {
                     TrainingExecLocalStore.migrateTeam(context, currentName, oldName)
                     FormDataStore.migrateTeam(context, currentName, oldName)
                 } else {
-                    // Se era nova equipe, limpamos o que foi gerado no nome novo
                     TrainingExecLocalStore.clearLocalOnly(context, currentName)
                 }
-
-                // 2. Restaura o prefixo original
                 teamSync.savePendingLocal(context, oldName, eletricistas, lastTeamData?.workSchedule ?: com.chicoeletro.dds.core.WorkSchedule(), lastTeamData?.teamType, motorista, coringas)
                 equipe = oldName
-                
-                // 3. Limpa estados
                 pendingRequestId = null
-                activeRequest = null
-                pendingTeamChange = null
-                
-                Toast.makeText(context, "ALTERAÇÃO REJEITADA PELO MONITOR! Retornando ao prefixo $oldName.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "ALTERAÇÃO REJEITADA PELO MONITOR!", Toast.LENGTH_LONG).show()
                 requestRepo.deleteRequest(rid)
             }
         }
@@ -488,87 +229,26 @@ fun MainLayoutContainer() {
         }
     }
 
-    LaunchedEffect(teamLoaded, equipe) {
-        if (!teamLoaded || equipe.isBlank()) return@LaunchedEffect
-        turnoSnap = TurnoController(context, equipe).current()
-    }
-
-    // ==========================================================
-    // Notificações: Canais e Workers
-    // ==========================================================
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            NotificationHelper.createNotificationChannels(context)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            NotificationHelper.createNotificationChannels(context)
-        }
-    }
-
     LaunchedEffect(lastTeamData) {
         val data = lastTeamData ?: return@LaunchedEffect
         if (data.equipe.isBlank()) return@LaunchedEffect
-
         val workManager = WorkManager.getInstance(context)
+        val turnoRequest = PeriodicWorkRequestBuilder<TurnoReminderWorker>(1, TimeUnit.HOURS).build()
+        workManager.enqueueUniquePeriodicWork("turno_periodic_check", ExistingPeriodicWorkPolicy.UPDATE, turnoRequest)
 
-        // 1. Worker Periódico (Turno) - A cada 1 hora
-        val turnoRequest = PeriodicWorkRequestBuilder<TurnoReminderWorker>(1, TimeUnit.HOURS)
-            .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
-            .addTag("turno_reminder")
-            .build()
-
-        workManager.enqueueUniquePeriodicWork(
-            "turno_periodic_check",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            turnoRequest
-        )
-
-        // 2. Worker Diário (DDS) - No horário de início da equipe
         val now = Calendar.getInstance()
         val target = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, data.workStartHour)
             set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            if (before(now)) {
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
+            if (before(now)) add(Calendar.DAY_OF_YEAR, 1)
         }
-        val delay = target.timeInMillis - now.timeInMillis
-
-        val ddsRequest = OneTimeWorkRequestBuilder<DdsReminderWorker>()
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .addTag("dds_daily_reminder")
-            .build()
-
-        workManager.enqueueUniqueWork(
-            "dds_daily_check",
-            ExistingWorkPolicy.REPLACE,
-            ddsRequest
-        )
+        val ddsRequest = OneTimeWorkRequestBuilder<DdsReminderWorker>().setInitialDelay(target.timeInMillis - now.timeInMillis, TimeUnit.MILLISECONDS).build()
+        workManager.enqueueUniqueWork("dds_daily_check", ExistingWorkPolicy.REPLACE, ddsRequest)
     }
-
-    // ==========================================================
-    // Turno: retry de pendências ao voltar online (offline-first)
-    // ==========================================================
 
     LaunchedEffect(online) {
-        TurnoFirestoreUploader.tryPushPending(context, online)
-    }
-
-    LaunchedEffect(online, teamLoaded, lastTeamData?.pendingSync) {
-        if (!teamLoaded) return@LaunchedEffect
+        turnoViewModel.refresh()
         teamSync.tryPushPending(context, online, lastTeamData)
-    }
-
-    LaunchedEffect(online, teamLoaded, lastTeamData?.equipe) {
-        if (!teamLoaded) return@LaunchedEffect
         teamSync.pullLatestIfSafe(context, online, lastTeamData)
     }
 
@@ -583,51 +263,37 @@ fun MainLayoutContainer() {
             }
             unreadIncomingCount = unread.size
         }
-        val regOut = commRepo.listenOutgoing(equipe) { msgs ->
-            unreadOutgoingCount = msgs.filter { it.status == "NÃO LIDO" }.size
-        }
-        onDispose {
-            regIn.remove()
-            regOut.remove()
-        }
+        val regOut = commRepo.listenOutgoing(equipe) { msgs -> unreadOutgoingCount = msgs.count { it.status == "NÃO LIDO" } }
+        onDispose { regIn.remove(); regOut.remove() }
     }
 
     LaunchedEffect(teamLoaded, lastTeamData, isInitializing) {
         if (!teamLoaded || isInitializing) return@LaunchedEffect
-        val currentTeamData = lastTeamData
-        val missingTeam = currentTeamData?.equipe.isNullOrBlank() || 
-                currentTeamData.eletricistas.isNullOrEmpty() || 
-                currentTeamData.motorista.isNullOrBlank() || 
-                currentTeamData.teamType.isNullOrBlank()
-        if (missingTeam) {
+        if (lastTeamData?.equipe.isNullOrBlank() || lastTeamData?.eletricistas.isNullOrEmpty() || lastTeamData?.motorista.isNullOrBlank() || lastTeamData?.teamType.isNullOrBlank()) {
             teamDialogMandatory = true
             showEditDialog = true
-            
-            // Se já tem equipe e eletricistas, mas falta motorista ou tipo de equipe, avisa com Toast
-            if (currentTeamData != null && !currentTeamData.equipe.isNullOrBlank() && !currentTeamData.eletricistas.isNullOrEmpty()) {
-                val missingFields = mutableListOf<String>()
-                if (currentTeamData.motorista.isNullOrBlank()) missingFields.add("indique o motorista")
-                if (currentTeamData.teamType.isNullOrBlank()) missingFields.add("indique o tipo da equipe de trabalho")
-                
-                if (missingFields.isNotEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Configuração pendente: ${missingFields.joinToString(" e ")}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+        }
+    }
+
+    LaunchedEffect(selectedTraining, equipe) {
+        submissaoExistente = null
+        if (!selectedTraining.isNullOrBlank() && equipe.isNotBlank()) {
+            FormDataStore.getAllSubmissions(context).collect { lista ->
+                submissaoExistente = lista.find { it.equipe.equals(equipe.trim(), true) && it.trainingName == selectedTraining }
             }
         }
     }
 
-    val visibleTrainings = remember(trainings) {
-        val today = LocalDate.now()
-        trainings
-            .filter { shouldShowTraining(it, today) }
-            .sortedByDescending { t ->
-                runCatching { LocalDate.parse(t.id.substringBefore(" - "), DateTimeFormatter.ISO_LOCAL_DATE) }
-                    .getOrElse { LocalDate.MIN }
-            }
+    LaunchedEffect(Unit) { VersionChecker.checkPlayStoreStatus(context) { versionStatus = it } }
+
+    val today = LocalDate.now()
+    val last7Due = trainings.filter { t -> com.chicoeletro.dds.ui.training.trainingIsoDateFromId(t.id)?.let { d -> !d.isAfter(today) } ?: false }.sortedByDescending { it.id }.take(7)
+    val allDone = last7Due.isEmpty() || last7Due.all { it.id in trainingStatus }
+    val bubbleColor = when {
+        unreadIncomingCount > 0 -> Color.Red
+        unreadOutgoingCount > 0 -> Color(0xFF2E7D32)
+        !allDone -> Color(0xFFFFC107)
+        else -> Color.Gray
     }
 
     val headerParticipationDays = remember(selectedTraining, trainings, trainingStatus) {
@@ -639,1089 +305,175 @@ fun MainLayoutContainer() {
         )
     }
 
-    LaunchedEffect(online) { syncViewModel.autoSyncIfNeeded(online) }
-
-    LaunchedEffect(Unit) {
-        syncViewModel.refreshRequests.collect { trainingViewModel.refreshTrainings() }
-    }
-
-    LaunchedEffect(selectedTraining, equipe) {
-        submissaoExistente = null
-        if (!selectedTraining.isNullOrBlank() && equipe.isNotBlank()) {
-            FormDataStore.getAllSubmissions(context).collect { lista ->
-                submissaoExistente = lista.find {
-                    it.equipe.equals(equipe.trim(), true) && it.trainingName == selectedTraining
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        VersionChecker.checkPlayStoreStatus(context) { status ->
-            versionStatus = status
-        }
-    }
-
-    if (showDdsWarning) {
-        DdsWarningDialog(
-            onDismiss = { showDdsWarning = false },
-            onConfirm = {
-                showDdsWarning = false
-                showPresenceReport = true
-            }
-        )
-    }
-
-    if (errorTurnoMessage != null) {
-        AlertDialog(
-            onDismissRequest = { errorTurnoMessage = null },
-            title = {
-                Text(
-                    text = "Atenção",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            },
-            text = {
-                Text(
-                    text = errorTurnoMessage ?: "",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { errorTurnoMessage = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Entendido")
-                }
-            }
-        )
-    }
-    
-    val today = LocalDate.now()
-    val last7Due = trainings
-        .filter { t -> 
-            trainingIsoDateFromId(t.id)?.let { d -> !d.isAfter(today) } ?: false 
-        }
-        .sortedByDescending { it.id }
-        .take(7)
-    val allDone = last7Due.isEmpty() || last7Due.all { it.id in trainingStatus }
-
-    val bubbleColor = when {
-        unreadIncomingCount > 0 -> Color.Red
-        unreadOutgoingCount > 0 -> Color(0xFF2E7D32) // Verde
-        !allDone -> Color(0xFFFFC107) // Amarelo
-        else -> Color.Gray
-    }
-
-    val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp >= 600
-
-    val showTurnoContent = @Composable {
-        if (equipe.isNotBlank()) {
-            if (lastTeamData?.teamType.isNullOrBlank()) {
-                TeamTypeSelectionScreen(
-                    onDismiss = { showTurnoControl = false },
-                    onConfirm = { type ->
-                        scope.launch {
-                            teamSync.saveTeamTypeLocal(context, type)
-                        }
-                    }
-                )
-            } else {
-                val ctrl = remember(equipe) { TurnoController(context, equipe) }
-                TurnoControlScreen(
-                    equipe = equipe,
-                    snapshot = turnoSnap,
-                    onDismiss = { showTurnoControl = false },
-                    online = online,
-                    teamType = lastTeamData?.teamType,
-                    onClickEquipe = { showEditDialog = true },
-                onSaveNocSs = { noc: String? ->
-                    runCatching {
-                        val after = ctrl.atualizarNocSs(noc)
-                        turnoSnap = after
-
-                        val bdoList = com.chicoeletro.dds.features.turno.BdoLocalStore.loadToday(context, equipe)
-
-                        val state = TurnoStateRemote(
-                            empresa = empresa,
-                            equipe = equipe,
-                            turnoId = after.turnoId,
-                            isOpen = after.isOpen,
-                            membersSnapshot = after.membersSnapshot,
-                            openedAtClientMs = after.openedAtClientMs,
-                            closedAtClientMs = null,
-                            closeReason = null,
-                            clientUpdatedAtMs = after.clientUpdatedAtMs,
-                            updatedAtIso = after.lastChangedAtIso ?: Instant.ofEpochMilli(after.clientUpdatedAtMs).toString(),
-                            lastEventId = after.lastEventId,
-                            lastEventAtClientMs = after.lastEventAtClientMs,
-                            estado = after.estado.name,
-                            nocSs = after.nocSs,
-                            kmTotalAbs = after.kmTotalAbs,
-                            kmInicioTotalAbs = after.kmInicioTotalAbs,
-                            kmDeltaTurno = after.kmDeltaTurno,
-                            kmInicioTurno4 = after.kmInicioLast3,
-                            inicioTurnoAtIso = after.inicioTurnoAtIso,
-                            odometroVerificado = after.odometroVerificado,
-                            ultimosKm4 = after.ultimosKmLast3,
-                            eventosKmCounter = after.eventosKmCounter,
-                            lastMotivo = after.lastMotivo?.name,
-                            lastMotivoOutro = after.lastMotivoOutro,
-                            lastWasDescansoSemanal = after.lastWasDescansoSemanal,
-                            deviceIdLastWriter = deviceId,
-                            bdoList = bdoList
-                        )
-
-                        TurnoFirestoreUploader.pushState(
-                            empresa = empresa,
-                            equipe = equipe,
-                            state = state
-                        )
-                    }
-                },
-
-                prefillKmTotal = odoKmTotalPrefill,
-                startAtKmTarget = odoPendingTarget,
-                prefillMotivo = odoPendingMotivo,
-                prefillMotivoOutro = odoPendingMotivoOutro,
-                onRequestTransition = { req: RequisicaoTransicao ->
-
-                    // ===== ABRIR TURNO (sessão determinística) =====
-                    // Regra: mudança de membros implica fechar e abrir novo turno.
-                    if (!turnoSnap.isOpen && (req.to == EstadoTurno.ABERTO || req.to == EstadoTurno.DESLOCAMENTO_ESPECIAL)) {
-                        val opened = runCatching { ctrl.abrirTurno(empresa, eletricistas) }.getOrNull()
-                            ?: return@TurnoControlScreen false
-                        turnoSnap = opened
-
-                        // Clear the local BDO list for this team when opening a new shift session
-                        com.chicoeletro.dds.features.turno.BdoLocalStore.saveToday(context, equipe, emptyList())
-
-                        // Sessão: grava openedAtServer (oficial) quando online
-                        val sessionOpen = TurnoSessionRemote(
-                            empresa = empresa,
-                            equipe = equipe,
-                            turnoId = opened.turnoId!!,
-                            membersSnapshot = opened.membersSnapshot,
-                            openedAtClientMs = opened.openedAtClientMs!!,
-                            openedByUid = null,
-                            openedByDeviceId = deviceId
-                        )
-                        scope.launch {
-                            runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionOpen) }
-                        }
-                    }
-
-                    val plano = runCatching {
-                        ctrl.plan(
-                            to = req.to,
-                            proposedKmTotalAbs = req.kmTotalAbs,
-                            proposedKmLast3 = req.kmLast3
-                        )
-                    }
-                        .onFailure { e ->
-                            android.util.Log.w("DDS-TURNO", "Falha plan: ${e.message}", e)
-                            errorTurnoMessage = e.message ?: "Falha ao planejar transição"
-                        }
-                        .getOrNull() ?: return@TurnoControlScreen false
-
-                    val after = runCatching { ctrl.confirm(req, photoProvided = false) }
-                        .onFailure { e ->
-                            android.util.Log.w("DDS-TURNO", "Falha confirm: ${e.message}", e)
-                            errorTurnoMessage = e.message ?: "Falha ao confirmar transição"
-                        }
-                        .getOrNull() ?: return@TurnoControlScreen false
-
-                    val before = turnoSnap
-                    // Atualiza UI local imediatamente
-                    turnoSnap = after
-
-                    // -------------------------
-                    // Firebase (event + state) - offline-first
-                    // -------------------------
-                    // eventId determinístico (offline-first)
-                    val occurredAtMs = after.lastEventAtClientMs
-                    val tsIso = Instant.ofEpochMilli(occurredAtMs).toString()
-                    val eventId = "${deviceId}_${occurredAtMs}_${req.to.name}"
-
-                    // kmDeltaTurno: no modelo OPÇÃO 1, o controller acumula sempre.
-                    // Só envia quando FECHA (ABERTO -> FECHADO).
-                    val kmDeltaTurno: Int? =
-                        if (before.estado == EstadoTurno.ABERTO && req.to == EstadoTurno.FECHADO) after.kmDeltaTurno else null
-
-                    val actor = TurnoActor(
-                        deviceId = deviceId,
-                        deviceModel = Build.MODEL ?: "unknown",
-                        appVersion = appVersion
-                    )
-
-                    val photoAudit = TurnoPhotoAudit(
-                        required = plano.pedeFoto,
-                        photoId = null,       // sem foto por enquanto
-                        storagePath = null,   // futuro
-                        thumbPath = null      // futuro
-                    )
-
-                    val bdoList = com.chicoeletro.dds.features.turno.BdoLocalStore.loadToday(context, equipe)
-
-                    val event = TurnoEventRemote(
-                        empresa = empresa,
-                        equipe = equipe,
-                        turnoId = after.turnoId!!,
-                        eventId = eventId,
-                        occurredAtClientMs = occurredAtMs,
-                        clientCreatedAtIso = tsIso,
-                        from = before.estado.name,
-                        to = req.to.name,
-                        // OPÇÃO 1: KM total (quando informado)
-                        kmTotalAbs = req.kmTotalAbs,
-                        // Mantemos km4 como "últimos 3" por enquanto (compat com modelo remoto atual).
-                        // Se veio apenas KM total, o dialog/controller deve derivar kmLast3.
-                        km4 = req.kmLast3,
-                        // OPÇÃO 1: início do turno (totalAbs quando existir)
-                        kmInicioTotalAbs = before.kmInicioTotalAbs,
-                        kmInicioTurno4 = before.kmInicioLast3,
-                        kmDeltaTurno = kmDeltaTurno,
-                        nocSs = before.nocSs,
-                        motivo = req.motivo?.name,
-                        motivoOutro = req.motivoOutro?.trim()?.takeIf { it.isNotBlank() },
-                        photoAudit = photoAudit,
-                        actor = actor,
-                        bdoList = bdoList
-                    )
-
-                    // Estado “último vence”
-                    val state = TurnoStateRemote(
-                        empresa = empresa,
-                        equipe = equipe,
-
-                        turnoId = after.turnoId,
-                        isOpen = after.isOpen,
-                        membersSnapshot = after.membersSnapshot,
-
-                        openedAtClientMs = after.openedAtClientMs,
-                        closedAtClientMs = if (req.to == EstadoTurno.FECHADO) occurredAtMs else null,
-                        closeReason = null,
-
-                        clientUpdatedAtMs = after.clientUpdatedAtMs,
-                        updatedAtIso = after.lastChangedAtIso ?: tsIso,
-
-                        lastEventId = eventId,
-                        lastEventAtClientMs = occurredAtMs,
-
-                        estado = after.estado.name,
-                        nocSs = after.nocSs,
-
-                        // OPÇÃO 1: odometria no current
-                        kmTotalAbs = after.kmTotalAbs,
-                        kmInicioTotalAbs = after.kmInicioTotalAbs,
-                        kmDeltaTurno = after.kmDeltaTurno,
-
-                        kmInicioTurno4 = after.kmInicioLast3,
-                        inicioTurnoAtIso = after.inicioTurnoAtIso,
-
-                        odometroVerificado = after.odometroVerificado,
-                        ultimosKm4 = after.ultimosKmLast3,
-                        eventosKmCounter = after.eventosKmCounter,
-
-                        lastMotivo = after.lastMotivo?.name,
-                        lastMotivoOutro = after.lastMotivoOutro,
-
-                        lastWasDescansoSemanal = after.lastWasDescansoSemanal,
-                        deviceIdLastWriter = deviceId,
-                        bdoList = bdoList
-                    )
-
-                    // Se fechou o turno, registra closedAtServer (oficial) na sessão
-                    if (req.to == EstadoTurno.FECHADO && before.isOpen && !before.turnoId.isNullOrBlank()) {
-                        val sessionClose = TurnoSessionRemote(
-                            empresa = empresa,
-                            equipe = equipe,
-                            turnoId = before.turnoId,
-                            membersSnapshot = before.membersSnapshot,
-                            openedAtClientMs = before.openedAtClientMs ?: 0L,
-                            closedAtClientMs = occurredAtMs,
-                            closeReason = null,
-                            openedByUid = null,
-                            openedByDeviceId = deviceId,
-                            closedByUid = null,
-                            closedByDeviceId = deviceId
-                        )
-                        scope.launch {
-                            runCatching { TurnoFirestoreUploader.upsertTurnoSession(sessionClose) }
-                        }
-                    }
-
-                    // 1) Enfileira SEMPRE (offline-first) SEMPRE (offline-first)
-                    TurnoPendingStore.enqueue(context, event)
-
-                    // 2) Atualiza o doc de state (último vence) — se falhar, fica só local por enquanto
-                    TurnoFirestoreUploader.pushState(
-                        empresa = empresa,
-                        equipe = equipe,
-                        state = state
-                    )
-
-                    // 3) Tenta enviar pendências se online (inclui este evento recém-enfileirado)
-                    TurnoFirestoreUploader.tryPushPending(context, online)
-
-                    if (req.to == EstadoTurno.FECHADO) {
-                        showTurnoControl = false
-                    }
-
-                    // depois de confirmar uma transição, limpa prefill para não “vazar” para próximas ações
-                    odoKmTotalPrefill = ""
-                    odoPendingTarget = null
-                    odoPendingMotivo = null
-                    odoPendingMotivoOutro = ""
-                    true
-                }
-            )
-            }
-        }
-    }
-
     Box(Modifier.fillMaxSize()) {
         if (isInitializing) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(8.dp))
-                    Text("Carregando dados…", style = MaterialTheme.typography.bodyLarge, color = Color.White)
-                }
+                CircularProgressIndicator()
             }
         } else {
             Column(Modifier.fillMaxSize()) {
                 HeaderBar(
                     overlayAlpha = if (showForm) 0.1f else 1f,
                     selectedTraining = selectedTraining,
-                    isInDdsModule = isInDdsModule,
+                    isInDdsModule = navController.currentDestination?.route?.startsWith("dds") == true,
                     monthParticipationDays = headerParticipationDays,
                     showTestCameraButton = modoTesteAtivo,
                     onTestCameraClick = { if (modoTesteAtivo) showOnlineTest = true },
                     onCommunicationClick = { showCommunicationDialog = true },
                     bubbleColor = bubbleColor,
-                    onBack = if (!isTablet) {
-                        when {
-                            selectedTraining != null -> { { selectedTraining = null } }
-                            showTurnoControl -> { { showTurnoControl = false } }
-                            isInDdsModule -> { { isInDdsModule = false } }
-                            else -> null
-                        }
+                    onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                    isInTurnoModule = navController.currentDestination?.route == "turno"
+                )
+
+                NavHost(navController = navController, startDestination = "home", modifier = Modifier.weight(1f)) {
+                    composable("home") {
+                        HomeSection(
+                            trainingViewModel = trainingViewModel,
+                            turnoViewModel = turnoViewModel,
+                            equipe = equipe,
+                            eletricistas = eletricistas,
+                            motorista = motorista,
+                            coringas = coringas,
+                            teamType = lastTeamData?.teamType,
+                            unreadIncomingCount = unreadIncomingCount,
+                            onClickEquipe = { showEditDialog = true },
+                            onDdsClick = { navController.navigate("dds") },
+                            onTurnoClick = { if (equipe.isBlank()) showEditDialog = true else navController.navigate("turno") },
+                            onProducaoClick = { if (allDone) showPresenceReport = true else showDdsWarning = true },
+                            onMensagensClick = { showCommunicationDialog = true },
+                            onAbastecimentoClick = { showAbastecimento = true }
+                        )
+                    }
+                    composable("turno") {
+                        TurnoSection(
+                            turnoViewModel = turnoViewModel,
+                            equipe = equipe,
+                            eletricistas = eletricistas,
+                            isOnline = online,
+                            teamType = lastTeamData?.teamType,
+                            onDismiss = { navController.popBackStack() },
+                            onClickEquipe = { showEditDialog = true },
+                            onSaveTeamType = { type -> scope.launch { teamSync.saveTeamTypeLocal(context, type) } }
+                        )
+                    }
+                    composable("dds") {
+                        DdsSection(
+                            trainingViewModel = trainingViewModel,
+                            syncViewModel = syncViewModel,
+                            networkViewModel = networkViewModel,
+                            equipe = equipe,
+                            eletricistas = eletricistas,
+                            isTablet = isTablet,
+                            onHome = { navController.navigate("home") },
+                            onPresenceReport = { if (allDone) showPresenceReport = true else showDdsWarning = true },
+                            onClickEquipe = { showEditDialog = true },
+                            onClickTurno = { navController.navigate("turno") },
+                            turnoEstado = turnoSnap.estado,
+                            turnoNocSs = turnoSnap.nocSs,
+                            selectedTraining = selectedTraining,
+                            onSelectTraining = { tid -> selectedTraining = tid; tempoInicioDDS = System.currentTimeMillis() },
+                            onOpenForm = { if (equipe.isBlank()) showEditDialog = true else { abrirCamera = true } },
+                            onEnterAgora = {
+                                val targetId = selectedTraining ?: return@DdsSection
+                                val sessionIsoDate = targetId.substringBefore(" - ").trim()
+                                val title = targetId.substringAfter(" - ").trim()
+                                val session = activeSessions.find { s ->
+                                    val parts = s.date.split("/")
+                                    val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
+                                    val isDateMatch = formattedDate == sessionIsoDate
+                                    val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
+                                    val isMatch = if (extractedTime != null) s.time == extractedTime else s.subject.trim().equals(title, ignoreCase = true)
+                                    isDateMatch && isMatch
+                                }
+                                if (session != null) {
+                                    val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
+                                    if (session.status == "active") {
+                                        if (session.channelName.isNotBlank()) activeSessionChannel = session.channelName
+                                        else Toast.makeText(context, "Erro: Canal não configurado.", Toast.LENGTH_SHORT).show()
+                                    } else if (isHost) showOrganizerDialog = session
+                                    else Toast.makeText(context, "Reunião ainda não foi aberta.", Toast.LENGTH_SHORT).show()
+                                } else Toast.makeText(context, "Sessão não encontrada.", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+
+                com.chicoeletro.dds.components.FooterVersion(status = null, isTestVersion = versionStatus == VersionStatus.TEST_VERSION)
+            }
+
+            GlobalDialogs(
+                context = context,
+                scope = scope,
+                equipe = equipe,
+                eletricistas = eletricistas,
+                motorista = motorista,
+                coringas = coringas,
+                lastTeamData = lastTeamData,
+                onTeamUpdated = { name, members, schedule, teamType, driver, wildcards ->
+                    if (equipe.isNotBlank() && equipe != name) {
+                        pendingTeamChange = PendingTeamChange(name, members, schedule, teamType, driver, wildcards)
+                        showReasonDialog = true
                     } else {
-                        null
-                    },
-                    isInTurnoModule = showTurnoControl
-                )
-                if (isTablet) {
-                    Row(Modifier.weight(1f)) {
-                        if (isInDdsModule || selectedTraining != null) {
-                            LeftSidebarSection(
-                                widthDp = 220,
-                                online = online,
-                                isSyncing = syncState.isSyncing,
-                                overallTotal = syncState.overallTotal,
-                                overallDone = syncState.overallDone,
-                                plannedTrainingsTotal = syncState.plannedTrainingsTotal,
-                                currentTotal = syncState.currentTotal,
-                                currentDone = syncState.currentDone,
-                                currentId = syncState.currentId,
-                                onHome = { 
-                                    selectedTraining = null 
-                                    isInDdsModule = false
-                                    showTurnoControl = false
-                                },
-                                onSyncNow = { syncViewModel.syncNow() },
-                                onPresenceReport = { 
-                                    if (allDone) {
-                                        showPresenceReport = true
-                                    } else {
-                                        showDdsWarning = true
-                                    }
-                                    presenceReportAccessed = true
-                                },
-                                trainings = visibleTrainings,
-                                selectedTraining = selectedTraining,
-                                trainingStatus = trainingStatus,
-                                onSelectTraining = { tid ->
-                                    selectedTraining = tid
-                                    tempoInicioDDS = System.currentTimeMillis()
-                                    showForm = false
-                                },
-                                presenceReportAccessed = presenceReportAccessed,
-                                turnoEstado = turnoSnap.estado,
-                                turnoNocSs = turnoSnap.nocSs,
-                                onClickTurno = {
-                                    if (equipe.isBlank()) {
-                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
-                                        showEditDialog = true
-                                    } else {
-                                        showTurnoControl = true
-                                    }
-                                },
-                                equipe = equipe,
-                                eletricistas = eletricistas,
-                                onClickEquipe = {
-                                    teamDialogMandatory = false
-                                    showEditDialog = true
-                                }
-                            )
-                        }
-
-                        val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
-
-                        Box(Modifier.weight(1f).fillMaxHeight().background(fundoPainelDireito).padding(2.dp)) {
-                            if (selectedTraining != null) {
-                                val vContext = LocalContext.current
-                                val viewerVM = remember { ViewerViewModel(vContext) }
-                                val currentId = selectedTraining!!
-                                val canConcludeCurrent = canConcludeTrainingId(currentId) && submissaoExistente == null && trainingStatus[currentId] == null
-                                val currentStatus = trainingStatus[currentId] ?: submissaoExistente?.let { 
-                                    TrainingStatus(it.dataConclusao, it.horaConclusao, it.duracao, TrainingExecSyncState.LOCAL_ONLY) 
-                                }
-                                ViewerScreen(
-                                    trainingId = currentId,
-                                    viewModel  = viewerVM,
-                                    status     = currentStatus,
-                                    canConclude = canConcludeCurrent,
-                                    onOpenForm = {
-                                        if (!canConcludeCurrent || submissaoExistente != null) return@ViewerScreen
-                                        if (equipe.isBlank() || eletricistas.isEmpty()) {
-                                            showEditDialog = true
-                                        } else {
-                                            abrirCamera = true
-                                            showForm = false
-                                        }
-                                    },
-                                    onEnterAgora = {
-                                        val sessionIsoDate = currentId.substringBefore(" - ").trim()
-                                        val title = currentId.substringAfter(" - ").trim()
-                                        
-                                        val session = activeSessions.find { s ->
-                                            val parts = s.date.split("/")
-                                            val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
-                                            
-                                            val isDateMatch = formattedDate == sessionIsoDate
-                                            val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
-                                            
-                                            val isMatch = if (extractedTime != null) {
-                                                s.time == extractedTime
-                                            } else {
-                                                s.subject.trim().equals(title, ignoreCase = true)
-                                            }
-                                            
-                                            isDateMatch && isMatch
-                                        }
-                                        
-                                        if (session != null) {
-                                            val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
-                                            
-                                            if (session.status == "active") {
-                                                if (session.channelName.isNotBlank()) {
-                                                    activeSessionChannel = session.channelName
-                                                } else {
-                                                    Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
-                                                }
-                                            } else if (isHost) {
-                                                showOrganizerDialog = session
-                                            } else {
-                                                Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onStatusChanged = { viewerStatus = it }
-                                )
-                            } else if (showTurnoControl) {
-                                showTurnoContent()
-                            } else if (isInDdsModule) {
-                                val arrowTransition = rememberInfiniteTransition(label = "arrow_bounce")
-                                val arrowOffset by arrowTransition.animateFloat(
-                                    initialValue = 0f,
-                                    targetValue = -12f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
-                                        repeatMode = RepeatMode.Reverse
-                                    ),
-                                    label = "arrow_offset"
-                                )
-
-                                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.dds),
-                                        contentDescription = "Logo DDS",
-                                        modifier = Modifier.fillMaxWidth(0.8f).padding(bottom = 24.dp).clickable {
-                                            cliqueLogo++
-                                            if (cliqueLogo >= 10) {
-                                                modoTesteAtivo = !modoTesteAtivo
-                                                if (!modoTesteAtivo) showOnlineTest = false
-                                                cliqueLogo = 0
-                                            }
-                                        },
-                                        contentScale = ContentScale.Fit
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .offset(x = arrowOffset.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Selecione um treinamento", style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                }
-                            } else {
-                                val homeParticipationDays = remember<List<com.chicoeletro.dds.ui.training.MonthParticipationDay>>(trainings, trainingStatus) {
-                                    buildRollingParticipationDays(
-                                        selectedTrainingId = null,
-                                        trainings = trainings,
-                                        completedTrainingIds = trainingStatus.keys,
-                                        today = LocalDate.now(),
-                                        numDays = 7
-                                    )
-                                }
-                                HomeScreen(
-                                    equipe = equipe,
-                                    eletricistas = eletricistas,
-                                    motorista = motorista,
-                                    coringas = coringas,
-                                    monthParticipationDays = homeParticipationDays,
-                                    turnoEstado = turnoSnap.estado,
-                                    teamType = lastTeamData?.teamType,
-                                    onClickEquipe = {
-                                        teamDialogMandatory = false
-                                        showEditDialog = true
-                                    },
-                                    onDdsClick = {
-                                        isInDdsModule = true
-                                    },
-                                    onTurnoClick = {
-                                        if (equipe.isBlank()) {
-                                            Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
-                                            showEditDialog = true
-                                        } else {
-                                            showTurnoControl = true
-                                        }
-                                    },
-                                    onProducaoClick = {
-                                        if (allDone) {
-                                            showPresenceReport = true
-                                        } else {
-                                            showDdsWarning = true
-                                        }
-                                    },
-                                    onMensagensClick = { showCommunicationDialog = true },
-                                    onAbastecimentoClick = {
-                                        showAbastecimento = true
-                                    },
-                                    unreadIncomingCount = unreadIncomingCount
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    // Layout de painel único para Celulares
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        if (selectedTraining != null) {
-                            val fundoPainelDireito = if (modoTesteAtivo) Color(0xFF212121) else MaterialTheme.colorScheme.background
-                            Box(Modifier.fillMaxSize().background(fundoPainelDireito).padding(2.dp)) {
-                                val vContext = LocalContext.current
-                                val viewerVM = remember { ViewerViewModel(vContext) }
-                                val currentId = selectedTraining!!
-                                val canConcludeCurrent = canConcludeTrainingId(currentId) && submissaoExistente == null && trainingStatus[currentId] == null
-                                val currentStatus = trainingStatus[currentId] ?: submissaoExistente?.let { 
-                                    TrainingStatus(it.dataConclusao, it.horaConclusao, it.duracao, TrainingExecSyncState.LOCAL_ONLY) 
-                                }
-                                ViewerScreen(
-                                    trainingId = currentId,
-                                    viewModel  = viewerVM,
-                                    status     = currentStatus,
-                                    canConclude = canConcludeCurrent,
-                                    onOpenForm = {
-                                        if (!canConcludeCurrent || submissaoExistente != null) return@ViewerScreen
-                                        if (equipe.isBlank() || eletricistas.isEmpty()) {
-                                            showEditDialog = true
-                                        } else {
-                                            abrirCamera = true
-                                            showForm = false
-                                        }
-                                    },
-                                    onEnterAgora = {
-                                        val sessionIsoDate = currentId.substringBefore(" - ").trim()
-                                        val title = currentId.substringAfter(" - ").trim()
-                                        
-                                        val session = activeSessions.find { s ->
-                                            val parts = s.date.split("/")
-                                            val formattedDate = if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else s.date
-                                            
-                                            val isDateMatch = formattedDate == sessionIsoDate
-                                            val extractedTime = com.chicoeletro.dds.ui.training.parseDdsOnlineTime(title)
-                                            
-                                            val isMatch = if (extractedTime != null) {
-                                                s.time == extractedTime
-                                            } else {
-                                                s.subject.trim().equals(title, ignoreCase = true)
-                                            }
-                                            
-                                            isDateMatch && isMatch
-                                        }
-                                        
-                                        if (session != null) {
-                                            val isHost = session.roles.hostTeams.any { it.equals(equipe, ignoreCase = true) }
-                                            
-                                            if (session.status == "active") {
-                                                if (session.channelName.isNotBlank()) {
-                                                    activeSessionChannel = session.channelName
-                                                } else {
-                                                    Toast.makeText(vContext, "Erro: Canal não configurado na sessão.", Toast.LENGTH_SHORT).show()
-                                                }
-                                            } else if (isHost) {
-                                                showOrganizerDialog = session
-                                            } else {
-                                                Toast.makeText(vContext, "Reunião ainda não foi aberta pelo organizador.", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            Toast.makeText(vContext, "Nenhuma sessão agendada encontrada para este horário.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onStatusChanged = { viewerStatus = it }
-                                )
-                            }
-                        } else if (showTurnoControl) {
-                            showTurnoContent()
-                        } else if (isInDdsModule) {
-                            LeftSidebarSection(
-                                modifier = Modifier.fillMaxSize(),
-                                online = online,
-                                isSyncing = syncState.isSyncing,
-                                overallTotal = syncState.overallTotal,
-                                overallDone = syncState.overallDone,
-                                plannedTrainingsTotal = syncState.plannedTrainingsTotal,
-                                currentTotal = syncState.currentTotal,
-                                currentDone = syncState.currentDone,
-                                currentId = syncState.currentId,
-                                onHome = { 
-                                    selectedTraining = null 
-                                    isInDdsModule = false
-                                    showTurnoControl = false
-                                },
-                                onSyncNow = { syncViewModel.syncNow() },
-                                onPresenceReport = { 
-                                    if (allDone) {
-                                        showPresenceReport = true
-                                    } else {
-                                        showDdsWarning = true
-                                    }
-                                    presenceReportAccessed = true
-                                },
-                                trainings = visibleTrainings,
-                                selectedTraining = selectedTraining,
-                                trainingStatus = trainingStatus,
-                                onSelectTraining = { tid ->
-                                    selectedTraining = tid
-                                    tempoInicioDDS = System.currentTimeMillis()
-                                    showForm = false
-                                },
-                                presenceReportAccessed = presenceReportAccessed,
-                                turnoEstado = turnoSnap.estado,
-                                turnoNocSs = turnoSnap.nocSs,
-                                onClickTurno = {
-                                    if (equipe.isBlank()) {
-                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
-                                        showEditDialog = true
-                                    } else {
-                                        showTurnoControl = true
-                                    }
-                                },
-                                equipe = equipe,
-                                eletricistas = eletricistas,
-                                onClickEquipe = {
-                                    teamDialogMandatory = false
-                                    showEditDialog = true
-                                }
-                            )
-                        } else {
-                            val homeParticipationDays = remember<List<com.chicoeletro.dds.ui.training.MonthParticipationDay>>(trainings, trainingStatus) {
-                                buildRollingParticipationDays(
-                                    selectedTrainingId = null,
-                                    trainings = trainings,
-                                    completedTrainingIds = trainingStatus.keys,
-                                    today = LocalDate.now(),
-                                    numDays = 7
-                                )
-                            }
-                            HomeScreen(
-                                equipe = equipe,
-                                eletricistas = eletricistas,
-                                motorista = motorista,
-                                coringas = coringas,
-                                monthParticipationDays = homeParticipationDays,
-                                turnoEstado = turnoSnap.estado,
-                                teamType = lastTeamData?.teamType,
-                                onClickEquipe = {
-                                    teamDialogMandatory = false
-                                    showEditDialog = true
-                                },
-                                onDdsClick = {
-                                    isInDdsModule = true
-                                },
-                                onTurnoClick = {
-                                    if (equipe.isBlank()) {
-                                        Toast.makeText(context, "Por favor, defina a equipe primeiro.", Toast.LENGTH_SHORT).show()
-                                        showEditDialog = true
-                                    } else {
-                                        showTurnoControl = true
-                                    }
-                                },
-                                onProducaoClick = {
-                                    if (allDone) {
-                                        showPresenceReport = true
-                                    } else {
-                                        showDdsWarning = true
-                                    }
-                                },
-                                onMensagensClick = { showCommunicationDialog = true },
-                                onAbastecimentoClick = {
-                                    showAbastecimento = true
-                                },
-                                unreadIncomingCount = unreadIncomingCount
-                            )
-                        }
-                    }
-                }
-                FooterVersion(
-                    status = viewerStatus,
-                    isTestVersion = versionStatus == VersionStatus.TEST_VERSION
-                )
-            }
-
-            if (showEditDialog) {
-                TeamEditDialog(
-                    initialTeamName = equipe,
-                    initialMembers  = eletricistas,
-                    initialTeamType = lastTeamData?.teamType,
-                    initialMotorista = motorista,
-                    initialCoringas = coringas,
-                    onDismiss = { showEditDialog = false },
-                    onSave   = { name, members, schedule, teamType, driver, wildcards ->
-                        val oldName = equipe
-                        if (oldName.isNotBlank() && oldName != name) {
-                            // Mudança de prefixo: pede motivo antes de salvar
-                            pendingTeamChange = PendingTeamChange(name, members, schedule, teamType, driver, wildcards)
-                            showReasonDialog = true
-                        } else {
-                            // Mesma equipe ou primeira vez: salva direto
-                            scope.launch {
-                                teamSync.savePendingLocal(context, name, members, schedule, teamType, driver, wildcards)
-                                equipe = name
-                                eletricistas = members
-                                motorista = driver
-                                coringas = wildcards
-                                teamDialogMandatory = false
-                                showEditDialog = false
-                            }
-                        }
-                    }
-                )
-            }
-
-            if (showReasonDialog && pendingTeamChange != null) {
-                TeamChangeReasonDialog(
-                    oldPrefix = equipe,
-                    newPrefix = pendingTeamChange!!.name,
-                    onCancel = { showReasonDialog = false },
-                    onConfirm = { reason ->
-                        val (name, members, schedule, pendingType, driver, wildcards) = pendingTeamChange!!
-                        val oldName = equipe
-                        
                         scope.launch {
-                            // 1. APLICA IMEDIATAMENTE (FLUXO OTIMISTA)
-                            if (reason == TeamChangeReason.VEHICLE_CHANGE) {
-                                TrainingExecLocalStore.migrateTeam(context, oldName, name)
-                                FormDataStore.migrateTeam(context, oldName, name)
-                            } else {
-                                TrainingExecLocalStore.clearLocalOnly(context, oldName)
-                            }
-                            
-                            teamSync.savePendingLocal(context, name, members, schedule, pendingType, driver, wildcards)
-                            equipe = name
-                            eletricistas = members
-                            motorista = driver
-                            coringas = wildcards
-                            
-                            // 2. CRIA O PEDIDO PARA AUDITORIA/REVERSÃO
-                            val rid = requestRepo.createRequest(
-                                oldPrefix = oldName,
-                                newPrefix = name,
-                                reason = reason.name,
-                                deviceId = deviceId,
-                                appVersion = appVersion
-                            )
-                            pendingRequestId = rid
-                            
-                            showReasonDialog = false
+                            teamSync.savePendingLocal(context, name, members, schedule, teamType, driver, wildcards)
+                            equipe = name; eletricistas = members; motorista = driver; coringas = wildcards
                             showEditDialog = false
-                            teamDialogMandatory = false
                         }
                     }
-                )
-            }
-
-            if (showForm) {
-                androidx.activity.compose.BackHandler(enabled = true) { }
-                Dialog(onDismissRequest = { }, properties = DialogProperties(dismissOnClickOutside = false, dismissOnBackPress = false, usePlatformDefaultWidth = false)) {
-                    Surface(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
-                        FormScreen(
-                            trainingName = selectedTraining!!,
-                            existing = submissaoExistente?.let { it to selectedTraining!! },
-                            lastTeam = lastTeamData ?: LastTeamData(equipe, eletricistas),
-                            headerDate = HeaderBarState.datePart,
-                            headerTitle = HeaderBarState.titlePart,
-                            fotoUri = capturedPhotoUri,
-                            thumbUri = capturedThumbUri,
-                            scope = scope,
-                            setFotoUri = { uri ->
-                                if (uri == null) {
-                                    showForm = false
-                                    abrirCamera = true
-                                } else { capturedPhotoUri = uri }
-                            },
-                            onBack = { showForm = false },
-                            onSubmit = { submission, lastTeam ->
-                                scope.launch {
-                                    FormDataStore.saveSubmission(context, submission)
-                                    teamSync.saveLocalCache(context, lastTeam)
-                                    capturedPhotoUri = null
-                                    capturedThumbUri = null
-                                }
-                            },
-                            tempoInicioMillis = tempoInicioDDS,
-                            modoTesteAtivo = modoTesteAtivo,
-                            jaConcluido = submissaoExistente != null || !canConcludeTrainingId(selectedTraining!!),
-                            onCompleted = { data, hora, duracao ->
-                                val tid = selectedTraining!!
-                                trainingStatus = trainingStatus.toMutableMap().apply {
-                                    put(tid, TrainingStatus(data, hora, duracao, TrainingExecSyncState.LOCAL_ONLY))
-                                }
-                                scope.launch {
-                                    TrainingExecLocalStore.upsert(
-                                        context,
-                                        teamKey,
-                                        currentMonthId,
-                                        tid,
-                                        ExecCacheEntry(data, hora, duracao, TrainingExecSyncState.LOCAL_ONLY)
-                                    )
-                                }
-                                showForm = false
-                            }
-                        )
+                },
+                selectedTraining = selectedTraining,
+                submissaoExistente = submissaoExistente,
+                tempoInicioDDS = tempoInicioDDS,
+                onCloseTraining = { selectedTraining = null },
+                showEditDialog = showEditDialog,
+                onDismissEditDialog = { showEditDialog = false },
+                showReasonDialog = showReasonDialog,
+                onDismissReasonDialog = { showReasonDialog = false },
+                pendingTeamChange = pendingTeamChange,
+                onConfirmTeamChange = { reason ->
+                    val p = pendingTeamChange ?: return@GlobalDialogs
+                    scope.launch {
+                        if (reason == TeamChangeReason.VEHICLE_CHANGE) {
+                            TrainingExecLocalStore.migrateTeam(context, equipe, p.name)
+                            FormDataStore.migrateTeam(context, equipe, p.name)
+                        } else TrainingExecLocalStore.clearLocalOnly(context, equipe)
+                        teamSync.savePendingLocal(context, p.name, p.members, p.schedule, p.teamType, p.motorista, p.coringas)
+                        equipe = p.name; eletricistas = p.members; motorista = p.motorista; coringas = p.coringas
+                        pendingRequestId = requestRepo.createRequest(equipe, p.name, reason.name, "", "")
+                        showReasonDialog = false; showEditDialog = false
                     }
-                }
-            }
-
-            if (abrirCamera) {
-                CameraScreen(
-                    onPhotoCaptured = { uri, thumbUri ->
-                        capturedPhotoUri = uri
-                        capturedThumbUri = thumbUri
-                        abrirCamera = false
-                        showForm = selectedTraining?.let { canConcludeTrainingId(it) } == true
-
-                    },
-                    onBack = {
-                        abrirCamera = false
-                        if (selectedTraining?.let { canConcludeTrainingId(it) } == true) showForm = true
+                },
+                showForm = showForm,
+                onDismissForm = { showForm = false },
+                abrirCamera = abrirCamera,
+                onCameraResult = { uri, thumbUri -> capturedPhotoUri = uri; capturedThumbUri = thumbUri; abrirCamera = false; showForm = selectedTraining != null },
+                onCameraBack = { abrirCamera = false; if (selectedTraining != null) showForm = true },
+                modoTesteAtivo = modoTesteAtivo,
+                showOnlineTest = showOnlineTest,
+                onDismissOnlineTest = { showOnlineTest = false },
+                activeSessionChannel = activeSessionChannel,
+                onDismissActiveSession = { activeSessionChannel = null },
+                showOrganizerDialog = showOrganizerDialog,
+                onDismissOrganizer = { showOrganizerDialog = null },
+                isStartingMeeting = isStartingMeeting,
+                onStartMeeting = { session ->
+                    scope.launch {
+                        try {
+                            isStartingMeeting = true
+                            meetingRepo.updateSessionStatus(session.id, "active")
+                            showOrganizerDialog = null
+                            activeSessionChannel = session.channelName
+                        } finally { isStartingMeeting = false }
                     }
-                )
-            }
-
-
-            if (modoTesteAtivo && showOnlineTest) {
-                Dialog(onDismissRequest = { showOnlineTest = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                        AgoraMeetingEntry(
-                            appId = AgoraConfig.APP_ID,
-                            channelName = AgoraConfig.CHANNEL_NAME,
-                            tempToken = AgoraConfig.TEMP_TOKEN,
-                            localUid = AgoraConfig.LOCAL_USER_ID,
-                            presentationTitle = selectedTraining,
-                            teamName = equipe,
-                            teamMembers = eletricistas,
-                            onLeave = { showOnlineTest = false }
-                        )
-                    }
-                }
-            }
-
-            if (activeSessionChannel != null) {
-                Dialog(onDismissRequest = { activeSessionChannel = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        AgoraMeetingEntry(
-                            appId = AgoraConfig.APP_ID,
-                            channelName = activeSessionChannel!!,
-                            tempToken = AgoraConfig.TEMP_TOKEN, 
-                            localUid = AgoraConfig.LOCAL_USER_ID,
-                            presentationTitle = selectedTraining,
-                            teamName = equipe,
-                            teamMembers = eletricistas,
-                            onLeave = { activeSessionChannel = null }
-                        )
-                    }
-                }
-            }
-
-            // ======= TELA DO ORGANIZADOR (MODAL) =======
-            if (showOrganizerDialog != null) {
-                val session = showOrganizerDialog!!
-                AlertDialog(
-                    onDismissRequest = { if (!isStartingMeeting) showOrganizerDialog = null },
-                    title = { Text("Organizador: Abrir Reunião") },
-                    text = {
-                        Column {
-                            Text("Você é o organizador deste DDS Online.")
-                            Spacer(Modifier.height(8.dp))
-                            Text("Tema: ${session.subject}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                            Text("Horário: ${session.time}", style = MaterialTheme.typography.bodySmall)
-                            
-                            if (isStartingMeeting) {
-                                Spacer(Modifier.height(16.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                    Spacer(Modifier.width(12.dp))
-                                    Text("Iniciando sessão...")
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        isStartingMeeting = true
-                                        meetingRepo.updateSessionStatus(session.id, "active")
-                                        showOrganizerDialog = null
-                                        activeSessionChannel = session.channelName
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Falha ao iniciar: ${e.message}", Toast.LENGTH_LONG).show()
-                                    } finally {
-                                        isStartingMeeting = false
-                                    }
-                                }
-                            },
-                            enabled = !isStartingMeeting
-                        ) {
-                            Text("Iniciar Agora")
-                        }
-                    },
-                    dismissButton = {
-                        OutlinedButton(
-                            onClick = { showOrganizerDialog = null },
-                            enabled = !isStartingMeeting
-                        ) {
-                            Text("Cancelar")
-                        }
-                    }
-                )
-            }
-
-
-            if (showPresenceReport) {
-                if (equipe.isBlank()) {
-                    LaunchedEffect(Unit) {
-                        Toast.makeText(context, "Por favor, defina a equipe primeiro para ver o relatório anual.", Toast.LENGTH_SHORT).show()
-                        showPresenceReport = false
-                    }
-                } else {
-                    com.chicoeletro.dds.ui.components.ProductionReportDialog(
-                        equipe = equipe,
-                        onDismiss = { showPresenceReport = false }
-                    )
-                }
-            }
-
-            if (versionStatus == VersionStatus.UPDATE_AVAILABLE) {
-                UpdateBanner(
-                    onUpdateClick = { 
-                        (context as? Activity)?.let { activity ->
-                            VersionChecker.startUpdateFlow(activity, 999) 
-                        }
-                    },
-                    onDismiss = { versionStatus = VersionStatus.UP_TO_DATE }
-                )
-            }
-
-            if (showCommunicationDialog) {
-                Dialog(
-                    onDismissRequest = { showCommunicationDialog = false },
-                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                ) {
-                    CommunicationScreen(
-                        equipeOrigem = equipe,
-                        onDismiss = { showCommunicationDialog = false }
-                    )
-                }
-            }
-        }
-
-        if (!gpsEnabled) {
-            BackHandler(enabled = true) { /* bloqueia voltar */ }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xE6121212)), // fundo escuro
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Warning,
-                        contentDescription = "GPS Desativado",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "GPS Desativado 🚨",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "Para continuar utilizando o aplicativo DDS Chico Eletro, o GPS do dispositivo deve estar ativado.\n\nO GPS é importante para segurança de toda a equipe e rastreamento em caso de perda, furto ou roubo do aparelho.\n\nPor favor, ative a localização nas configurações para liberar o acesso.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            try {
-                                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Erro ao abrir configurações", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Text("ATIVAR LOCALIZAÇÃO / GPS", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+                },
+                showPresenceReport = showPresenceReport,
+                onDismissPresenceReport = { showPresenceReport = false },
+                versionStatus = versionStatus,
+                onDismissVersionUpdate = { versionStatus = VersionStatus.UP_TO_DATE },
+                gpsEnabled = gpsEnabled,
+                pendingCrashReport = pendingCrashReport,
+                onDismissCrashReport = { pendingCrashReport = null }
+            )
         }
     }
 }

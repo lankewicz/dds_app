@@ -21,6 +21,12 @@ import kotlinx.serialization.json.Json
 
 private val Context.lastTeamDataStore: DataStore<Preferences> by preferencesDataStore(name = "last_team_prefs")
 
+private val jsonFormat = Json {
+    ignoreUnknownKeys = true
+    coerceInputValues = true
+    isLenient = true
+}
+
 object LastTeamStore {
     private val KEY_LAST_TEAM = stringPreferencesKey("last_team_data")
 
@@ -32,8 +38,9 @@ object LastTeamStore {
         context.lastTeamDataStore.data.map { prefs ->
             prefs[KEY_LAST_TEAM]?.let { jsonString ->
                 try {
-                    Json.decodeFromString<LastTeamData>(jsonString)
-                } catch (_: Exception) {
+                    jsonFormat.decodeFromString<LastTeamData>(jsonString)
+                } catch (e: Exception) {
+                    android.util.Log.e("LastTeamStore", "Erro ao desserializar LastTeamData", e)
                     null
                 }
             }
@@ -45,7 +52,7 @@ object LastTeamStore {
      */
     suspend fun salvar(context: Context, lastTeamData: LastTeamData) {
         context.lastTeamDataStore.edit { prefs ->
-            val jsonString = Json.encodeToString(lastTeamData)
+            val jsonString = jsonFormat.encodeToString(lastTeamData)
             prefs[KEY_LAST_TEAM] = jsonString
         }
     }

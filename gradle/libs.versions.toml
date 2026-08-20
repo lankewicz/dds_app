@@ -3,11 +3,15 @@
 cameraCore = "1.6.1"
 coilCompose = "2.7.0"
 googleServices = "4.4.4"
-kotlin = "2.4.0"
+kotlin = "2.0.21"
 agp = "9.2.1"
+ksp = "2.0.21-1.0.28"
 credentials = "1.6.0"
 googleid = "1.2.0"
 playServicesAuth = "21.6.0"
+hilt = "2.60.1"
+hiltNavigationCompose = "1.2.0"
+navigationCompose = "2.8.8"
 
 # 🎨 Jetpack Compose
 composeBom = "2026.05.01"
@@ -149,6 +153,10 @@ androidx-credentials-play-services = { module = "androidx.credentials:credential
 
 google-id = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 google-play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "playServicesAuth" }
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
+hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 
 
 [plugins]
@@ -157,3 +165,5 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

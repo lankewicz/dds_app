@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import dagger.hilt.android.AndroidEntryPoint
 import com.chicoeletro.dds.features.auth.FirstAccessGate
 import com.chicoeletro.dds.storage.TrainingDataStore
 import com.chicoeletro.dds.ui.sections.MainLayoutContainer
@@ -50,12 +52,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    private val syncVM: TrainingSyncViewModel by viewModels()
 
-        val syncVM = ViewModelProvider(this)[TrainingSyncViewModel::class.java]
+    override fun onCreate(savedInstanceState: Bundle?) {
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        super.onCreate(savedInstanceState)
 
         ensureAuthenticated()
 
@@ -88,6 +92,11 @@ class MainActivity : ComponentActivity() {
             collectionName = "TESTE_DDS",
             pastaFotos = "TESTE_DDS_Fotos"
         ).schedule()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
     /**

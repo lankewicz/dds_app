@@ -14,16 +14,19 @@ import android.util.Log
 import com.google.firebase.Firebase
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.storage
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-class StorageTrainingRepository(
-    private val context: Context
+@Singleton
+class StorageTrainingRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val storage: FirebaseStorage
 ) : TrainingRepository {
-
-    private val storage: FirebaseStorage = Firebase.storage
 
     // Pastas base no Firebase Storage
     private companion object {

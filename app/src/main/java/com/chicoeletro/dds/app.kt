@@ -10,6 +10,7 @@ package com.chicoeletro.dds
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import dagger.hilt.android.HiltAndroidApp
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.auth
 import com.google.firebase.Firebase
@@ -21,6 +22,7 @@ import kotlinx.coroutines.launch
 
 
 
+@HiltAndroidApp
 class App : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

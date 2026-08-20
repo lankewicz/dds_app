@@ -24,8 +24,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import android.media.AudioManager
-import android.media.ToneGenerator
 import java.io.File
 import java.util.UUID
 
@@ -77,12 +75,6 @@ class ViewerViewModel(
     // ---- Mensagens de bloqueio (TTL) ----
     private var blockJob: Job? = null
     private var blockSeq: Long = 0L
-
-    private val toneGenerator = try {
-        ToneGenerator(AudioManager.STREAM_ALARM, 80)
-    } catch (_: Exception) {
-        null
-    }
 
     private companion object {
         const val MIN_TOTAL_MS = 120_000L      // 2 minutos
@@ -467,7 +459,6 @@ class ViewerViewModel(
         inactivityJob?.cancel()
         _ui.update { it.copy(inactivityWarning = false) }
         inactivityJob = viewModelScope.launch {
-            var lastBeepMono = 0L
             while (isActive) {
                 delay(5_000)
                 if (_ui.value.conclusionInfo != null || _ui.value.invalidated) break
@@ -482,13 +473,6 @@ class ViewerViewModel(
                 
                 if (inactiveTime >= WARNING_START_MS || totalTime >= WARNING_START_MS) {
                     _ui.update { it.copy(inactivityWarning = true) }
-                    // Alerta sonoro a cada 20 segundos na fase crítica
-                    if (now - lastBeepMono >= 20_000L) {
-                        try {
-                            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 600)
-                        } catch (_: Exception) {}
-                        lastBeepMono = now
-                    }
                 } else {
                     if (_ui.value.inactivityWarning) {
                         _ui.update { it.copy(inactivityWarning = false) }
@@ -496,13 +480,6 @@ class ViewerViewModel(
                 }
             }
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        try {
-            toneGenerator?.release()
-        } catch (_: Exception) {}
     }
     private fun invalidateSession(reason: String) {
         if (_ui.value.conclusionInfo != null || _ui.value.invalidated) return

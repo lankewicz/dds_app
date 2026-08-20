@@ -7,21 +7,36 @@ package com.chicoeletro.dds.viewmodel
 
 import android.app.Application
 import android.util.Log
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chicoeletro.dds.data.StorageTrainingRepository
 import com.chicoeletro.dds.data.Training
+import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
+import com.chicoeletro.dds.storage.ExecCacheEntry
 import com.chicoeletro.dds.storage.LocalTrainingIndex
+import com.chicoeletro.dds.storage.TrainingExecLocalStore
+import com.chicoeletro.dds.storage.TrainingExecSyncState
 import com.chicoeletro.dds.util.NetworkStatusObserver
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.YearMonth
 
-class TrainingViewModel(
-    application: Application,
+data class TrainingStatus(
+    val dataConclusao: String,
+    val horaConclusao: String,
+    val duracao: String,
+    val syncState: String = TrainingExecSyncState.SYNCED
+)
+
+@HiltViewModel
+class TrainingViewModel @Inject constructor(
+    private val application: Application,
     private val repository: StorageTrainingRepository
-) : AndroidViewModel(application) {
+) : ViewModel() {
 
     private val _isInitializing = MutableStateFlow(true)
     val isInitializing: StateFlow<Boolean> = _isInitializing.asStateFlow()
@@ -29,8 +44,12 @@ class TrainingViewModel(
     private val _trainings = MutableStateFlow<List<Training>>(emptyList())
     val trainings: StateFlow<List<Training>> = _trainings.asStateFlow()
 
+    private val _trainingStatus = MutableStateFlow<Map<String, TrainingStatus>>(emptyMap())
+    val trainingStatus: StateFlow<Map<String, TrainingStatus>> = _trainingStatus.asStateFlow()
+
+    private val execRepo = TeamTrainingExecutionRepository()
+
     companion object {
-        // Lista de caminhos completos dos arquivos do lista.json (imagens) — mantida por compatibilidade
         var listaCompleta: List<String>? = null
     }
 
@@ -38,44 +57,72 @@ class TrainingViewModel(
         refreshTrainings()
     }
 
-    /**
-     * OFFLINE-FIRST:
-     * 1) Tenta listar a partir do conteúdo local (filesDir/trainings/<id>).
-     * 2) Se vazio, faz fallback online via Storage para obter a lista mais recente.
-     */
+    fun updateTeamAndMonth(equipe: String, month: YearMonth) {
+        if (equipe.isBlank()) {
+            _trainingStatus.value = emptyMap()
+            return
+        }
+
+        val teamKey = TeamTrainingExecutionRepository.teamKeyOf(equipe)
+        val monthId = month.toString()
+
+        viewModelScope.launch {
+            TrainingExecLocalStore
+                .flowMonth(application, teamKey, monthId)
+                .collect { localMap ->
+                    _trainingStatus.value = localMap.mapValues { (_, st) ->
+                        TrainingStatus(st.dataConclusao, st.horaConclusao, st.duracao, st.syncState)
+                    }
+                }
+        }
+
+        // Remote listener
+        viewModelScope.launch {
+             execRepo.listenMonth(
+                teamName = equipe,
+                ym = month,
+                onUpdate = { map ->
+                    val cache = map.mapValues { (_, st) ->
+                        ExecCacheEntry(
+                            st.dataConclusao,
+                            st.horaConclusao,
+                            st.duracao,
+                            TrainingExecSyncState.SYNCED
+                        )
+                    }
+                    viewModelScope.launch {
+                        TrainingExecLocalStore.mergeRemoteMonth(application, teamKey, monthId, cache)
+                    }
+                }
+            )
+        }
+    }
+
     fun refreshTrainings() = viewModelScope.launch {
         _isInitializing.value = true
+        val isOnlineNow = NetworkStatusObserver.isOnlineNow(application.applicationContext)
 
-        val isOnlineNow = NetworkStatusObserver.isOnlineNow(getApplication<Application>().applicationContext)
-
-
-        // 1) Índice local (já sincronizado na abertura do app)
-        val locais = LocalTrainingIndex.list(getApplication())
+        val locais = LocalTrainingIndex.list(application)
         if (locais.isNotEmpty()) {
             _trainings.value = locais
             _isInitializing.value = false
             return@launch
         }
 
-        // 1.5) OFFLINE + sem cache local → não tenta Storage (evita "travamento" / timeout)
         if (!isOnlineNow) {
-            Log.w("TrainingVM", "OFFLINE e sem cache local. Ignorando fallback online.")
             _trainings.value = emptyList()
             _isInitializing.value = false
             return@launch
         }
 
-
-        // 2) Fallback online: usa fetchTrainingsComArquivos()
         try {
             val (lista, arquivos) = repository.fetchTrainingsComArquivos()
             listaCompleta = arquivos
             _trainings.value = lista
         } catch (e: Exception) {
-            Log.e("TrainingVM", "Erro ao atualizar lista (fallback online)", e)
+            Log.e("TrainingVM", "Erro ao atualizar lista", e)
             _trainings.value = emptyList()
         }
-
         _isInitializing.value = false
     }
 }

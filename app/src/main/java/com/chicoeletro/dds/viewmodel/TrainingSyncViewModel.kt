@@ -7,7 +7,7 @@ package com.chicoeletro.dds.viewmodel
 
 import android.app.Application
 import android.util.Log
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chicoeletro.dds.data.sync.FileLocalDataSource
 import com.chicoeletro.dds.data.sync.FirebaseRemoteDataSource
@@ -15,6 +15,8 @@ import com.chicoeletro.dds.data.sync.UpdateTrainingsUseCase
 import com.chicoeletro.dds.util.NetworkStatusObserver
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -27,7 +29,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-class TrainingSyncViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class TrainingSyncViewModel @Inject constructor(
+    private val application: Application,
+    private val firestore: FirebaseFirestore,
+    private val storage: FirebaseStorage
+) : ViewModel() {
     private val TAG = "TrainingSyncVM"
 
     private val _state = MutableStateFlow(TrainingSyncUiState())
@@ -79,7 +86,7 @@ class TrainingSyncViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun syncNow() {
-        val ctx = getApplication<Application>().applicationContext
+        val ctx = application.applicationContext
 
         // ✅ Gate definitivo: nunca inicia sync quando offline (evita "travamento" por timeout)
         if (!NetworkStatusObserver.isOnlineNow(ctx)) {
@@ -100,8 +107,8 @@ class TrainingSyncViewModel(application: Application) : AndroidViewModel(applica
 
             try {
                 val remote = FirebaseRemoteDataSource(
-                    FirebaseFirestore.getInstance(),
-                    FirebaseStorage.getInstance(),
+                    firestore,
+                    storage,
                     ctx
                 )
                 val local = FileLocalDataSource(ctx)

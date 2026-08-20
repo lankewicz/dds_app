@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.chicoeletro.dds.data.Training
 import com.chicoeletro.dds.ui.training.buildTrainingDisplay
 import com.chicoeletro.dds.ui.training.trainingTitleFromId
-import com.chicoeletro.dds.ui.sections.TrainingStatus as UiTrainingStatus
+import com.chicoeletro.dds.viewmodel.TrainingStatus
 
 import com.chicoeletro.dds.features.turno.EstadoTurno
 import com.chicoeletro.dds.ui.components.TurnoBadge
@@ -61,7 +61,7 @@ fun LeftSidebarSection(
     onPresenceReport: () -> Unit,
     trainings: List<Training>,
     selectedTraining: String?,
-    trainingStatus: Map<String, UiTrainingStatus>, // containsKey(id) = concluído
+    trainingStatus: Map<String, TrainingStatus>, // containsKey(id) = concluído
     onSelectTraining: (String) -> Unit,
 
     // Destaque de acesso

@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(base_dir, "vexpenses"))
 sys.path.insert(0, os.path.join(base_dir, "token_server"))
 sys.path.insert(0, os.path.join(base_dir, "boletim_x_ponto"))
 sys.path.insert(0, os.path.join(base_dir, "controle_projetos"))
-sys.path.insert(0, os.path.join(base_dir, "boletim_cidades"))
 
 # Configuração de Credenciais: Local (arquivo) vs Cloud Run (ADC)
 local_key = r"d:\programas\DDS\firebase_config.json"
@@ -90,33 +89,45 @@ from produtividade.routes.prod_routes import router as produtividade_router
 
 # Boletim x Ponto import
 from boletim_x_ponto.routes.boletim_routes import router as boletim_router
+from boletim_x_ponto.routes.rotalog_routes import router as rotalog_router
 
 # Controle de Projetos import
 from controle_projetos.routes.projeto_routes import router as projeto_router
 
-# Boletim Cidades (Financeiro) import
-from boletim_cidades.routes.cidades_routes import router as cidades_router
-
-# NFS-e Manager import
-from nfse.routes import router as nfse_router
-
 listener_manager = None
+
+rotalog_scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global listener_manager
+    global listener_manager, rotalog_scheduler
     try:
         from monitor.services.turnos_service import FirestoreListenerManager
         listener_manager = FirestoreListenerManager()
         listener_manager.start()
     except Exception as e:
         print(f"Error starting background listener: {e}")
+
+    try:
+        from boletim_x_ponto.services.rotalog_sync_task import RotalogBackgroundScheduler
+        rotalog_scheduler = RotalogBackgroundScheduler(interval_seconds=300)
+        rotalog_scheduler.start()
+    except Exception as e:
+        print(f"Error starting Rotalog background scheduler: {e}")
+
     yield
+
     if listener_manager:
         try:
             listener_manager.stop()
         except Exception as e:
             print(f"Error stopping background listener: {e}")
+
+    if rotalog_scheduler:
+        try:
+            rotalog_scheduler.stop()
+        except Exception as e:
+            print(f"Error stopping Rotalog background scheduler: {e}")
 
 class CacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
@@ -175,9 +186,7 @@ async def auth_middleware(request: Request, call_next):
         "/controle-projetos/revisar-mit",
         "/controle-projetos/api/mit-import",
         "/controle-projetos/estruturas",
-        "/controle-projetos/api/estruturas",
-        "/boletim-cidades",
-        "/api/nfse"
+        "/controle-projetos/api/estruturas"
     ]
     if not any(request.url.path.startswith(p) for p in public_paths):
         user_email = request.cookies.get("__session")
@@ -246,9 +255,8 @@ app.include_router(messaging_router)
 app.include_router(token_router)
 app.include_router(produtividade_router)
 app.include_router(boletim_router)
+app.include_router(rotalog_router)
 app.include_router(projeto_router)
-app.include_router(cidades_router)
-app.include_router(nfse_router)
 
 if __name__ == "__main__":
     import uvicorn
