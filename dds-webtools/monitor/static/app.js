@@ -605,6 +605,26 @@ function normalizedState(state) {
   if (raw === "ESPECIAL" || raw === "DESLOCAMENTO") return "DESLOCAMENTO_ESPECIAL"; return raw;
 }
 function stateLabel(state) { switch (normalizedState(state)) { case "DESLOCAMENTO_ESPECIAL": return "DESLOCAMENTO ESPECIAL"; default: return normalizedState(state); } }
+
+function getOrigemChar(item) {
+  if (!item) return "D";
+  const device = (item.deviceIdLastWriter || item.deviceId || "").toUpperCase();
+  const origem = (item.origemAtualizacao || "").toUpperCase();
+  if (origem === "ROTALOG_MAIS_RECENTE" || device === "ROTALOG_AUTO_SYNC" || item.rotalogSnapshot) {
+    return "R";
+  }
+  if (device && device !== "SYSTEM_AUTO" && device !== "DDS") {
+    return "E";
+  }
+  return "D";
+}
+
+function getOrigemTitle(item) {
+  const char = getOrigemChar(item);
+  if (char === "R") return "Sincronizado via Rotalog Tempo Real (COPEL)";
+  if (char === "E") return "Atualizado pela Equipe em Campo (App Android)";
+  return "Atualizado pelo Sistema DDS";
+}
 function vehicleFrameClass(state) { switch (normalizedState(state)) { case "ABERTO": return "vfGreen"; case "INTERVALO": return "vfYellow"; case "DESLOCAMENTO_ESPECIAL": return "vfBlue"; case "FECHADO": return "vfRed"; case "DESATUALIZADO": return "vfGray"; default: return "vfGray"; } }
 function stateCardClass(state) {
   switch (normalizedState(state)) {
@@ -974,7 +994,9 @@ function tile(item) {
             </div>
             ${isTrash ? '' : `
             <div class="statusBlock">
-              <div class="statusLine">${escapeHtml(statusLabel)}</div>
+              <div class="statusLine">
+                ${escapeHtml(statusLabel)} <span class="origemBadge origemBadge--${getOrigemChar(item)}" title="${escapeHtml(getOrigemTitle(item))}">${getOrigemChar(item)}</span>
+              </div>
               <div class="timeLine ${hideTimeLine ? "timeLineHidden" : ""}">
                 ${escapeHtml(timeLabel)}
               </div>
@@ -999,7 +1021,9 @@ function tile(item) {
             ${teamTypeIconHtml}
             <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
           </div>
-          <div class="badge badgeCompact">${escapeHtml(stateLabel(shown))}</div>
+          <div class="badge badgeCompact">
+            ${escapeHtml(stateLabel(shown))} <span class="origemBadge origemBadge--${getOrigemChar(item)}" title="${escapeHtml(getOrigemTitle(item))}">${getOrigemChar(item)}</span>
+          </div>
         </div>
       </div>
       <div class="tileHoverBody">
