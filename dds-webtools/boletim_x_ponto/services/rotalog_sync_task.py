@@ -192,6 +192,20 @@ def executar_sincronizacao_rotalog(empresa: str = "ChicoEletro", forcar: bool = 
         rotalog_ms = _extrair_timestamp_rotalog(eq)
         dds_ms = _extrair_timestamp_dds(dds_data)
 
+        # Se a equipe está com o turno aberto ou em atividade no Rotalog, força active = True
+        is_turno_aberto_rotalog = eq["estado_consolidado"] in ("ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL") or bool(eq.get("turno", {}).get("aberto"))
+
+        if is_turno_aberto_rotalog:
+            # Ativa no cadastro base dds_teams/{team_key} se estiver inativa
+            ref_team_base = db.collection("dds_teams").document(team_key)
+            batch.set(ref_team_base, {
+                "active": True,
+                "teamKey": team_key,
+                "equipe": eq_codigo,
+                "deactivatedReason": None,
+                "reactivatedBy": "ROTALOG_AUTO_SYNC"
+            }, merge=True)
+
         # 2. Análise de Recência: Se Rotalog for MAIS RECENTE que o DDS
         if rotalog_ms > dds_ms or not dds_doc.exists:
             novo_estado_dds = {
@@ -209,6 +223,9 @@ def executar_sincronizacao_rotalog(empresa: str = "ChicoEletro", forcar: bool = 
                 "rotalogFingerprint": current_fingerprint,
                 "origemAtualizacao": "ROTALOG_MAIS_RECENTE"
             }
+            if is_turno_aberto_rotalog:
+                novo_estado_dds["active"] = True
+
             batch.set(ref_dds_app, novo_estado_dds, merge=True)
 
             ref_dds_web = db.collection("empresas").document(empresa).collection("turnos_estado").document(team_key)
@@ -221,6 +238,9 @@ def executar_sincronizacao_rotalog(empresa: str = "ChicoEletro", forcar: bool = 
                 "rotalogFingerprint": current_fingerprint,
                 "origemAtualizacao": "DDS_MAIS_RECENTE"
             }
+            if is_turno_aberto_rotalog:
+                update_payload["active"] = True
+
             batch.set(ref_dds_app, update_payload, merge=True)
 
             ref_dds_web = db.collection("empresas").document(empresa).collection("turnos_estado").document(team_key)
