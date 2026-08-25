@@ -55,7 +55,8 @@
             android:exported="true"
 
             android:theme="@style/Theme.DDS"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
             android:configChanges="orientation|keyboardHidden|screenSize">
 
             <intent-filter>

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.filled.Chat
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -174,14 +178,14 @@ fun HeaderBar(
 
         Box(
             modifier = Modifier
-                .width(140.dp)
+                .wrapContentWidth()
                 .fillMaxHeight()
                 .padding(end = 8.dp),
             contentAlignment = Alignment.CenterEnd
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 PendingCountBadge(count = pendingCount)
 

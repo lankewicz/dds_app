@@ -45,7 +45,7 @@ fun ProductionReportDialog(
     val scope = rememberCoroutineScope()
     val repository = remember { ProductionRepository() }
     
-    var selectedYear by remember { mutableStateOf(2026) }
+    var selectedYear by remember { mutableStateOf(java.time.LocalDate.now().year) }
     var isLoading by remember { mutableStateOf(false) }
     
     // Cache de dados por ano para evitar refetch constante

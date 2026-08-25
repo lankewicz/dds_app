@@ -387,6 +387,11 @@
 
 
         <div class="formGrid equipmentFormGrid">
+          <label class="formField formFieldFull" id="equipmentIdentifierField">
+            <span class="formLabel">Identificação do tablet</span>
+            <input id="equipmentIdentifier" type="text" placeholder="Ex.: CA091" autocomplete="off" />
+          </label>
+
           <label class="formField formFieldFull">
             <span class="formLabel">Serial do equipamento</span>
             <input id="equipmentSerial" type="text" placeholder="Ex.: TAB-000123" />
@@ -432,6 +437,7 @@
               <thead>
                 <tr>
                   <th>Data</th>
+                  <th>Identificação</th>
                   <th>Serial</th>
                   <th>Patrimônio</th>
                   <th>Motivo da substituição</th>
@@ -439,7 +445,7 @@
               </thead>
               <tbody id="equipmentHistoryTableBody">
                 <tr>
-                  <td colspan="4" class="equipmentHistoryEmptyCell">Nenhuma alteração registrada.</td>
+                  <td colspan="5" class="equipmentHistoryEmptyCell">Nenhuma alteração registrada.</td>
                 </tr>
               </tbody>
             </table>

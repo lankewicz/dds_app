@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 
 class EquipmentPayload(BaseModel):
+    identifier: str | None = None
     summary: str | None = None
     serial: str | None = None
     patrimonio: str | None = None

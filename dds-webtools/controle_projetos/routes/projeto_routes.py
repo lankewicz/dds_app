@@ -60,7 +60,7 @@ class LancamentoLotePayload(BaseModel):
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def ver_controle_projetos(request: Request):
-    user_email = request.cookies.get("__session")
+    user_email = request.headers.get("X-Portal-User")
     return templates.TemplateResponse("index_projetos.html", {
         "request": request,
         "user_email": user_email
@@ -233,7 +233,7 @@ class ConfirmarMitPayload(BaseModel):
 # 12. Rota HTML para revisão do MIT
 @router.get("/revisar-mit", response_class=HTMLResponse)
 def ver_revisao_mit(request: Request):
-    user_email = request.cookies.get("__session")
+    user_email = request.headers.get("X-Portal-User")
     return templates.TemplateResponse("revisar_mit.html", {
         "request": request,
         "user_email": user_email
@@ -412,7 +412,7 @@ class EstruturaAtividadesPayload(BaseModel):
 # 16. Rota HTML para gerenciar o catálogo de estruturas padrão
 @router.get("/estruturas", response_class=HTMLResponse)
 def ver_catalogo_estruturas(request: Request):
-    user_email = request.cookies.get("__session")
+    user_email = request.headers.get("X-Portal-User")
     return templates.TemplateResponse("revisar_estruturas.html", {
         "request": request,
         "user_email": user_email
@@ -1202,6 +1202,5 @@ def publicar_catalogo_mit(equipe: str = "CONSTRUCAO"):
         return {"sucesso": True, "items_exportados": len(list_atividades), "caminho": blob_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 

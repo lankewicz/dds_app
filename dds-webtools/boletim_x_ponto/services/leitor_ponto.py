@@ -3,6 +3,8 @@ import unicodedata
 from io import StringIO, BytesIO
 import pandas as pd
 
+from boletim_x_ponto.services.leitor_ponto_pdf import extrair_cartao_ponto_pdf_bytes
+
 def tempo_para_decimal(valor):
     try:
         if pd.isna(valor) or str(valor).strip() == "":
@@ -49,6 +51,8 @@ def encontrar_coluna(df, opcoes):
 
 def ler_arquivo_compativel_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame | None:
     try:
+        if filename.lower().endswith(".pdf"):
+            return extrair_cartao_ponto_pdf_bytes(file_bytes)
         if filename.lower().endswith(".csv"):
             try:
                 texto = file_bytes.decode("utf-8")
@@ -85,12 +89,28 @@ def extrair_ponto_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
         print(f"[IGNORADO] {filename} - Colunas obrigatórias ausentes.")
         return pd.DataFrame()
 
+    metricas = {
+        "Total Normais": encontrar_coluna(df, ["Total Normais", "TOTAL NORMAIS", "Normais"]),
+        "Total Noturno": encontrar_coluna(df, ["Total Noturno", "TOTAL NOTURNO", "Noturno"]),
+        "Extra 50%D": encontrar_coluna(df, ["Extra   50%D", "Extra 50%D", "EXTRA 50%D", "Extra 50% D"]),
+        "Extra 100%D": encontrar_coluna(df, ["Extra   100%D", "Extra 100%D", "EXTRA 100%D", "Extra 100% D"]),
+        "Extra 50%N": encontrar_coluna(df, ["Extra   50%N", "Extra 50%N", "EXTRA 50%N", "Extra 50% N"]),
+        "Extra 100%N": encontrar_coluna(df, ["Extra   100%N", "Extra 100%N", "EXTRA 100%N", "Extra 100% N"]),
+        "Interjornada": encontrar_coluna(df, ["Interjornada", "INTERJORNADA", "Inter jornada"]),
+    }
+
+    def texto_limpo(valor):
+        if pd.isna(valor):
+            return ""
+        return str(valor).strip()
+
     registros = []
+    ignorados = 0
     for _, linha in df.iterrows():
         try:
-            nome = str(linha.get(col_nome)).strip()
-            cpf = str(linha.get(col_cpf, "")).strip()
-            pis = str(linha.get(col_pis, "")).strip()
+            nome = texto_limpo(linha.get(col_nome))
+            cpf = texto_limpo(linha.get(col_cpf, ""))
+            pis = texto_limpo(linha.get(col_pis, ""))
             data = linha.get(col_data)
 
             if isinstance(data, str):
@@ -99,7 +119,8 @@ def extrair_ponto_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
             elif isinstance(data, (float, int)):
                 data = pd.to_datetime("1899-12-30") + pd.to_timedelta(data, unit="D")
 
-            if pd.isna(data):
+            if not nome or pd.isna(data):
+                ignorados += 1
                 continue
 
             chave = f"{cpf}__{data.date()}" if cpf else f"{pis}__{data.date()}"
@@ -109,17 +130,20 @@ def extrair_ponto_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
                 "CPF": cpf,
                 "PIS": pis,
                 "Data": data.date(),
-                "Total Normais": tempo_para_decimal(linha.get("Total Normais", "")),
-                "Total Noturno": tempo_para_decimal(linha.get("Total Noturno", "")),
-                "Extra 50%D": tempo_para_decimal(linha.get("Extra   50%D", "")),
-                "Extra 100%D": tempo_para_decimal(linha.get("Extra   100%D", "")),
-                "Extra 50%N": tempo_para_decimal(linha.get("Extra   50%N", "")),
-                "Extra 100%N": tempo_para_decimal(linha.get("Extra   100%N", "")),
-                "Interjornada": tempo_para_decimal(linha.get("Interjornada", "")),
+                **{
+                    nome_metrica: tempo_para_decimal(
+                        linha.get(coluna, "") if coluna else ""
+                    )
+                    for nome_metrica, coluna in metricas.items()
+                },
                 "chave_unica": chave,
             }
             registros.append(registro)
         except Exception as e:
+            ignorados += 1
             print(f"[ERRO] Falha ao processar linha em {filename}: {e}")
 
-    return pd.DataFrame(registros)
+    result = pd.DataFrame(registros)
+    result.attrs["registros_lidos"] = len(df)
+    result.attrs["registros_ignorados"] = ignorados
+    return result

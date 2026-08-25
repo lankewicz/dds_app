@@ -125,41 +125,47 @@
     <p>Selecione qual ferramenta você deseja acessar:</p>
 
     <div class="options">
-      <a href="/admin" class="card">
+      {% if has_permission("admin") %}<a href="/admin" class="card">
         <div class="card-icon">🛠️</div>
         <div class="card-title">Painel Administrativo</div>
         <div class="card-desc">Gerenciamento de DDS, Treinamentos e Relatórios</div>
-      </a>
+      </a>{% endif %}
 
-      <a href="/monitor" class="card">
+      {% if has_permission("monitor") %}<a href="/monitor" class="card">
         <div class="card-icon">📊</div>
         <div class="card-title">Monitor de Turnos</div>
         <div class="card-desc">Acompanhamento de equipes e importação de produção</div>
-      </a>
+      </a>{% endif %}
 
-      <a href="/vexpenses" class="card">
+      {% if has_permission("vexpenses") %}<a href="/vexpenses" class="card">
         <div class="card-icon">💵</div>
         <div class="card-title">VExpenses</div>
         <div class="card-desc">Gestão de saldos, importação e relatórios SQL</div>
-      </a>
+      </a>{% endif %}
 
-      <a href="/produtividade" class="card">
+      {% if has_permission("produtividade") %}<a href="/produtividade" class="card">
         <div class="card-icon">📈</div>
         <div class="card-title">Monitor de Produtividade</div>
         <div class="card-desc">Análise de performance e métricas de produção</div>
-      </a>
+      </a>{% endif %}
 
-      <a href="/boletim-x-ponto" class="card">
+      {% if has_permission("boletim_x_ponto") %}<a href="/boletim-x-ponto" class="card">
         <div class="card-icon">📅</div>
         <div class="card-title">Boletim x Ponto</div>
         <div class="card-desc">Comparação de horas de boletins de medição com cartões ponto</div>
-      </a>
+      </a>{% endif %}
 
-      <a href="/controle-projetos" class="card">
+      {% if has_permission("controle_projetos") %}<a href="/controle-projetos" class="card">
         <div class="card-icon">📋</div>
         <div class="card-title">Controle de Projetos</div>
         <div class="card-desc">Planejamento e checklist de estruturas e equipes (Copel US)</div>
-      </a>
+      </a>{% endif %}
+
+      {% if has_permission("admin") %}<a href="/access-control" class="card">
+        <div class="card-icon">🔐</div>
+        <div class="card-title">Controle de Acesso</div>
+        <div class="card-desc">Papéis, usuários e permissões por área</div>
+      </a>{% endif %}
     </div>
   </div>
   <div class="app-version-footer">

@@ -38,61 +38,74 @@ class ProductionRepository(
             val monthKey = "$year-$monthStr"
 
             async {
-                val querySnapshot = collection
-                    .whereEqualTo("monthKey", monthKey)
-                    .whereEqualTo("teamKey", teamKey)
-                    .get()
-                    .await()
+                val teamVariants = listOfNotNull(
+                    teamKey.trim(),
+                    teamKey.trim().uppercase(),
+                    com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository.teamKeyOf(teamKey)
+                ).distinct()
 
-                querySnapshot.documents.map { doc ->
-                    val metricsMap = doc.get("metrics") as? Map<*, *> ?: emptyMap<String, Any>()
-                    
-                    val getDouble = { key: String ->
-                        when (val v = metricsMap[key]) {
-                            is Number -> v.toDouble()
-                            is String -> v.toDoubleOrNull() ?: 0.0
-                            else -> 0.0
+                var docs: List<ProductionMonthlyDoc> = emptyList()
+                for (variant in teamVariants) {
+                    val querySnapshot = collection
+                        .whereEqualTo("monthKey", monthKey)
+                        .whereEqualTo("teamKey", variant)
+                        .get()
+                        .await()
+
+                    if (!querySnapshot.isEmpty) {
+                        docs = querySnapshot.documents.map { doc ->
+                            val metricsMap = doc.get("metrics") as? Map<*, *> ?: emptyMap<String, Any>()
+                            
+                            val getDouble = { key: String ->
+                                when (val v = metricsMap[key]) {
+                                    is Number -> v.toDouble()
+                                    is String -> v.toDoubleOrNull() ?: 0.0
+                                    else -> 0.0
+                                }
+                            }
+
+                            val goalMap = doc.get("goal") as? Map<*, *> ?: emptyMap<String, Any>()
+                            val goalTargetUs = when (val v = goalMap["targetUs"]) {
+                                is Number -> v.toDouble()
+                                is String -> v.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                            val goalType = goalMap["type"] as? String ?: ""
+
+                            ProductionMonthlyDoc(
+                                teamKey = doc.getString("teamKey") ?: "",
+                                displayName = doc.getString("displayName") ?: "",
+                                teamType = doc.getString("teamType") ?: "",
+                                members = (doc.get("members") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
+                                year = doc.getLong("year")?.toInt() ?: year,
+                                monthNumber = doc.getLong("monthNumber")?.toInt() ?: monthNum,
+                                monthKey = doc.getString("monthKey") ?: monthKey,
+                                monthAbbr = doc.getString("monthAbbr") ?: "",
+                                contract = doc.getString("contract") ?: "",
+                                plate = doc.getString("plate") ?: "",
+                                base = doc.getString("base") ?: "",
+                                updatedAt = doc.getTimestamp("updatedAt"),
+                                metrics = ProductionMetrics(
+                                    totalUs = getDouble("totalUs"),
+                                    workDays = getDouble("workDays"),
+                                    drivenKm = getDouble("km"),
+                                    commercial = getDouble("commercialEffective"), 
+                                    emergency = getDouble("emergencyServices"),
+                                    totalServices = getDouble("totalServices"),
+                                    commercialEffective = getDouble("commercialEffective"),
+                                    inrPerDay = getDouble("inrPerDay"),
+                                    billingPerDay = getDouble("billingPerDay")
+                                ),
+                                goal = ProductionGoal(targetUs = goalTargetUs, type = goalType)
+                            )
                         }
+                        if (docs.isNotEmpty()) break
                     }
-
-                    val goalMap = doc.get("goal") as? Map<*, *> ?: emptyMap<String, Any>()
-                    val goalTargetUs = when (val v = goalMap["targetUs"]) {
-                        is Number -> v.toDouble()
-                        is String -> v.toDoubleOrNull() ?: 0.0
-                        else -> 0.0
-                    }
-                    val goalType = goalMap["type"] as? String ?: ""
-
-                    ProductionMonthlyDoc(
-                        teamKey = doc.getString("teamKey") ?: "",
-                        displayName = doc.getString("displayName") ?: "",
-                        teamType = doc.getString("teamType") ?: "",
-                        members = (doc.get("members") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
-                        year = doc.getLong("year")?.toInt() ?: year,
-                        monthNumber = doc.getLong("monthNumber")?.toInt() ?: monthNum,
-                        monthKey = doc.getString("monthKey") ?: monthKey,
-                        monthAbbr = doc.getString("monthAbbr") ?: "",
-                        contract = doc.getString("contract") ?: "",
-                        plate = doc.getString("plate") ?: "",
-                        base = doc.getString("base") ?: "",
-                        updatedAt = doc.getTimestamp("updatedAt"),
-                        metrics = ProductionMetrics(
-                            totalUs = getDouble("totalUs"),
-                            workDays = getDouble("workDays"),
-                            drivenKm = getDouble("km"), // Fixed from kmTotal to km based on confirmation
-                            commercial = getDouble("commercialEffective"), 
-                            emergency = getDouble("emergencyServices"), // Adjusted to match Python service (emergencyServices)
-                            totalServices = getDouble("totalServices"),
-                            commercialEffective = getDouble("commercialEffective"),
-                            inrPerDay = getDouble("inrPerDay"),
-                            billingPerDay = getDouble("billingPerDay")
-                        ),
-                        goal = ProductionGoal(targetUs = goalTargetUs, type = goalType)
-                    )
                 }
+                docs
             }
         }
 
-        deferreds.awaitAll().filterNotNull().flatten()
+        deferreds.awaitAll().flatten()
     }
 }

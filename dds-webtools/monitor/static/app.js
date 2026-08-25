@@ -608,6 +608,10 @@ function stateLabel(state) { switch (normalizedState(state)) { case "DESLOCAMENT
 
 function getOrigemChar(item) {
   if (!item) return "D";
+  const contactSource = (item.lastContactSource || "").toUpperCase();
+  if (contactSource === "R") return "R";
+  if (contactSource === "D") return "D";
+  if (["E", "T", "A", "M"].includes(contactSource)) return "E";
   const device = (item.deviceIdLastWriter || item.deviceId || "").toUpperCase();
   const origem = (item.origemAtualizacao || "").toUpperCase();
   if (origem === "ROTALOG_MAIS_RECENTE" || device === "ROTALOG_AUTO_SYNC" || item.rotalogSnapshot) {
@@ -624,6 +628,31 @@ function getOrigemTitle(item) {
   if (char === "R") return "Sincronizado via Rotalog Tempo Real (COPEL)";
   if (char === "E") return "Atualizado pela Equipe em Campo (App Android)";
   return "Atualizado pelo Sistema DDS";
+}
+
+function getRotalogService(item) {
+  const snapshot = item?.rotalogSnapshot || {};
+  const current = snapshot.atividadeAtual || null;
+  const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
+  const service = current || completed[completed.length - 1] || null;
+  if (!service) return null;
+  const rawStatus = safeUpper(service.status);
+  const statusChar = rawStatus === 'DESLOCAMENTO'
+    ? 'D'
+    : rawStatus === 'EXECUCAO'
+      ? 'E'
+      : rawStatus === 'CONCLUSAO'
+        ? 'C'
+        : '';
+  const portalSs = hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '';
+  const realProtocol = service.protocolo || '';
+  const serviceId = service.ssId || service.protocoloBruto || '';
+  const serviceType = service.tipo || '';
+  const hasDistinctServiceId = serviceId && String(serviceId) !== String(serviceType);
+  const identifier = portalSs || realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
+  const identifierLabel = portalSs || realProtocol || hasDistinctServiceId ? 'SS' : 'Tipo';
+  if (!identifier) return null;
+  return { identifier: String(identifier), identifierLabel, statusChar, rawStatus };
 }
 function vehicleFrameClass(state) { switch (normalizedState(state)) { case "ABERTO": return "vfGreen"; case "INTERVALO": return "vfYellow"; case "DESLOCAMENTO_ESPECIAL": return "vfBlue"; case "FECHADO": return "vfRed"; case "DESATUALIZADO": return "vfGray"; default: return "vfGray"; } }
 function stateCardClass(state) {
@@ -952,7 +981,15 @@ function tile(item) {
 
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
 
-  const lastContactLabel = fmtLastContact(item.lastContact, item.lastContactSource);
+  const lastContactLabel = fmtLastContact(item.lastContact);
+  const origemChar = getOrigemChar(item);
+  const origemTitle = getOrigemTitle(item);
+  const rotalogService = getRotalogService(item);
+  const serviceLineHtml = rotalogService ? `
+    <div class="serviceLine" title="Status do serviço: ${escapeHtml(rotalogService.rawStatus)}">
+      <span class="serviceIdentifier">${escapeHtml(rotalogService.identifierLabel)} ${escapeHtml(rotalogService.identifier)}</span>
+      ${rotalogService.statusChar ? `<span class="serviceStatus serviceStatus--${rotalogService.statusChar}">${rotalogService.statusChar}</span>` : ''}
+    </div>` : '';
   const isTrash = getViewMode() === 'trash';
   const trashActions = isTrash ? `
     <div class="tileTrashActions">
@@ -994,12 +1031,11 @@ function tile(item) {
             </div>
             ${isTrash ? '' : `
             <div class="statusBlock">
-              <div class="statusLine">
-                ${escapeHtml(statusLabel)} <span class="origemBadge origemBadge--${getOrigemChar(item)}" title="${escapeHtml(getOrigemTitle(item))}">${getOrigemChar(item)}</span>
-              </div>
+              <div class="statusLine">${escapeHtml(statusLabel)}</div>
               <div class="timeLine ${hideTimeLine ? "timeLineHidden" : ""}">
                 ${escapeHtml(timeLabel)}
               </div>
+              ${serviceLineHtml}
             </div>
             `}
           </div>
@@ -1007,7 +1043,7 @@ function tile(item) {
       </div>
       ${isTrash ? trashActions : `
         <div class="tileContactRow">
-           <span class="contactLabel">Último Contato:</span>
+           <span class="contactLabel">Último Contato: <span class="origemBadge origemBadge--${origemChar}" title="${escapeHtml(origemTitle)}">${origemChar}</span></span>
            <span class="contactValue">${escapeHtml(lastContactLabel)}</span>
          </div>
         ${ddsRow}
@@ -1022,7 +1058,7 @@ function tile(item) {
             <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
           </div>
           <div class="badge badgeCompact">
-            ${escapeHtml(stateLabel(shown))} <span class="origemBadge origemBadge--${getOrigemChar(item)}" title="${escapeHtml(getOrigemTitle(item))}">${getOrigemChar(item)}</span>
+            ${escapeHtml(stateLabel(shown))}
           </div>
         </div>
       </div>

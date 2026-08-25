@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -339,7 +340,7 @@ fun MainLayoutContainer() {
                             onClickEquipe = { showEditDialog = true },
                             onDdsClick = { navController.navigate("dds") },
                             onTurnoClick = { if (equipe.isBlank()) showEditDialog = true else navController.navigate("turno") },
-                            onProducaoClick = { if (allDone) showPresenceReport = true else showDdsWarning = true },
+                            onProducaoClick = { showPresenceReport = true },
                             onMensagensClick = { showCommunicationDialog = true },
                             onAbastecimentoClick = { showAbastecimento = true }
                         )
@@ -365,7 +366,7 @@ fun MainLayoutContainer() {
                             eletricistas = eletricistas,
                             isTablet = isTablet,
                             onHome = { navController.navigate("home") },
-                            onPresenceReport = { if (allDone) showPresenceReport = true else showDdsWarning = true },
+                            onPresenceReport = { showPresenceReport = true },
                             onClickEquipe = { showEditDialog = true },
                             onClickTurno = { navController.navigate("turno") },
                             turnoEstado = turnoSnap.estado,
@@ -444,7 +445,11 @@ fun MainLayoutContainer() {
                     }
                 },
                 showForm = showForm,
-                onDismissForm = { showForm = false },
+                onDismissForm = { showForm = false; capturedPhotoUri = null; capturedThumbUri = null },
+                fotoUri = capturedPhotoUri,
+                thumbUri = capturedThumbUri,
+                setFotoUri = { uri -> capturedPhotoUri = uri },
+                onTirarFoto = { abrirCamera = true },
                 abrirCamera = abrirCamera,
                 onCameraResult = { uri, thumbUri -> capturedPhotoUri = uri; capturedThumbUri = thumbUri; abrirCamera = false; showForm = selectedTraining != null },
                 onCameraBack = { abrirCamera = false; if (selectedTraining != null) showForm = true },

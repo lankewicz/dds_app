@@ -19,7 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -524,7 +524,8 @@ fun BdoSection(
 ) {
     var newSsText by remember { mutableStateOf("") }
     var newSsError by remember { mutableStateOf<String?>(null) }
-    val clipboard = LocalClipboard.current as ClipboardManager
+    @Suppress("DEPRECATION")
+    val clipboardManager = LocalClipboardManager.current
 
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -593,7 +594,7 @@ fun BdoSection(
                 modifier = Modifier.weight(1f),
                 trailingIcon = {
                     IconButton(onClick = {
-                        val clip = clipboard.getText()?.text?.trim().orEmpty()
+                        val clip = clipboardManager?.getText()?.text?.trim().orEmpty()
                         if (clip.isNotEmpty()) {
                             val normalized = clip
                                 .replace("\n", " ")

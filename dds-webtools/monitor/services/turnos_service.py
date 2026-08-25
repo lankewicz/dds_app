@@ -1665,6 +1665,14 @@ def _process_single_team(
         if not last_contact_dt or latest_dds_ts > last_contact_dt:
             last_contact_dt = latest_dds_ts
             last_contact_src = "D"
+
+    rotalog_contact_dt = to_utc_dt(data.get("rotalogUpdatedAt"))
+    if not rotalog_contact_dt:
+        rotalog_snapshot = data.get("rotalogSnapshot") or {}
+        rotalog_contact_dt = to_utc_dt(rotalog_snapshot.get("updatedAtIso"))
+    if rotalog_contact_dt and (not last_contact_dt or rotalog_contact_dt > last_contact_dt):
+        last_contact_dt = rotalog_contact_dt
+        last_contact_src = "R"
             
     # Mensagens enviadas pelos aliases
     for alias in aliases:

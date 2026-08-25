@@ -354,14 +354,16 @@ def normalize_time_hhmm(raw: str) -> str:
 
 
 def login_required(view):
-    """Decorator enforcing MVP login."""
+    """Require a portal identity validated by the outer FastAPI middleware."""
 
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         if not session.get("is_admin"):
-            portal_user = request.cookies.get("__session")
-            if portal_user:
+            portal_user = request.headers.get("X-Portal-User", "").strip().lower()
+            portal_role = request.headers.get("X-Portal-Role", "").strip().lower()
+            if portal_user and portal_role in {"admin", "root"}:
                 session["is_admin"] = True
+                session["portal_user"] = portal_user
             else:
                 # Para chamadas via fetch/API, não redirecionar HTML (isso quebra .json()).
                 wants_json = (

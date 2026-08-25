@@ -60,6 +60,8 @@ const equipmentEmailField = document.getElementById('equipmentEmailField');
 const equipmentFormNotice = document.getElementById('equipmentFormNotice');
 const equipmentLastChangedAt = document.getElementById('equipmentLastChangedAt');
 const equipmentLastChangeReason = document.getElementById('equipmentLastChangeReason');
+const equipmentIdentifier = document.getElementById('equipmentIdentifier');
+const equipmentIdentifierField = document.getElementById('equipmentIdentifierField');
 const equipmentSerial = document.getElementById('equipmentSerial');
 const equipmentPatrimonio = document.getElementById('equipmentPatrimonio');
 const equipmentImei = document.getElementById('equipmentImei');
@@ -89,6 +91,7 @@ const EQUIPMENT_META = {
     supportsImei: true,
     supportsPhoneNumber: true,
     supportsEmail: true,
+    supportsIdentifier: true,
   },
   cameraCopel: {
     label: 'Câmera Copel',
@@ -556,6 +559,7 @@ function normalizeEquipment(value, equipmentType) {
     kind: equipmentType,
     label: meta.label || equipmentType,
     summary: ((raw.summary ?? '') + '').trim(),
+    identifier: meta.supportsIdentifier ? (((raw.identifier ?? raw.identificacao ?? '') + '').trim().toUpperCase()) : '',
     serial: ((raw.serial ?? '') + '').trim(),
     patrimonio: meta.supportsPatrimonio ? (((raw.patrimonio ?? '') + '').trim()) : '',
     imei: meta.supportsImei ? (((raw.imei ?? '') + '').trim()) : '',
@@ -574,7 +578,7 @@ function normalizeEquipment(value, equipmentType) {
 }
 
 function summarizeEquipment(value) {
-  const parts = [value?.serial, value?.patrimonio, value?.imei, value?.phoneNumber, value?.email]
+  const parts = [value?.identifier, value?.serial, value?.patrimonio, value?.imei, value?.phoneNumber, value?.email]
     .map((item) => ((item ?? '') + '').trim())
     .filter(Boolean);
   return parts[0] || '';
@@ -583,6 +587,7 @@ function summarizeEquipment(value) {
 function equipmentSignature(value) {
   const normalized = normalizeEquipment(value || {}, value?.kind || '');
   return JSON.stringify({
+    identifier: normalized.identifier,
     serial: normalized.serial,
     patrimonio: normalized.patrimonio,
     imei: normalized.imei,
@@ -594,7 +599,7 @@ function equipmentSignature(value) {
 function renderEquipmentCards() {
   Object.entries(EQUIPMENT_META).forEach(([equipmentType, meta]) => {
     const equipment = normalizeEquipment(equipmentState?.[equipmentType] || {}, equipmentType);
-    const summary = equipment.summary || summarizeEquipment(equipment) || '';
+    const summary = equipment.identifier || equipment.summary || summarizeEquipment(equipment) || '';
     if (meta.summaryEl) meta.summaryEl.textContent = summary || 'Nenhum equipamento vinculado';
   });
 }
@@ -608,7 +613,7 @@ function renderEquipmentHistoryTable(equipmentType = openEquipmentType) {
   if (!historyItems.length) {
     equipmentHistoryTableBody.innerHTML = `
       <tr>
-        <td colspan="4" class="equipmentHistoryEmptyCell">Nenhuma alteração registrada.</td>
+        <td colspan="5" class="equipmentHistoryEmptyCell">Nenhuma alteração registrada.</td>
       </tr>
     `;
     return;
@@ -616,12 +621,14 @@ function renderEquipmentHistoryTable(equipmentType = openEquipmentType) {
 
   equipmentHistoryTableBody.innerHTML = historyItems.map((entry) => {
     const changedAt = fmtDateTime(entry?.changedAt);
+    const identifier = entry?.after?.identifier || entry?.before?.identifier || '-';
     const serial = entry?.after?.serial || entry?.before?.serial || '-';
     const patrimonio = entry?.after?.patrimonio || entry?.before?.patrimonio || '-';
     const reason = detailValue(entry?.changeReason || 'Sem motivo informado');
     return `
       <tr>
         <td>${escapeHtml(changedAt)}</td>
+        <td>${escapeHtml(identifier)}</td>
         <td>${escapeHtml(serial)}</td>
         <td>${escapeHtml(patrimonio)}</td>
         <td>${escapeHtml(reason)}</td>
@@ -756,6 +763,7 @@ function updateDirtyState() {
 
 function collectEquipmentEditorPayload() {
   return normalizeEquipment({
+    identifier: equipmentIdentifier?.value,
     serial: equipmentSerial?.value,
     patrimonio: equipmentPatrimonio?.value,
     imei: equipmentImei?.value,
@@ -794,12 +802,14 @@ function openEquipmentEditor(equipmentType) {
   equipmentModalSubtitle.textContent = 'Dados do equipamento vinculado à equipe';
   equipmentModalImage.src = meta.image;
   equipmentModalImage.alt = meta.label;
+  if (equipmentIdentifier) equipmentIdentifier.value = current.identifier || '';
   equipmentSerial.value = current.serial || '';
   equipmentPatrimonio.value = current.patrimonio || '';
   equipmentImei.value = current.imei || '';
   equipmentPhone.value = current.phoneNumber || '';
   equipmentEmail.value = current.email || '';
   equipmentChangeReason.value = '';
+  if (equipmentIdentifierField) equipmentIdentifierField.hidden = !meta.supportsIdentifier;
   equipmentPatrimonioField.hidden = !meta.supportsPatrimonio;
   equipmentImeiField.hidden = !meta.supportsImei;
   equipmentPhoneField.hidden = !meta.supportsPhoneNumber;
@@ -1031,7 +1041,7 @@ document.getElementById('btnAddMember')?.addEventListener('click', () => {
   window.addMemberRow('', false, false);
 });
 
-[equipmentSerial, equipmentPatrimonio, equipmentImei, equipmentPhone, equipmentEmail].forEach((field) => {
+[equipmentIdentifier, equipmentSerial, equipmentPatrimonio, equipmentImei, equipmentPhone, equipmentEmail].forEach((field) => {
   field?.addEventListener('input', updateEquipmentDirtyState);
   field?.addEventListener('change', updateEquipmentDirtyState);
 });

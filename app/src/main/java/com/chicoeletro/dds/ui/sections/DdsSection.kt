@@ -62,54 +62,48 @@ fun DdsSection(
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
-        if (isTablet || selectedTraining == null) {
-            val sidebarModifier = if (isTablet) Modifier.width(220.dp) else Modifier.fillMaxSize()
-            LeftSidebarSection(
-                widthDp = if (isTablet) 220 else 0,
-                modifier = sidebarModifier,
-                online = online,
-                isSyncing = syncState.isSyncing,
-                overallTotal = syncState.overallTotal,
-                overallDone = syncState.overallDone,
-                plannedTrainingsTotal = syncState.plannedTrainingsTotal,
-                currentTotal = syncState.currentTotal,
-                currentDone = syncState.currentDone,
-                currentId = syncState.currentId,
-                onHome = onHome,
-                onSyncNow = { syncViewModel.syncNow() },
-                onPresenceReport = onPresenceReport,
-                trainings = visibleTrainings,
-                selectedTraining = selectedTraining,
-                trainingStatus = trainingStatus,
-                onSelectTraining = { tid -> onSelectTraining(tid) },
-                presenceReportAccessed = false,
-                turnoEstado = turnoEstado,
-                turnoNocSs = turnoNocSs,
-                onClickTurno = onClickTurno,
-                equipe = equipe,
-                eletricistas = eletricistas,
-                onClickEquipe = onClickEquipe
-            )
-        }
+        LeftSidebarSection(
+            widthDp = 220,
+            modifier = Modifier.width(220.dp),
+            online = online,
+            isSyncing = syncState.isSyncing,
+            overallTotal = syncState.overallTotal,
+            overallDone = syncState.overallDone,
+            plannedTrainingsTotal = syncState.plannedTrainingsTotal,
+            currentTotal = syncState.currentTotal,
+            currentDone = syncState.currentDone,
+            currentId = syncState.currentId,
+            onHome = onHome,
+            onSyncNow = { syncViewModel.syncNow() },
+            onPresenceReport = onPresenceReport,
+            trainings = visibleTrainings,
+            selectedTraining = selectedTraining,
+            trainingStatus = trainingStatus,
+            onSelectTraining = { tid -> onSelectTraining(tid) },
+            presenceReportAccessed = false,
+            turnoEstado = turnoEstado,
+            turnoNocSs = turnoNocSs,
+            onClickTurno = onClickTurno,
+            equipe = equipe,
+            eletricistas = eletricistas,
+            onClickEquipe = onClickEquipe
+        )
 
-        if (isTablet || selectedTraining != null) {
-            val contentModifier = if (isTablet) Modifier.weight(1f) else Modifier.fillMaxSize()
-            Box(modifier = contentModifier.fillMaxHeight()) {
-                if (selectedTraining != null) {
-                    val viewerVM = remember { ViewerViewModel(context) }
-                    ViewerScreen(
-                        trainingId = selectedTraining,
-                        viewModel = viewerVM,
-                        status = trainingStatus[selectedTraining],
-                        canConclude = canConcludeTrainingId(selectedTraining) && trainingStatus[selectedTraining] == null,
-                        onOpenForm = onOpenForm,
-                        onCloseViewer = { onSelectTraining(null) },
-                        onEnterAgora = { onEnterAgora() },
-                        onStatusChanged = { /* handle */ }
-                    )
-                } else if (isTablet) {
-                    DefaultDdsContent()
-                }
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (selectedTraining != null) {
+                val viewerVM = remember { ViewerViewModel(context) }
+                ViewerScreen(
+                    trainingId = selectedTraining,
+                    viewModel = viewerVM,
+                    status = trainingStatus[selectedTraining],
+                    canConclude = canConcludeTrainingId(selectedTraining) && trainingStatus[selectedTraining] == null,
+                    onOpenForm = onOpenForm,
+                    onCloseViewer = { onSelectTraining(null) },
+                    onEnterAgora = { onEnterAgora() },
+                    onStatusChanged = { /* handle */ }
+                )
+            } else {
+                DefaultDdsContent()
             }
         }
     }

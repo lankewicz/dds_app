@@ -683,17 +683,21 @@ def _normalize_equipment_payload(value: Any, equipment_type: str) -> dict[str, A
     elif not isinstance(value, dict):
         value = {}
 
+    identifier = _clean_str(value.get("identifier") or value.get("identificacao"))
+    if identifier:
+        identifier = identifier.upper()
     serial = _clean_str(value.get("serial"))
     patrimonio = _clean_str(value.get("patrimonio")) if default.get("supportsPatrimonio") else None
     imei = _clean_str(value.get("imei")) if default.get("supportsImei") else None
     phone_number = _clean_str(value.get("phoneNumber") or value.get("numeroTelefone")) if default.get("supportsPhoneNumber") else None
     email = _clean_str(value.get("email"))
-    summary = _clean_str(value.get("summary")) or _summarize_equipment(serial, patrimonio, imei, phone_number, email)
+    summary = _clean_str(value.get("summary")) or _summarize_equipment(identifier, serial, patrimonio, imei, phone_number, email)
 
     return {
         "kind": default["kind"],
         "label": default["label"],
         "summary": summary or "",
+        "identifier": identifier,
         "serial": serial,
         "patrimonio": patrimonio,
         "imei": imei,
@@ -708,8 +712,8 @@ def _normalize_equipment_payload(value: Any, equipment_type: str) -> dict[str, A
     }
 
 
-def _summarize_equipment(serial: str | None, patrimonio: str | None, imei: str | None, phone_number: str | None, email: str | None) -> str:
-    for candidate in (serial, patrimonio, imei, phone_number, email):
+def _summarize_equipment(identifier: str | None, serial: str | None, patrimonio: str | None, imei: str | None, phone_number: str | None, email: str | None) -> str:
+    for candidate in (identifier, serial, patrimonio, imei, phone_number, email):
         text = _clean_str(candidate)
         if text:
             return text
@@ -721,6 +725,7 @@ def _history_equipment_payload(value: dict[str, Any]) -> dict[str, Any]:
         "kind": value.get("kind"),
         "label": value.get("label"),
         "summary": _clean_str(value.get("summary")),
+        "identifier": _clean_str(value.get("identifier")),
         "serial": _clean_str(value.get("serial")),
         "patrimonio": _clean_str(value.get("patrimonio")),
         "imei": _clean_str(value.get("imei")),
@@ -733,6 +738,7 @@ def _history_equipment_payload(value: dict[str, Any]) -> dict[str, Any]:
 
 def _equipment_history_signature(value: dict[str, Any]) -> tuple[Any, ...]:
     return (
+        _clean_str(value.get("identifier")),
         _clean_str(value.get("serial")),
         _clean_str(value.get("patrimonio")),
         _clean_str(value.get("imei")),

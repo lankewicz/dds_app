@@ -1,4 +1,4 @@
-# d:\programas\DDS\dds-webtools\boletim_x_ponto\services\comparacao.py
+﻿# d:\programas\DDS\dds-webtools\boletim_x_ponto\services\comparacao.py
 from __future__ import annotations
 import math
 from typing import Dict, Iterable, List, Tuple
@@ -66,6 +66,8 @@ def _limpa_boletim(valor) -> str:
             s = str(int(float(s)))
         except Exception:
             pass
+    if s.isdigit():
+        s = s.lstrip("0") or "0"
     return s
 
 
@@ -135,6 +137,7 @@ def montar_tres_grids(
     df_p: pd.DataFrame,
     df_d: pd.DataFrame,
     bol_map: Dict[pd.Timestamp, str] | None = None,
+    rotalog_map: Dict[pd.Timestamp, str] | None = None,
 ) -> Tuple[List[List[str]], List[List[str]], List[List[str]], List[str]]:
     def to_map(df: pd.DataFrame) -> Dict[pd.Timestamp, pd.Series]:
         if df is None or df.empty or "Data" not in df.columns:
@@ -166,15 +169,17 @@ def montar_tres_grids(
         # --- Boletim
         row_b = map_b.get(dkey, None)
         if row_b is not None:
-            linha_b = [dstr]
+            linha_b = [dstr, (rotalog_map or {}).get(dkey, "?")]
             if "Boletim" in (df_b.columns if df_b is not None else []):
                 bol_val = row_b.get("Boletim", "")
+                if pd.isna(bol_val) or not str(bol_val).strip():
+                    bol_val = (bol_map or {}).get(dkey, "")
             else:
                 bol_val = (bol_map or {}).get(dkey, "")
             linha_b.append("" if pd.isna(bol_val) else str(bol_val))
             linha_b += _row_as_list(row_b, headers_vis)
         else:
-            linha_b = [dstr]
+            linha_b = [dstr, (rotalog_map or {}).get(dkey, "?")]
             bol_val = (bol_map or {}).get(dkey, "") if bol_map else ""
             linha_b.append(bol_val or "")
             linha_b += [""] * len(headers_vis)
@@ -199,15 +204,33 @@ def montar_tres_grids(
     return dados_b, dados_p, dados_d, headers_vis
 
 
-def dfs_sem_ponto(di_date, df_date, headers_viz: Iterable[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    base = pd.date_range(pd.Timestamp(di_date), pd.Timestamp(df_date), freq="D")
-    df_p_f = pd.DataFrame({"Data": base})
+def dfs_sem_ponto(
+    di_date,
+    df_date,
+    headers_viz: Iterable[str],
+    df_b_f: pd.DataFrame | None = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if df_b_f is not None and not df_b_f.empty and "Data" in df_b_f.columns:
+        base_datas = df_b_f[["Data"]].copy()
+    else:
+        base = pd.date_range(pd.Timestamp(di_date), pd.Timestamp(df_date), freq="D")
+        base_datas = pd.DataFrame({"Data": base})
+    df_p_f = base_datas.copy()
     for h in headers_viz:
         df_p_f[h] = None
 
-    df_d = pd.DataFrame({"Data": base})
-    for h in headers_viz:
-        df_d[h] = 0.0
+    if df_b_f is not None and not df_b_f.empty:
+        available = [h for h in headers_viz if h in df_b_f.columns]
+        df_d = df_b_f[["Data"] + available].copy()
+        for h in headers_viz:
+            if h not in df_d.columns:
+                df_d[h] = 0.0
+            else:
+                df_d[h] = pd.to_numeric(df_d[h], errors="coerce").fillna(0.0)
+    else:
+        df_d = base_datas.copy()
+        for h in headers_viz:
+            df_d[h] = 0.0
 
     return df_p_f, df_d
 
@@ -279,14 +302,14 @@ def montar_triplet_comparacao(
     sem_ponto = False
     if df_ponto is None or df_ponto.empty:
         sem_ponto = True
-        df_p_f, df_d = dfs_sem_ponto(di_date, df_date, HEADERS_VIZ)
+        df_p_f, df_d = dfs_sem_ponto(di_date, df_date, HEADERS_VIZ, df_b_f)
     else:
         df_ponto_sel, _, _ = resolver_base_ponto(
             df_ponto, df_relacao, funcionario, data_ini, data_fim, corte_similaridade=0.75
         )
         if df_ponto_sel is None or df_ponto_sel.empty:
             sem_ponto = True
-            df_p_f, df_d = dfs_sem_ponto(di_date, df_date, HEADERS_VIZ)
+            df_p_f, df_d = dfs_sem_ponto(di_date, df_date, HEADERS_VIZ, df_b_f)
         else:
             df_p = preparar_df_ponto_para_comparacao(df_ponto_sel, data_ini, data_fim)
             inv_map_pto = {v: k for k, v in MAP_PTO.items()}

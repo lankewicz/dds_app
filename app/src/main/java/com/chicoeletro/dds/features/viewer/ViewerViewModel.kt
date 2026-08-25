@@ -77,15 +77,14 @@ class ViewerViewModel(
     private var blockSeq: Long = 0L
 
     private companion object {
-        const val MIN_TOTAL_MS = 120_000L      // 2 minutos
-        const val MIN_FIRST_SLIDE_MS = 5_000L //5s primeiro Slide
+        const val MIN_TOTAL_MS = 120_000L      // 2 minutos de tempo total mínimo
+        const val MIN_FIRST_SLIDE_MS = 5_000L // 5s no primeiro Slide
         const val MIN_PER_SLIDE_MS = 10_000L   // 10s por slide
-        const val MIN_OTHER_SLIDES_MS = 10_000L // 10s por slide
+        const val MIN_OTHER_SLIDES_MS = 10_000L // 10s nos demais slides
         const val MAX_SESSION_MS = 10 * 60 * 1000L // 10 min (Inatividade ou Total)
         const val WARNING_START_MS = 8 * 60 * 1000L // 8 min
 
-        // Tempo de vida da mensagem na barra de status (evita “ficar preso” e reduz poluição visual).
-        // Ajuste conforme UX desejada.
+        // Tempo de vida da mensagem na barra de status
         const val BLOCK_MESSAGE_TTL_MS = 10_000L
     }
 
@@ -349,7 +348,8 @@ class ViewerViewModel(
         fun secondsToAdvance(): Int {
             if (!_ui.value.started || _ui.value.invalidated) return Int.MAX_VALUE
             val dwell = currentSlideDwellMs()
-            val remain = ((MIN_PER_SLIDE_MS - dwell + 999) / 1000).toInt()
+            val required = minPerSlideMs(current)
+            val remain = ((required - dwell + 999) / 1000).toInt()
             return kotlin.math.max(0, remain)
         }
         fun canAdvance(): Boolean = secondsToAdvance() == 0

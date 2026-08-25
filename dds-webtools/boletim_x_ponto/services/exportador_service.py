@@ -6,6 +6,7 @@ import math
 import zipfile
 import datetime as dt
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 import pandas as pd
@@ -206,6 +207,30 @@ def _ult5_contratos(s):
 # EXPORTADORES INDIVIDUAIS
 # ============================================================
 
+def _align_comparison_frames(
+    df_b: pd.DataFrame,
+    df_p: pd.DataFrame,
+    df_d: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    frames = [frame.copy() for frame in (df_b, df_p, df_d)]
+    dates = pd.DatetimeIndex([])
+    for frame in frames:
+        if not frame.empty and "Data" in frame.columns:
+            frame["Data"] = pd.to_datetime(
+                frame["Data"], errors="coerce"
+            ).dt.floor("D")
+            dates = dates.union(pd.DatetimeIndex(frame["Data"].dropna()))
+    base = pd.DataFrame({"Data": dates.sort_values()})
+    aligned = []
+    for frame in frames:
+        if frame.empty or "Data" not in frame.columns:
+            aligned.append(base.copy())
+            continue
+        frame = frame.drop_duplicates("Data", keep="last")
+        aligned.append(base.merge(frame, on="Data", how="left"))
+    return tuple(aligned)
+
+
 def exportar_comparacao_individual_excel(
     df_b: pd.DataFrame,
     df_p: pd.DataFrame,
@@ -216,11 +241,8 @@ def exportar_comparacao_individual_excel(
     format_hhmm: bool = False
 ) -> bytes:
     # 1. Alinha dataframes
-    df_b = df_b.sort_values("Data").reset_index(drop=True)
-    df_p = df_p.sort_values("Data").reset_index(drop=True)
-    df_d = df_d.sort_values("Data").reset_index(drop=True)
-
-    headers_horas = [h for h in HEADERS_VIZ if h in df_b.columns]
+    df_b, df_p, df_d = _align_comparison_frames(df_b, df_p, df_d)
+    headers_horas = [h for h in HEADERS_VIZ if any(h in frame.columns for frame in (df_b, df_p, df_d))]
     max_col = 1 + len(headers_horas) * 3
 
     # Monta df final em formato numérico para somatório preciso
@@ -228,7 +250,7 @@ def exportar_comparacao_individual_excel(
     df_final["Data"] = df_b["Data"].dt.strftime("%d/%m/%Y")
     
     for h in headers_horas:
-        df_final[f"Boletim {h}"] = pd.to_numeric(df_b[h], errors="coerce").fillna(0.0)
+        df_final[f"Boletim {h}"] = pd.to_numeric(df_b[h], errors="coerce").fillna(0.0) if h in df_b.columns else 0.0
     for h in headers_horas:
         df_final[f"Ponto {h}"] = pd.to_numeric(df_p[h], errors="coerce").fillna(0.0) if h in df_p.columns else 0.0
     for h in headers_horas:
@@ -373,17 +395,14 @@ def exportar_comparacao_individual_pdf(
     dt_fim: datetime,
     format_hhmm: bool = False
 ) -> bytes:
-    df_b = df_b.sort_values("Data").reset_index(drop=True)
-    df_p = df_p.sort_values("Data").reset_index(drop=True)
-    df_d = df_d.sort_values("Data").reset_index(drop=True)
-
-    headers_horas = [h for h in HEADERS_VIZ if h in df_b.columns]
+    df_b, df_p, df_d = _align_comparison_frames(df_b, df_p, df_d)
+    headers_horas = [h for h in HEADERS_VIZ if any(h in frame.columns for frame in (df_b, df_p, df_d))]
 
     df_final = pd.DataFrame()
     df_final["Data"] = df_b["Data"].dt.strftime("%d/%m/%Y")
     
     for h in headers_horas:
-        df_final[f"Boletim {h}"] = pd.to_numeric(df_b[h], errors="coerce").fillna(0.0)
+        df_final[f"Boletim {h}"] = pd.to_numeric(df_b[h], errors="coerce").fillna(0.0) if h in df_b.columns else 0.0
     for h in headers_horas:
         df_final[f"Ponto {h}"] = pd.to_numeric(df_p[h], errors="coerce").fillna(0.0) if h in df_p.columns else 0.0
     for h in headers_horas:
@@ -970,6 +989,39 @@ def exportar_totais_consolidados_zip(
             zf.writestr("Totais_Consolidados_por_Contrato_Diferencas.xlsx", dif_bytes)
 
     return zip_buffer.getvalue()
+
+
+def exportar_totais_separados_por_contrato_zip(
+    service: Any,
+    lista_contratos: List[str],
+    dt_ini: datetime,
+    dt_fim: datetime,
+    format_hhmm: bool = False,
+) -> bytes:
+    """Gera um par de planilhas (totais e diferenças) para cada contrato."""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as destination:
+        for contrato in sorted({str(c).strip() for c in lista_contratos if str(c).strip()}):
+            payload = exportar_totais_consolidados_zip(
+                service, [contrato], dt_ini, dt_fim, format_hhmm
+            )
+            safe_contract = re.sub(r"[^A-Za-z0-9_-]+", "_", contrato).strip("_") or "contrato"
+            with zipfile.ZipFile(io.BytesIO(payload), "r") as source:
+                for member in source.infolist():
+                    if member.is_dir():
+                        continue
+                    original = Path(member.filename)
+                    if original.suffix.lower() == ".xlsx":
+                        filename = f"{original.stem}_{safe_contract}{original.suffix}"
+                    else:
+                        filename = f"{safe_contract}_{original.name}"
+                    destination.writestr(filename, source.read(member))
+        if not destination.namelist():
+            destination.writestr(
+                "sem_dados.txt",
+                "Nenhum dado encontrado para o período/contratos selecionados.",
+            )
+    return output.getvalue()
 
 def eh_negativo_str(val) -> bool:
     if val is None:

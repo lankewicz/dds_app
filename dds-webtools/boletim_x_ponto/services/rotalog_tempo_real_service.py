@@ -7,6 +7,7 @@ estruturando as Ordens de Serviço (SS) com tratamento de Protocolos (removendo 
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 import re
 import time
@@ -18,6 +19,12 @@ from boletim_x_ponto.services.rotalog_crawler_service import CrawlerRotalog
 
 URL_BASE = "https://www.copel.com/rtlweb"
 URL_TEMPO_REAL = f"{URL_BASE}/paginas/tempoReal"
+logger = logging.getLogger(__name__)
+
+
+def equipe_codigo_valido(value: str | None) -> bool:
+    """Rejeita cabeçalhos/placeholders como ``veiculo?`` da timeline."""
+    return bool(re.fullmatch(r"E[A-Z0-9]{3,7}", str(value or "").strip().upper()))
 
 
 def limpar_protocolo(protocolo_raw: str | None) -> str:
@@ -85,7 +92,112 @@ def parse_group_string(group_raw: str) -> dict[str, str]:
     }
 
 
-def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativas: int = 3) -> list[dict[str, typing.Any]]:
+def resolver_equipe_group(
+    meta: dict[str, str],
+    identificador_para_equipe: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Resolve grupos ``veiculo?-E...`` e ``veiculo?-CA...`` sem criar placeholders."""
+    resolved = dict(meta)
+    equipe_original = str(meta.get("equipe_codigo") or "").strip().upper()
+    identificador = str(meta.get("veiculo") or "").strip().upper().replace(" ", "")
+    resolved["equipe_codigo_original"] = equipe_original
+    resolved["identificador_equipamento"] = identificador
+    resolved["origem_resolucao"] = "PREFIXO_EQUIPE"
+
+    if equipe_codigo_valido(equipe_original):
+        resolved["equipe_codigo"] = equipe_original
+        return resolved
+    if equipe_codigo_valido(identificador):
+        resolved["equipe_codigo"] = identificador
+        resolved["origem_resolucao"] = "VEICULO_COM_PREFIXO_EQUIPE"
+        return resolved
+
+    lookup = {str(key).strip().upper().replace(" ", ""): str(value).strip().upper()
+              for key, value in (identificador_para_equipe or {}).items()}
+    equipe_mapeada = lookup.get(identificador)
+    if equipe_codigo_valido(equipe_mapeada):
+        resolved["equipe_codigo"] = equipe_mapeada
+        resolved["origem_resolucao"] = "IDENTIFICACAO_TABLET"
+        return resolved
+
+    resolved["equipe_codigo"] = ""
+    resolved["origem_resolucao"] = "NAO_RELACIONADO"
+    return resolved
+
+
+def consolidar_turno_por_contexto(
+    marcadores_t: list[dict[str, typing.Any]],
+    eventos_servico_ms: list[int],
+) -> dict[str, typing.Any]:
+    """Classifica o último T pela posição em relação à série de serviços.
+
+    T antes de serviços abre o turno; T depois de serviços fecha. A ausência
+    de T ou de contexto suficiente é desconhecida e nunca significa fechamento.
+    """
+    markers = sorted(
+        (item for item in marcadores_t if item.get("start")),
+        key=lambda item: int(item["start"]),
+    )
+    services = sorted(int(value) for value in eventos_servico_ms if value)
+    result = {
+        "aberto": False,
+        "inicio_ms": None,
+        "inicio_iso": None,
+        "fim_ms": None,
+        "fim_iso": None,
+        "classificacao": "DESCONHECIDO",
+    }
+    if not markers or not services:
+        return result
+
+    last_t = int(markers[-1]["start"])
+    has_service_after = any(value > last_t for value in services)
+    has_service_before = any(value < last_t for value in services)
+
+    if has_service_after:
+        result.update({
+            "aberto": True,
+            "inicio_ms": last_t,
+            "inicio_iso": _convert_ms_to_iso(last_t),
+            "classificacao": "ABERTO",
+        })
+        return result
+
+    if has_service_before:
+        opening_ms = None
+        for marker in reversed(markers[:-1]):
+            candidate = int(marker["start"])
+            if any(candidate < value < last_t for value in services):
+                opening_ms = candidate
+                break
+        result.update({
+            "inicio_ms": opening_ms,
+            "inicio_iso": _convert_ms_to_iso(opening_ms),
+            "fim_ms": last_t,
+            "fim_iso": _convert_ms_to_iso(last_t),
+            "classificacao": "FECHADO",
+        })
+    return result
+
+
+def intervalo_ativo_por_contexto(
+    intervalo: dict[str, typing.Any],
+    eventos_servico_ms: list[int],
+) -> bool:
+    """Mantém intervalo somente até surgir uma atividade de serviço posterior."""
+    if not intervalo.get("em_intervalo"):
+        return False
+    inicio = intervalo.get("inicio_ms")
+    if not isinstance(inicio, int):
+        return False
+    return not any(int(evento) > inicio for evento in eventos_servico_ms if evento)
+
+
+def extrair_dados_tempo_real(
+    crawler: CrawlerRotalog | None = None,
+    max_tentativas: int = 3,
+    identificador_para_equipe: dict[str, str] | None = None,
+) -> list[dict[str, typing.Any]]:
     """
     Realiza a requisição autenticada à página /paginas/tempoReal do Rotalog,
     parseia o payload de script JavaScript da timeline (PrimeFaces) e do mapa (Leaflet),
@@ -142,7 +254,16 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
     for item in raw_items:
         group_raw = item["group"]
         if group_raw not in equipas_map:
-            meta = parse_group_string(group_raw)
+            meta = resolver_equipe_group(
+                parse_group_string(group_raw), identificador_para_equipe
+            )
+            if not equipe_codigo_valido(meta["equipe_codigo"]):
+                logger.warning(
+                    "Grupo Rotalog sem relação de equipe: %s (identificador=%s)",
+                    group_raw,
+                    meta.get("identificador_equipamento") or "-",
+                )
+                continue
             equipas_map[group_raw] = {
                 "group_raw": group_raw,
                 "equipe_codigo": meta["equipe_codigo"],
@@ -150,6 +271,8 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
                 "colaborador": meta["colaborador"],
                 "status_conexao": meta["status_conexao"],
                 "is_online": meta["is_online"],
+                "origem_resolucao": meta.get("origem_resolucao"),
+                "identificador_equipamento": meta.get("identificador_equipamento"),
                 "turno_marcadores_t": [],
                 "turno": {
                     "aberto": False,
@@ -167,10 +290,13 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
                 "bdo_list": [],
                 "ss_executadas": [],
                 "ss_em_andamento": [],
-                "ss_pendentes": []
+                "ss_pendentes": [],
+                "eventos_servico_ms": [],
             }
 
-        eq_dict = equipas_map[group_raw]
+        eq_dict = equipas_map.get(group_raw)
+        if eq_dict is None:
+            continue
         cls = item["className"]
         cnt = item["content"]
 
@@ -183,13 +309,15 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
 
         # 2. Marcador de Intervalo
         elif cnt == "INTERVALO" or "intervalo" in cls.lower():
-            eq_dict["intervalo"]["em_intervalo"] = True
-            eq_dict["intervalo"]["inicio_ms"] = item["start"]
-            if isinstance(item["end"], int):
-                eq_dict["intervalo"]["fim_ms"] = item["end"]
+            inicio_atual = eq_dict["intervalo"].get("inicio_ms")
+            if not isinstance(inicio_atual, int) or item["start"] >= inicio_atual:
+                eq_dict["intervalo"]["em_intervalo"] = True
+                eq_dict["intervalo"]["inicio_ms"] = item["start"]
+                eq_dict["intervalo"]["fim_ms"] = item["end"] if isinstance(item["end"], int) else None
 
         # 3. SSs Executadas (BDO)
         elif "Executado" in cls:
+            eq_dict["eventos_servico_ms"].append(item["start"])
             prot_limpo = limpar_protocolo(cnt)
             categoria = "EMERGENCIA" if "Emergencia" in cls else "COMERCIAL"
             hora_inicio = _convert_ms_to_hora(item["start"])
@@ -218,6 +346,7 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
 
         # 4. SSs em Deslocamento ou Execução
         elif "EmDeslocamento" in cls or "EmExecucao" in cls:
+            eq_dict["eventos_servico_ms"].append(item["start"])
             prot_limpo = limpar_protocolo(cnt)
             status_str = "DESLOCAMENTO" if "EmDeslocamento" in cls else "EXECUCAO"
             categoria = "EMERGENCIA" if "Emergencia" in cls else "COMERCIAL"
@@ -249,29 +378,23 @@ def extrair_dados_tempo_real(crawler: CrawlerRotalog | None = None, max_tentativ
 
     resultado = list(equipas_map.values())
     for eq in resultado:
-        t_list = sorted(eq["turno_marcadores_t"], key=lambda x: x["start"])
-        if t_list:
-            primeiro_t = t_list[0]
-            eq["turno"]["aberto"] = True
-            eq["turno"]["inicio_ms"] = primeiro_t["start"]
-            eq["turno"]["inicio_iso"] = _convert_ms_to_iso(primeiro_t["start"])
+        eventos_servico_ms = eq.pop("eventos_servico_ms", [])
+        turno_contextual = consolidar_turno_por_contexto(
+            eq["turno_marcadores_t"], eventos_servico_ms
+        )
+        eq["turno"] = {key: value for key, value in turno_contextual.items() if key != "classificacao"}
+        eq["intervalo"]["em_intervalo"] = intervalo_ativo_por_contexto(
+            eq["intervalo"], eventos_servico_ms
+        )
 
-            if len(t_list) >= 2:
-                ultimo_t = t_list[-1]
-                if (ultimo_t["start"] - primeiro_t["start"]) > 600_000:
-                    eq["turno"]["fim_ms"] = ultimo_t["start"]
-                    eq["turno"]["fim_iso"] = _convert_ms_to_iso(ultimo_t["start"])
-
-        if eq["turno"]["inicio_ms"] and not eq["turno"]["fim_ms"]:
+        if turno_contextual["classificacao"] == "ABERTO":
             if eq["intervalo"]["em_intervalo"]:
                 eq["estado_consolidado"] = "INTERVALO"
-            elif eq["atividade_atual"] and eq["atividade_atual"]["status"] == "DESLOCAMENTO":
-                eq["estado_consolidado"] = "DESLOCAMENTO_ESPECIAL"
             else:
                 eq["estado_consolidado"] = "ABERTO"
-        elif eq["turno"]["inicio_ms"] and eq["turno"]["fim_ms"]:
+        elif turno_contextual["classificacao"] == "FECHADO":
             eq["estado_consolidado"] = "FECHADO"
         else:
-            eq["estado_consolidado"] = "FECHADO"
+            eq["estado_consolidado"] = "DESCONHECIDO"
 
     return resultado

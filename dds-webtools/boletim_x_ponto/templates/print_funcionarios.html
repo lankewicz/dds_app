@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Comparações — {{ contrato }}</title>
+  <style>
+    @page { size: A4 landscape; margin: 7mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #111; background: #fff; }
+    .toolbar { position: sticky; top: 0; z-index: 5; padding: 10px; background: #eef2f7; border-bottom: 1px solid #bbb; }
+    .toolbar button { padding: 8px 14px; cursor: pointer; }
+    .report { break-after: page; page-break-after: always; }
+    .report:last-child { break-after: auto; page-break-after: auto; }
+    .title { display: flex; justify-content: space-between; align-items: end; margin-bottom: 5px; }
+    h1 { margin: 0; font-size: 14px; }
+    .meta { font-size: 9px; color: #444; text-align: right; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 6.5px; }
+    th, td { border: 1px solid #aaa; padding: 2px 2px; text-align: right; white-space: nowrap; overflow: hidden; }
+    th { background: #e5e7eb; text-align: center; }
+    td:first-child, td:nth-child(2), td:nth-child(3) { text-align: center; }
+    .boletim { background: #dbeafe; }
+    .ponto { background: #dcfce7; }
+    .diferenca { background: #ffedd5; }
+    .negative { color: #c00000; font-weight: bold; }
+    .totals td { background: #111; color: #fff; font-weight: bold; }
+    .empty { padding: 30px; text-align: center; }
+    @media print { .toolbar { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Imprimir / Salvar em PDF</button>
+    <span>{{ reports|length }} funcionário(s) — contrato {{ contrato }}</span>
+  </div>
+
+  {% for report in reports %}
+  <section class="report">
+    <div class="title">
+      <h1>{{ report.employee }}</h1>
+      <div class="meta">
+        Contrato: {{ contrato }} · Período: {{ data_ini }} a {{ data_fim }}<br>
+        Registro: {{ report.data.registro }} · Boletins: {{ report.data.boletins|join(', ') or '-' }}
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">Data</th><th rowspan="2">ROTALOG</th><th rowspan="2">Boletim</th>
+          <th colspan="{{ report.data.headers|length }}" class="boletim">Boletim</th>
+          <th colspan="{{ report.data.headers|length }}" class="ponto">Ponto</th>
+          <th colspan="{{ report.data.headers|length }}" class="diferenca">Diferença</th>
+        </tr>
+        <tr>
+          {% for header in report.data.headers %}<th class="boletim">{{ header }}</th>{% endfor %}
+          {% for header in report.data.headers %}<th class="ponto">{{ header }}</th>{% endfor %}
+          {% for header in report.data.headers %}<th class="diferenca">{{ header }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row_b in report.data.grid_boletim %}
+          {% set row_p = report.data.grid_ponto[loop.index0] %}
+          {% set row_d = report.data.grid_diferenca[loop.index0] %}
+          <tr>
+            <td>{{ row_b[0] }}</td><td>{{ row_b[1] }}</td><td>{{ row_b[2] }}</td>
+            {% for value in row_b[3:] %}<td>{{ value }}</td>{% endfor %}
+            {% for value in row_p[1:] %}<td>{{ value }}</td>{% endfor %}
+            {% for value in row_d[1:] %}<td class="{% if (value|string|trim)[:1] == '-' %}negative{% endif %}">{{ value }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+        <tr class="totals">
+          <td>TOTAIS</td><td></td><td></td>
+          {% for value in report.data.totais_boletim[3:] %}<td>{{ value }}</td>{% endfor %}
+          {% for value in report.data.totais_ponto[1:] %}<td>{{ value }}</td>{% endfor %}
+          {% for value in report.data.totais_diferenca[1:] %}<td>{{ value }}</td>{% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </section>
+  {% else %}
+    <div class="empty">Nenhum funcionário encontrado para o filtro informado.</div>
+  {% endfor %}
+</body>
+</html>

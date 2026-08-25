@@ -17,11 +17,21 @@ from boletim_x_ponto.services.dataframe_utils import (
 from boletim_x_ponto.services.comparacao import montar_triplet_comparacao, montar_tres_grids, map_boletim_por_data
 from boletim_x_ponto.services.leitor_pdf import extrair_dados_pdf, parse_horas_funcionarios, extrair_var_dataset
 from boletim_x_ponto.services.leitor_ponto import extrair_ponto_dataframe
+from boletim_x_ponto.services.parquet_repository import (
+    ImportStats,
+    ParquetStorageRepository,
+)
+from boletim_x_ponto.services.rotalog_service import mapear_presenca_funcionario_por_data
+from boletim_x_ponto.services.veiculos_service import (
+    construir_visao_veiculo,
+    listar_veiculos,
+)
 
 class BoletimXPontoService:
-    def __init__(self):
+    def __init__(self, repository: ParquetStorageRepository | None = None):
         self.tipos_texto_boletim = ["BOLETIM", "Contrato", "Registro", "Funcionário"]
         self.tipos_data_boletim = ["DATA", "Data de Medição"]
+        self.repository = repository or ParquetStorageRepository()
 
         self.df_relacao_nomes = pd.DataFrame()
 
@@ -33,6 +43,10 @@ class BoletimXPontoService:
         return db.collection("webtools").document("boletim_x_ponto")
 
     def load_data(self):
+        mappings = self.repository.read("relacao_nomes")
+        self.df_relacao_nomes = self._sanear_relacao_nomes(mappings)
+        return
+
         try:
             docs = self.parent_doc_ref.collection("mappings").stream()
             records = [doc.to_dict() for doc in docs]
@@ -104,6 +118,17 @@ class BoletimXPontoService:
         )
 
     def get_date_limits(self) -> Tuple[str, str]:
+        summaries = [
+            self.repository.summary("boletim"),
+            self.repository.summary("ponto"),
+        ]
+        minimums = [item.get("date_min") for item in summaries if item.get("date_min")]
+        maximums = [item.get("date_max") for item in summaries if item.get("date_max")]
+        if minimums and maximums:
+            return min(minimums), max(maximums)
+        today = pd.Timestamp.now().strftime("%Y-%m-%d")
+        return today, today
+
         try:
             meta = self.parent_doc_ref.get()
             if meta.exists:
@@ -115,7 +140,22 @@ class BoletimXPontoService:
         today = pd.Timestamp.now().strftime("%Y-%m-%d")
         return today, today
 
-    def get_contracts(self) -> List[str]:
+    def get_contracts(
+        self, data_ini: str | None = None, data_fim: str | None = None
+    ) -> List[str]:
+        if not data_ini or not data_fim:
+            return list(self.repository.summary("boletim").get("contracts", []))
+
+        df = self.repository.read("boletim", data_ini, data_fim)
+        if df.empty or "Contrato" not in df.columns:
+            return []
+        return sorted({
+            text
+            for value in df["Contrato"].dropna()
+            if (text := str(value).strip())
+            and text.lower() not in {"nan", "none"}
+        })
+
         try:
             meta = self.parent_doc_ref.get()
             if meta.exists:
@@ -126,6 +166,47 @@ class BoletimXPontoService:
         return []
 
     def get_employees(self, data_ini: str, data_fim: str, contrato: str | None = None) -> List[str]:
+        df = self.repository.read("boletim", data_ini, data_fim)
+        if df.empty or "Funcionário" not in df.columns:
+            return []
+        if contrato and "Contrato" in df.columns:
+            df = df[df["Contrato"].astype(str).str.strip() == str(contrato).strip()]
+        return sorted({
+            str(value).strip()
+            for value in df["Funcionário"].dropna()
+            if str(value).strip()
+        })
+
+    def get_vehicles(
+        self, data_ini: str, data_fim: str, contrato: str | None = None
+    ) -> List[str]:
+        equipes = self.repository.read("rotalog_equipes", data_ini, data_fim)
+        eventos = self.repository.read("rotalog_eventos", data_ini, data_fim)
+        return listar_veiculos(equipes, eventos, contrato)
+
+    def get_vehicle_comparison(
+        self,
+        veiculo: str,
+        data_ini: str,
+        data_fim: str,
+        contrato: str | None = None,
+    ) -> Dict[str, Any]:
+        equipes = self.repository.read("rotalog_equipes", data_ini, data_fim)
+        eventos = self.repository.read("rotalog_eventos", data_ini, data_fim)
+        boletim = self.repository.read("boletim", data_ini, data_fim)
+        ponto = self.repository.read("ponto", data_ini, data_fim)
+        return construir_visao_veiculo(
+            equipes,
+            eventos,
+            boletim,
+            ponto,
+            self.df_relacao_nomes,
+            veiculo,
+            data_ini,
+            data_fim,
+            contrato,
+        )
+
         try:
             di = pd.to_datetime(data_ini).strftime("%Y-%m-%d")
             dfim = pd.to_datetime(data_fim).strftime("%Y-%m-%d")
@@ -148,6 +229,25 @@ class BoletimXPontoService:
             return []
 
     def _get_employee_dataframes(self, employee: str, data_ini: str, data_fim: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        df_b = self.repository.read("boletim", data_ini, data_fim)
+        if df_b.empty:
+            df_b = self._criar_empty_boletim_df()
+        else:
+            df_b = self._padronizar_tipos_boletim(df_b)
+            if "Funcionário" in df_b.columns:
+                df_b = df_b[
+                    df_b["Funcionário"].astype(str).str.strip() == str(employee).strip()
+                ].copy()
+
+        df_p_all = self.repository.read("ponto", data_ini, data_fim)
+        if df_p_all.empty:
+            return df_b, self._criar_empty_ponto_df()
+        df_p_all["Data"] = pd.to_datetime(df_p_all["Data"], errors="coerce")
+        df_p, _, _ = resolver_base_ponto(
+            df_p_all, self.df_relacao_nomes, employee, data_ini, data_fim
+        )
+        return df_b, df_p if not df_p.empty else self._criar_empty_ponto_df()
+
         di = pd.to_datetime(data_ini).strftime("%Y-%m-%d")
         dfim = pd.to_datetime(data_fim).strftime("%Y-%m-%d")
         
@@ -238,9 +338,11 @@ class BoletimXPontoService:
 
         dates_mes = pd.date_range(di, dfim, freq="D").strftime("%d/%m/%Y").tolist()
         bol_map = map_boletim_por_data(df_b_emp, employee, di, dfim)
+        df_rotalog = self.repository.read("rotalog_equipes", di, dfim)
+        rotalog_map = mapear_presenca_funcionario_por_data(df_rotalog, employee)
 
         grid_b, grid_p, grid_d, headers_vis = montar_tres_grids(
-            dates_mes, df_b_f, df_p_f, df_d, bol_map
+            dates_mes, df_b_f, df_p_f, df_d, bol_map, rotalog_map
         )
 
         # Se format for HH:MM, precisamos formatar os grids de decimal para HH:MM
@@ -251,8 +353,8 @@ class BoletimXPontoService:
             grid_p_hhmm = []
             grid_d_hhmm = []
             for row in grid_b:
-                new_row = row[:2]
-                for val in row[2:]:
+                new_row = row[:3]
+                for val in row[3:]:
                     new_row.append(self._decimal_to_hhmm_str(val))
                 grid_b_hhmm.append(new_row)
             for row in grid_p:
@@ -268,7 +370,7 @@ class BoletimXPontoService:
             grid_b, grid_p, grid_d = grid_b_hhmm, grid_p_hhmm, grid_d_hhmm
 
         # Calcula totais
-        totais_b = ["TOTAIS", ""]
+        totais_b = ["TOTAIS", "", ""]
         totais_p = ["TOTAIS"]
         totais_d = ["TOTAIS"]
 
@@ -298,7 +400,7 @@ class BoletimXPontoService:
             return tots
 
         if grid_b:
-            totais_b += somar_col(grid_b, 2)
+            totais_b += somar_col(grid_b, 3)
         if grid_p:
             totais_p += somar_col(grid_p, 1)
         if grid_d:
@@ -315,6 +417,7 @@ class BoletimXPontoService:
             "registro": registro or "-",
             "boletins": sorted(list(boletins_set)),
             "sem_ponto": sem_ponto
+            ,"rotalog_disponivel": bool(rotalog_map)
         }
 
     def _decimal_to_hhmm_str(self, val: Any) -> str:
@@ -360,6 +463,16 @@ class BoletimXPontoService:
         return self.df_relacao_nomes.to_dict(orient="records")
 
     def update_name_mapping(self, nome_boletim: str, nome_ponto_mapeado: str, cpf_ponto: str, pis_ponto: str):
+        mapping = pd.DataFrame([{
+            "Nome_Boletim": str(nome_boletim).strip(),
+            "Nome_Ponto_Mapeado": str(nome_ponto_mapeado).strip(),
+            "CPF_Ponto": str(cpf_ponto).strip(),
+            "PIS_Ponto": str(pis_ponto).strip(),
+        }])
+        result = self.repository.upsert("relacao_nomes", mapping)
+        self.load_data()
+        return result
+
         nome_boletim = str(nome_boletim).strip()
         nome_ponto_mapeado = str(nome_ponto_mapeado).strip()
         cpf_ponto = str(cpf_ponto).strip()
@@ -377,6 +490,14 @@ class BoletimXPontoService:
         self.load_data()
 
     def get_boletins_df(self, lista_contratos: List[str], dt_ini: str, dt_fim: str) -> pd.DataFrame:
+        df = self.repository.read("boletim", dt_ini, dt_fim)
+        if df.empty:
+            return self._criar_empty_boletim_df()
+        if lista_contratos and "Contrato" in df.columns:
+            wanted = {str(value).strip() for value in lista_contratos}
+            df = df[df["Contrato"].astype(str).str.strip().isin(wanted)].copy()
+        return self._padronizar_tipos_boletim(df)
+
         di = pd.to_datetime(dt_ini).strftime("%Y-%m-%d")
         dfim = pd.to_datetime(dt_fim).strftime("%Y-%m-%d")
         
@@ -397,7 +518,9 @@ class BoletimXPontoService:
             
         return self._padronizar_tipos_boletim(df)
 
-    def upload_boletim(self, file_bytes: bytes, filename: str) -> int:
+    def upload_boletim(self, file_bytes: bytes, filename: str) -> ImportStats:
+        return self._upload_boletim_parquet(file_bytes, filename)
+
         texto, cabecalho = extrair_dados_pdf(file_bytes)
         boletim = str(cabecalho.get("BOLETIM", "")).strip()
         if not boletim:
@@ -576,7 +699,9 @@ class BoletimXPontoService:
         except Exception as e:
             print(f"[ERRO] Falha ao salvar relação contrato-boletim no Firestore: {e}")
 
-    def upload_ponto(self, file_bytes: bytes, filename: str) -> int:
+    def upload_ponto(self, file_bytes: bytes, filename: str) -> ImportStats:
+        return self._upload_ponto_parquet(file_bytes, filename)
+
         df = extrair_ponto_dataframe(file_bytes, filename)
         if df is None or df.empty:
             return 0
@@ -697,3 +822,108 @@ class BoletimXPontoService:
         except Exception as e:
             print(f"Erro ao calcular totais para '{funcionario_nome}': {e}")
             return None
+
+
+    def _upload_boletim_parquet(
+        self, file_bytes: bytes, filename: str
+    ) -> ImportStats:
+        texto, cabecalho = extrair_dados_pdf(file_bytes)
+        boletim = str(cabecalho.get("BOLETIM", "")).strip()
+        if not boletim:
+            raise ValueError(
+                f"Não foi possível extrair o número do boletim: {filename}"
+            )
+
+        df = parse_horas_funcionarios(texto)
+        if df is None or df.empty:
+            return ImportStats()
+        df = df.copy()
+        df["BOLETIM"] = boletim
+        df["Data de Medição"] = cabecalho.get("Data de Medição")
+        df["Contrato"] = str(cabecalho.get("Contrato") or "").strip()
+        df = self._padronizar_tipos_boletim(df)
+        df = df.rename(columns={
+            "HN": "H.N.",
+            "HE": "H.E.",
+            "HED": "H.E.D.",
+            "HEN": "H.E.N.",
+            "HEND": "H.E.N.D.",
+            "SA": "S.A.",
+        })
+        df = df.dropna(subset=["DATA", "Funcionário"]).copy()
+        df["chave_unica"] = self._criar_chave_unica_boletim(df)
+        stats = self.repository.upsert("boletim", df)
+
+        contrato = str(cabecalho.get("Contrato") or "").strip()
+        data_medicao = pd.to_datetime(
+            cabecalho.get("Data de Medição"), errors="coerce", dayfirst=True
+        )
+        if contrato and pd.notna(data_medicao):
+            relation = pd.DataFrame([{
+                "Contrato": contrato,
+                "Boletim": boletim,
+                "Ano": int(data_medicao.year),
+                "Mes": int(data_medicao.month),
+                "Data_Medicao": data_medicao,
+            }])
+            self.repository.upsert("contrato_boletim", relation)
+
+        try:
+            df_var = extrair_var_dataset(
+                file_bytes, set_arquivo=None, incluir_termo=True
+            )
+            if df_var is not None and not df_var.empty:
+                df_var = df_var.copy()
+                df_var["data_medicao"] = pd.to_datetime(
+                    df_var["data_medicao"], errors="coerce", dayfirst=True
+                )
+                df_var["competencia"] = df_var["data_medicao"].dt.strftime("%Y-%m")
+                for column in (
+                    "contrato", "boletim", "var_code",
+                    "descrição", "termo", "competencia",
+                ):
+                    if column in df_var.columns:
+                        df_var[column] = df_var[column].astype("string").str.strip()
+                for column in ("US", "qtde", "valor_us"):
+                    if column in df_var.columns:
+                        df_var[column] = pd.to_numeric(
+                            df_var[column], errors="coerce"
+                        ).astype("float64")
+                df_var["us_global"] = pd.to_numeric(
+                    df_var.get("valor_us"), errors="coerce"
+                )
+                df_var["_chave"] = (
+                    df_var["boletim"].fillna("").astype(str) + "|"
+                    + df_var["competencia"].fillna("").astype(str) + "|"
+                    + df_var["var_code"].fillna("").astype(str) + "|"
+                    + df_var["US"].astype(str) + "|"
+                    + df_var["qtde"].astype(str)
+                )
+                self.repository.upsert("boletim_var", df_var)
+        except Exception as error:
+            print(f"[AVISO] Falha ao processar boletim_var: {error}")
+
+        return stats
+
+    def _upload_ponto_parquet(
+        self, file_bytes: bytes, filename: str
+    ) -> ImportStats:
+        df = extrair_ponto_dataframe(file_bytes, filename)
+        parse_ignored = int(df.attrs.get("registros_ignorados", 0))
+        parse_total = int(df.attrs.get("registros_lidos", len(df)))
+        if df is None or df.empty:
+            return ImportStats(processed=parse_total, ignored=parse_total)
+        df = df.copy()
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+        df = df[df["Data"].notna()].copy()
+        if "chave_unica" not in df.columns:
+            def make_key(row):
+                cpf = str(row.get("CPF") or "").strip()
+                pis = str(row.get("PIS") or "").strip()
+                identity = cpf or pis
+                return f"{identity}__{row['Data'].strftime('%Y-%m-%d')}"
+            df["chave_unica"] = df.apply(make_key, axis=1)
+        stats = self.repository.upsert("ponto", df)
+        stats.processed += parse_ignored
+        stats.ignored += parse_ignored
+        return stats

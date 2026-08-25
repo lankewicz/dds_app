@@ -12,9 +12,12 @@ gcloud run deploy dds-admin-site `
   --project dds-treinamentos `
   --memory 1Gi `
   --timeout 900 `
+  --min-instances 1 `
+  --max-instances 1 `
+  --no-cpu-throttling `
   --clear-base-image `
   --env-vars-file env.yaml `
-  --set-secrets="ADMIN_PASSWORD=DDS_ADMIN_PASSWORD:latest,APP_SECRET_KEY=DDS_APP_SECRET_KEY:latest"
+  --set-secrets="ADMIN_PASSWORD=DDS_ADMIN_PASSWORD:latest,APP_SECRET_KEY=DDS_APP_SECRET_KEY:latest,ROTALOG_USUARIO=ROTALOG_USUARIO:latest,ROTALOG_SENHA=ROTALOG_SENHA:latest"
 
 
 # Verifica se o comando anterior foi bem sucedido

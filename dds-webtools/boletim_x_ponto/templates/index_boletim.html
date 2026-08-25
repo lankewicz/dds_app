@@ -543,6 +543,706 @@
     .loadingOverlay.show {
       display: flex;
     }
+
+    .viewTabs {
+      display: flex;
+      gap: 8px;
+      padding: 6px;
+      width: fit-content;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .viewTab.active {
+      background: var(--blue);
+      color: white;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .vehicleControls {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .vehicleControls .formGroup {
+      min-width: 220px;
+    }
+
+    .vehicleRow {
+      cursor: pointer;
+    }
+
+    .vehicleRow:hover td,
+    .vehicleRow.selected td {
+      background: rgba(59, 130, 246, 0.12);
+    }
+
+    .servicesPanel {
+      margin-top: 18px;
+    }
+
+    /* Layout claro e compacto para uso operacional */
+    :root {
+      --bg: #f3f6fa;
+      --text: #172033;
+      --muted: #667085;
+      --line: #dbe3ee;
+      --glass-bg: #ffffff;
+      --glass-border: #d5deea;
+      --blue: #2563a6;
+      --green: #158467;
+      --red: #c43d3d;
+      --shadow-premium: 0 2px 10px rgba(22, 34, 54, 0.07);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding-bottom: 20px;
+    }
+
+    .topbar {
+      min-height: 44px;
+      grid-template-columns: minmax(190px, 1fr) auto minmax(300px, 1fr);
+      gap: 12px;
+      padding: 5px 16px;
+      background: #18324d;
+      border-bottom: 3px solid #2d79b9;
+    }
+
+    .topbarLeft {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 1px;
+    }
+
+    .topbarLeft .viewTab {
+      min-width: 0;
+      padding: 3px 8px;
+      font-size: 11px;
+    }
+
+    .topbarOperator {
+      padding-left: 8px;
+      color: #b9c7d6;
+      font-size: 9px;
+      line-height: 1.1;
+    }
+
+    .topbarOperator strong { color: #ffffff; }
+
+    .topbarRight {
+      display: flex;
+      flex-direction: row;
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      align-items: center;
+      justify-content: flex-end;
+      justify-self: end;
+      gap: 8px;
+      width: auto;
+      z-index: 20;
+    }
+
+    .topbarAction {
+      padding: 5px 9px;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .topbarAction:hover {
+      background: rgba(255, 255, 255, 0.17);
+    }
+
+    .filterPanel {
+      padding: 8px 12px;
+      gap: 6px 12px;
+    }
+
+    .filterPanel > .cardTitle {
+      display: none;
+    }
+
+    .mainContainer {
+      padding: 8px 12px;
+      gap: 8px;
+    }
+
+    .filterPanel .formGrid {
+      gap: 7px;
+    }
+
+    .filterPanel .formGroup { gap: 3px; }
+    .filterPanel .formGroup label { font-size: 10px; }
+    .filterPanel select,
+    .filterPanel input[type="date"] { padding: 6px 8px; }
+    .filterPanel .toggleWrapper { padding: 6px 8px; }
+    .filterPanel .actionsGrid { grid-column: 1; justify-content: flex-start; flex-wrap: nowrap; gap: 7px; }
+    .filterPanel .actionsGrid select { width: 220px; flex: 0 0 220px; }
+    .filterPanel .actionsGrid .btn { padding: 7px 10px; }
+    .importModalContent { max-width: 720px; }
+    .importModalContent .dropzonesContainer {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+    }
+    .importModalContent .dropzone {
+      min-height: 170px;
+      padding: 16px;
+    }
+    @media (max-width: 760px) {
+      .importModalContent .dropzonesContainer { grid-template-columns: 1fr; }
+      .importModalContent .dropzone { min-height: 110px; }
+    }
+
+    .mainContainer {
+      max-width: none;
+      padding: 12px 16px;
+      gap: 10px;
+    }
+
+    .topGrid {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .glassCard,
+    .comparisonCard {
+      background: #fff;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-premium);
+    }
+
+    .filterPanel {
+      display: grid;
+      grid-template-columns: minmax(620px, 1fr) auto;
+      align-items: end;
+      gap: 10px 16px;
+      padding: 12px 16px;
+    }
+
+    .filterPanel > .cardTitle {
+      grid-column: 1 / -1;
+      font-size: 16px;
+      padding-bottom: 8px;
+    }
+
+    .filterPanel .formGrid {
+      grid-template-columns: minmax(135px, .8fr) minmax(135px, .8fr) minmax(170px, 1fr) minmax(260px, 1.6fr);
+      gap: 10px;
+    }
+
+    .filterPanel .toggleWrapper {
+      min-width: 310px;
+      padding: 8px 10px;
+      background: #f6f8fb;
+    }
+
+    .filterPanel > label {
+      grid-column: 2;
+      justify-self: end;
+    }
+
+    .filterPanel .actionsGrid {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      margin-top: 0;
+    }
+
+    select,
+    input[type="date"],
+    input[type="text"] {
+      background: #fff;
+      border-color: #bfcbd9;
+      color: var(--text);
+      padding: 8px 10px;
+    }
+
+    select option {
+      background: #fff;
+      color: var(--text);
+    }
+
+    .btnSecondary {
+      background: #f7f9fc;
+      border-color: #cbd6e3;
+      color: #24364b;
+    }
+
+    .btnSecondary:hover {
+      background: #eaf1f8;
+    }
+
+    .importCard {
+      padding: 10px 16px;
+    }
+
+    .importCard > summary {
+      cursor: pointer;
+      user-select: none;
+      border: none;
+      padding: 0;
+      font-size: 14px;
+    }
+
+    .importCard[open] > summary {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+
+    .importCard .dropzone {
+      min-height: 95px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+
+    .viewTabs {
+      width: 100%;
+      padding: 4px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(22, 34, 54, 0.05);
+    }
+
+    .viewTab {
+      min-width: 140px;
+    }
+
+    .comparisonCard {
+      padding: 12px;
+      min-height: 260px;
+    }
+
+    .tableHeaderActions {
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .tableContainer {
+      max-height: calc(100vh - 280px);
+      background: #fff;
+    }
+
+    table {
+      color: #1f2937;
+      font-size: 11px;
+    }
+
+    #comparisonTable {
+      table-layout: fixed;
+      min-width: 1320px;
+    }
+
+    #comparisonTable th,
+    #comparisonTable td {
+      padding: 5px 4px;
+      line-height: 1.15;
+    }
+
+    #comparisonTable tr.subHeader th {
+      width: 50px;
+      min-width: 50px;
+      max-width: 50px;
+      height: 38px;
+      white-space: normal;
+      overflow-wrap: normal;
+      color: #172033;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    #comparisonTable tr.groupHeader th {
+      color: #ffffff;
+      font-weight: 700;
+      letter-spacing: 0.15px;
+      padding: 7px 4px;
+    }
+
+    #comparisonTable tr.groupHeader th:nth-child(1) { width: 86px; }
+    #comparisonTable tr.groupHeader th:nth-child(2) { width: 68px; }
+    #comparisonTable tr.groupHeader th:nth-child(3) { width: 68px; }
+    #comparisonTable tr.groupHeader th.th-boletim { background: #285f91; border-color: #3977ad; }
+    #comparisonTable tr.groupHeader th.th-ponto { background: #24705c; border-color: #36917a; }
+    #comparisonTable tr.groupHeader th.th-diferenca { background: #8a5a19; border-color: #aa762d; }
+
+    #comparisonTable tr.subHeader th.th-boletim { background: #dcecff; border-color: #a9c8e8; }
+    #comparisonTable tr.subHeader th.th-ponto { background: #dff4eb; border-color: #acd7c8; }
+    #comparisonTable tr.subHeader th.th-diferenca { background: #fff0d5; border-color: #e5c58e; }
+
+    #comparisonTable td {
+      color: #12233b;
+      font-size: 11px;
+    }
+
+    #comparisonTable td.td-bol { background: #f3f8fe; }
+    #comparisonTable td.td-pto { background: #f1faf7; }
+    #comparisonTable td.td-dif { background: #fffaf1; }
+    #comparisonTable td.td-dif-negative {
+      color: #c52222;
+      background: #fdeaea;
+    }
+
+    #comparisonTable tr.totalsRow td {
+      color: #ffffff;
+      background: #18324d;
+      border-color: #38536e;
+    }
+
+    #comparisonTable tr.totalsRow td.td-dif-negative {
+      color: #ffe1e1;
+      background: #8b2525;
+    }
+
+    /* Mesma identidade visual nas demais tabelas */
+    #vehicleTable {
+      table-layout: fixed;
+      min-width: 1040px;
+    }
+
+    #vehicleTable th,
+    #vehicleTable td,
+    .servicesPanel table th,
+    .servicesPanel table td,
+    #mappingTable th,
+    #mappingTable td {
+      padding: 6px 7px;
+      color: #12233b;
+      border-color: #d5dfeb;
+      line-height: 1.2;
+    }
+
+    #vehicleTable tr.groupHeader th {
+      color: #ffffff;
+      font-weight: 700;
+      background: #18324d;
+      padding: 7px 4px;
+    }
+
+    #vehicleTable tr.groupHeader th:nth-child(1) { width: 84px; }
+    #vehicleTable tr.groupHeader th:nth-child(2) { width: 220px; }
+    #vehicleTable tr.groupHeader th:nth-child(3) { width: 68px; }
+    #vehicleTable tr.groupHeader th:nth-child(4) { width: 62px; }
+    #vehicleTable tr.groupHeader th.th-boletim { background: #285f91; border-color: #3977ad; }
+    #vehicleTable tr.groupHeader th.th-ponto { background: #24705c; border-color: #36917a; }
+    #vehicleTable tr.groupHeader th.th-diferenca { background: #8a5a19; border-color: #aa762d; }
+
+    #vehicleTable tr.subHeader th {
+      width: 50px;
+      min-width: 50px;
+      max-width: 50px;
+      height: 38px;
+      white-space: normal;
+      color: #172033;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    #vehicleTable tr.subHeader th.th-boletim { background: #dcecff; border-color: #a9c8e8; }
+    #vehicleTable tr.subHeader th.th-ponto { background: #dff4eb; border-color: #acd7c8; }
+    #vehicleTable tr.subHeader th.th-diferenca { background: #fff0d5; border-color: #e5c58e; }
+    #vehicleTable td.td-bol { background: #f3f8fe; }
+    #vehicleTable td.td-pto { background: #f1faf7; }
+    #vehicleTable td.td-dif { background: #fffaf1; }
+    #vehicleTable td.td-dif-negative { color: #c52222; background: #fdeaea; }
+
+    .vehicleElectricians {
+      min-width: 210px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .vehicleElectricians span {
+      display: block;
+    }
+
+    .vehicleTimelineRow td {
+      padding: 7px 10px 10px !important;
+      background: #f7fafd !important;
+      border-bottom: 2px solid #b8c8da;
+    }
+
+    .timelineSummary {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 5px;
+      color: #334b65;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .timelineLegend {
+      margin-left: auto;
+      display: flex;
+      gap: 10px;
+    }
+
+    .timelineLegend span::before {
+      content: "";
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      margin-right: 4px;
+      border-radius: 2px;
+      background: #2e7bbd;
+    }
+
+    .timelineLegend .legendNoExec::before { background: #d92d20; }
+
+    .vehicleTimeline {
+      position: relative;
+      min-width: 960px;
+      border: 1px solid #bccbdd;
+      border-radius: 6px;
+      background: repeating-linear-gradient(
+        to right,
+        #ffffff 0,
+        #ffffff calc(12.5% - 1px),
+        #dce5ef calc(12.5% - 1px),
+        #dce5ef 12.5%
+      );
+      overflow: hidden;
+    }
+
+    .timelineAxis {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 20px;
+      color: #52677e;
+      font-size: 9px;
+    }
+
+    .timelineTick {
+      position: absolute;
+      top: 3px;
+      transform: translateX(-50%);
+    }
+
+    .timelineTick:first-child { transform: none; }
+    .timelineTick:last-child { transform: translateX(-100%); }
+
+    .timelineShift {
+      position: absolute;
+      top: 21px;
+      height: 14px;
+      min-width: 3px;
+      border: 1px solid #6d8eaa;
+      border-radius: 4px;
+      background: rgba(62, 111, 151, 0.22);
+    }
+
+    .timelineService {
+      position: absolute;
+      height: 16px;
+      min-width: 5px;
+      padding: 1px 3px;
+      overflow: hidden;
+      color: #ffffff;
+      background: #2e7bbd;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 14px;
+      white-space: nowrap;
+      cursor: help;
+    }
+
+    .timelineGap {
+      position: absolute;
+      height: 16px;
+      min-width: 5px;
+      padding: 1px 3px;
+      overflow: hidden;
+      color: #ffffff;
+      background: #d92d20;
+      outline: 1px solid #9d1b13;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 14px;
+      white-space: nowrap;
+      cursor: help;
+    }
+
+    .vehicleInnerTabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 10px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #d5dfeb;
+    }
+
+    .vehicleInnerTab.active {
+      color: #ffffff;
+      background: #285f91;
+      border-color: #285f91;
+    }
+
+    .vehicleEventCount {
+      margin-left: auto;
+      color: #52677e;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    #vehicleEventsTable,
+    #vehicleRawTable {
+      min-width: 2100px;
+      table-layout: auto;
+      font-size: 10px;
+    }
+
+    #vehicleEventsTable th,
+    #vehicleRawTable th {
+      color: #ffffff;
+      background: #285f91;
+      border-color: #3977ad;
+      white-space: normal;
+    }
+
+    #vehicleEventsTable td,
+    #vehicleRawTable td {
+      white-space: nowrap;
+    }
+
+    .servicesPanel table,
+    #mappingTable {
+      background: #ffffff;
+      color: #12233b;
+    }
+
+    .servicesPanel table thead th,
+    #mappingTable thead th {
+      color: #ffffff;
+      background: #285f91;
+      border-color: #3977ad;
+      font-weight: 700;
+      white-space: normal;
+    }
+
+    .servicesPanel table tbody tr:nth-child(odd) td,
+    #mappingTable tbody tr:nth-child(odd) td {
+      background: #ffffff;
+    }
+
+    .servicesPanel table tbody tr:nth-child(even) td,
+    #mappingTable tbody tr:nth-child(even) td {
+      background: #f3f7fb;
+    }
+
+    .servicesPanel table tbody tr:hover td,
+    #mappingTable tbody tr:hover td {
+      background: #e5f0fb;
+    }
+
+    #comparisonTable tbody tr:not(.totalsRow) {
+      cursor: pointer;
+    }
+
+    #comparisonTable tbody tr.comparisonRowSelected td {
+      color: #0b2947;
+      background: #cfe5fb !important;
+      box-shadow: inset 0 1px 0 #77aee0, inset 0 -1px 0 #77aee0;
+    }
+
+    #comparisonTable tbody tr.comparisonRowSelected td:first-child {
+      box-shadow: inset 3px 0 0 #2563a6, inset 0 1px 0 #77aee0, inset 0 -1px 0 #77aee0;
+      font-weight: 700;
+    }
+
+    #comparisonTable tbody tr.comparisonRowSelected td.td-dif-negative {
+      color: #a21414;
+    }
+
+    #vehicleTable .vehicleRow.selected td {
+      background: #cfe5fb !important;
+      box-shadow: inset 0 1px 0 #77aee0, inset 0 -1px 0 #77aee0;
+    }
+
+    th {
+      color: #24364b;
+      border-color: #bcc8d6;
+    }
+
+    td {
+      border-color: #dce3ec;
+      background: #fff;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .badge {
+      background: #eef3f8;
+      color: #34465b;
+      border: 1px solid #cdd8e4;
+    }
+
+    .employeeSelector {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px;
+      gap: 4px;
+    }
+
+    .employeeSelector .btn {
+      padding: 7px 4px;
+    }
+
+    @media (max-width: 1100px) {
+      .filterPanel { grid-template-columns: 1fr; }
+      .filterPanel .formGrid { grid-template-columns: 1fr 1fr; }
+      .filterPanel .toggleWrapper,
+      .filterPanel > label { grid-column: 1; justify-self: stretch; }
+    }
+
+    @media print {
+      @page { size: A4 landscape; margin: 7mm; }
+      body { background: #fff !important; color: #111 !important; padding: 0; }
+      .topbar, .topGrid, .viewTabs, .toolbarOnly, .toast { display: none !important; }
+      .mainContainer { display: block; max-width: none; padding: 0; }
+      .comparisonCard:not([hidden]) {
+        display: block !important;
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        background: #fff;
+      }
+      .tableHeaderActions { margin-bottom: 5px; }
+      .tableHeaderActions .btn, .vehicleControls { display: none !important; }
+      .tableContainer { max-height: none !important; overflow: visible !important; border: none; }
+      table { font-size: 6.5px !important; color: #111 !important; }
+      th, td { padding: 2px !important; border-color: #999 !important; }
+      th { color: #111 !important; }
+      .badge { color: #111 !important; border-color: #777 !important; }
+      .totalsRow td { background: #111 !important; color: #fff !important; }
+      .loadingOverlay { display: none !important; }
+      #servicesPanel[hidden] { display: none !important; }
+      #servicesPanel:not([hidden]) { display: block !important; break-before: avoid; }
+    }
   </style>
 </head>
 <body>
@@ -553,24 +1253,25 @@
       <a href="/" class="viewTab" style="display: flex; align-items: center; gap: 8px;">
         <span>←</span> Voltar ao Portal
       </a>
+      <div class="topbarOperator">
+        Operador: <strong>{{ request.headers.get("X-Portal-User") or "Local" }}</strong>
+      </div>
     </div>
     
     <div class="topbarCenter">
       <div class="titleBlock">
-        <div style="font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 700; color: #fff;">
+        <div style="font-family: 'Outfit', sans-serif; font-size: 18px; line-height:1; font-weight: 700; color: #fff;">
           Boletim x Ponto
         </div>
-        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">
+        <div style="font-size: 9px; line-height:1; margin-top:3px; color: #aebdcd; text-transform: uppercase; font-weight: 600;">
           DDS Webtools Dashboard
         </div>
       </div>
     </div>
     
     <div class="topbarRight">
-      <div style="text-align: right;">
-        <span style="font-size: 11px; color: var(--muted);">Operador:</span>
-        <span style="font-size: 13px; font-weight: 600; color: #fff;">{{ request.cookies.get("__session") }}</span>
-      </div>
+      <button class="topbarAction" type="button" id="btnOpenImport">📤 Importar</button>
+      <button class="topbarAction" type="button" id="btnOpenMapping">⚙️ Relação de Nomes</button>
     </div>
   </header>
 
@@ -580,7 +1281,7 @@
     <div class="topGrid">
       
       <!-- Painel de Filtros -->
-      <div class="glassCard">
+      <div class="glassCard filterPanel">
         <h2 class="cardTitle">
           <span>📅</span> Filtros de Apuração
         </h2>
@@ -604,9 +1305,13 @@
           
           <div class="formGroup">
             <label for="selectFuncionario">Funcionário</label>
-            <select id="selectFuncionario" disabled>
-              <option value="">-- Escolha um período/contrato --</option>
-            </select>
+            <div class="employeeSelector">
+              <button class="btn btnSecondary" type="button" id="btnPreviousEmployee" title="Funcionário anterior">◀</button>
+              <select id="selectFuncionario" disabled>
+                <option value="">-- Escolha um período/contrato --</option>
+              </select>
+              <button class="btn btnSecondary" type="button" id="btnNextEmployee" title="Próximo funcionário">▶</button>
+            </div>
           </div>
         </div>
 
@@ -621,47 +1326,33 @@
             <span style="font-size: 12px; font-weight: 700; color: var(--text);" id="toggleLabelHh">HH:MM (8:00)</span>
           </div>
         </div>
+        <label style="display:flex; align-items:center; gap:8px; text-transform:none; cursor:pointer;">
+          <input type="checkbox" id="toggleHideZeros">
+          Ocultar zeros (0,00 / 0:00)
+        </label>
 
         <div class="actionsGrid">
-          <button class="btn btnSecondary" id="btnOpenMapping">
-            <span>⚙️</span> Relação de Nomes
-          </button>
-          
+          <select id="selectExportScope" aria-label="Escopo da exportação">
+            <option value="current">Contrato selecionado</option>
+            <option value="all">Todos — arquivo consolidado</option>
+            <option value="separate">Todos — um par por contrato</option>
+          </select>
+
           <button class="btn btnSecondary" id="btnConsolidado">
-            <span>📦</span> Zip Consolidado
+            <span>📦</span> Exportar Totais
+          </button>
+
+          <button class="btn btnSecondary" id="btnPrintContract">
+            <span>🖨️</span> Imprimir Contrato
           </button>
         </div>
       </div>
 
-      <!-- Painel de Upload de Arquivos -->
-      <div class="glassCard">
-        <h2 class="cardTitle">
-          <span>📤</span> Importação de Arquivos (Base Local Parquet)
-        </h2>
-        
-        <div class="dropzonesContainer">
-          <!-- Dropzone Boletins PDF -->
-          <div class="dropzone" id="dropzoneBoletim">
-            <div class="dropzoneIcon">📄</div>
-            <div class="dropzoneText">Boletins PDF</div>
-            <div class="dropzoneSubtext">Arraste ou clique para selecionar</div>
-            <input type="file" class="fileInput" id="inputBoletim" accept=".pdf">
-          </div>
+    </div>
 
-          <!-- Dropzone Ponto CSV/XLSX -->
-          <div class="dropzone" id="dropzonePonto">
-            <div class="dropzoneIcon">📊</div>
-            <div class="dropzoneText">Cartões Ponto</div>
-            <div class="dropzoneSubtext">Arraste ou clique (.csv, .xlsx, .xls)</div>
-            <input type="file" class="fileInput" id="inputPonto" accept=".csv, .xlsx, .xls">
-          </div>
-        </div>
-        
-        <div style="font-size: 11px; color: var(--muted); line-height: 1.4;">
-          * O processamento é realizado de forma 100% in-memory e mesclado ao banco de dados Parquet local no servidor. Arquivos já existentes com a mesma chave única (Boletim + Data + Funcionário ou CPF + Data) serão desconsiderados evitando duplicidades.
-        </div>
-      </div>
-      
+    <div class="viewTabs" aria-label="Visões do relatório">
+      <button class="btn btnSecondary viewTab active" type="button" data-view="comparison">👤 Comparação</button>
+      <button class="btn btnSecondary viewTab" type="button" data-view="vehicles">🚗 Veículos</button>
     </div>
 
     <!-- Seção de Comparação -->
@@ -676,6 +1367,9 @@
         </div>
         
         <div style="display:flex; gap:10px;">
+          <button class="btn btnSecondary" id="btnPrintActive">
+            <span>🖨️</span> Imprimir Tela
+          </button>
           <button class="btn btnSecondary" id="btnExportExcel" disabled>
             <span>📈</span> Exportar Excel
           </button>
@@ -711,6 +1405,132 @@
         </table>
       </div>
       
+    </div>
+
+    <div class="comparisonCard" id="vehiclesCard" hidden>
+      <div class="tableHeaderActions">
+        <div class="employeeInfo">
+          <h2 class="cardTitle" style="border:none; padding:0; margin:0;">
+            <span>🚗</span> Turnos e serviços por veículo/equipe
+          </h2>
+        </div>
+        <div class="vehicleControls">
+          <button class="btn btnSecondary" type="button" id="btnPrintVehicles">
+            🖨️ Imprimir Tela
+          </button>
+          <button class="btn btnSecondary" type="button" id="btnVehiclePackage">
+            📦 Pacote da Equipe
+          </button>
+          <div class="formGroup">
+            <label for="selectVehicle">Veículo</label>
+            <div class="employeeSelector">
+              <button class="btn btnSecondary" type="button" id="btnPreviousVehicle" title="Veículo anterior" disabled>◀</button>
+              <select id="selectVehicle" disabled>
+                <option value="">Nenhum veículo no filtro</option>
+              </select>
+              <button class="btn btnSecondary" type="button" id="btnNextVehicle" title="Próximo veículo" disabled>▶</button>
+            </div>
+          </div>
+          <button class="btn btnPrimary" type="button" id="btnReloadVehicles">Atualizar</button>
+        </div>
+      </div>
+
+      <div class="loadingOverlay show" id="vehicleInitialState">
+        Selecione um veículo para visualizar turnos e serviços do ROTALOG.
+      </div>
+      <div class="loadingOverlay" id="vehicleLoading">
+        <div class="spinner"></div> Carregando dados do veículo...
+      </div>
+
+      <div class="vehicleInnerTabs" aria-label="Detalhes do veículo">
+        <button class="btn btnSecondary vehicleInnerTab active" type="button" data-vehicle-view="timeline">🕒 Linha do Tempo</button>
+        <button class="btn btnSecondary vehicleInnerTab" type="button" data-vehicle-view="events">📋 Eventos</button>
+        <button class="btn btnSecondary vehicleInnerTab" type="button" data-vehicle-view="raw">🗃️ ROTALOG Bruto</button>
+        <span class="vehicleEventCount" id="vehicleEventCount">0 eventos</span>
+      </div>
+      <div id="vehicleTimelineView">
+      <div class="tableContainer" id="vehicleTableContainer" style="display:none;">
+        <table id="vehicleTable">
+          <thead>
+            <tr class="groupHeader" id="vehicleHeaderGroup"></tr>
+            <tr class="subHeader" id="vehicleHeaderSub"></tr>
+          </thead>
+          <tbody id="vehicleTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="servicesPanel" id="servicesPanel" hidden>
+        <h3 class="cardTitle" id="servicesTitle">Serviços do dia</h3>
+        <div class="tableContainer" style="max-height:320px;">
+          <table>
+            <thead id="servicesHeader"></thead>
+            <tbody id="servicesBody"></tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+
+      <div id="vehicleEventsView" hidden>
+        <div class="tableContainer">
+          <table id="vehicleEventsTable">
+            <thead id="vehicleEventsHeader"></thead>
+            <tbody id="vehicleEventsBody">
+              <tr><td>Selecione um veículo para carregar os eventos.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="vehicleRawView" hidden>
+        <div class="tableContainer">
+          <table id="vehicleRawTable">
+            <thead id="vehicleRawHeader"></thead>
+            <tbody id="vehicleRawBody">
+              <tr><td>Selecione um veículo para carregar os dados brutos.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Importação -->
+  <div class="modal" id="importModal">
+    <div class="modalContent glassCard importModalContent">
+      <div class="modalHeader">
+        <h3 class="cardTitle" style="border:none; padding:0; margin:0;">
+          <span>📤</span> Importação de Arquivos
+        </h3>
+        <button class="btn btnSecondary" type="button" style="padding:6px 12px; font-size:16px;" id="btnCloseImport">×</button>
+      </div>
+      <div class="modalBody">
+        <div class="dropzonesContainer">
+          <div class="dropzone" id="dropzoneBoletim">
+            <div class="dropzoneIcon">📄</div>
+            <div class="dropzoneText">Boletins PDF</div>
+            <div class="dropzoneSubtext">Arraste ou clique para selecionar</div>
+            <input type="file" class="fileInput" id="inputBoletim" accept=".pdf" multiple>
+          </div>
+          <div class="dropzone" id="dropzonePonto">
+            <div class="dropzoneIcon">📊</div>
+            <div class="dropzoneText">Cartões Ponto</div>
+            <div class="dropzoneSubtext">Arraste um ou mais arquivos (.csv, .xlsx, .xls, .pdf)</div>
+            <input type="file" class="fileInput" id="inputPonto" accept=".csv, .xlsx, .xls, .pdf" multiple>
+          </div>
+          <div class="dropzone" id="dropzoneRotalog" style="cursor:default;">
+            <div class="dropzoneIcon">🚚</div>
+            <div class="dropzoneText">Crawler ROTALOG</div>
+            <div class="dropzoneSubtext">Sincroniza equipes e eventos do período selecionado</div>
+            <button class="btn btnSuccess" type="button" id="btnRunRotalog">
+              Sincronizar ROTALOG
+            </button>
+            <div class="dropzoneSubtext" id="rotalogCrawlerStatus"></div>
+          </div>
+        </div>
+        <div style="font-size: 11px; color: var(--muted); line-height: 1.4;">
+          Os registros são armazenados em Parquets mensais. Arquivos incompatíveis são contabilizados como ignorados.
+        </div>
+      </div>
     </div>
   </div>
 
@@ -791,9 +1611,14 @@
       contratos: [],
       funcionarios: [],
       selectedFuncionario: "",
+      vehicles: [],
+      selectedVehicle: "",
       exibirHhmm: true, // Padrão HH:MM
+      hideZeros: false,
       mappingData: [],
-      currentResponseData: null // Cache da última comparação
+      currentResponseData: null,
+      currentVehicleData: null,
+      vehicleView: "timeline"
     };
 
     // DOM Elements
@@ -802,15 +1627,29 @@
       dataFim: document.getElementById("dataFim"),
       selectContrato: document.getElementById("selectContrato"),
       selectFuncionario: document.getElementById("selectFuncionario"),
+      btnPreviousEmployee: document.getElementById("btnPreviousEmployee"),
+      btnNextEmployee: document.getElementById("btnNextEmployee"),
       toggleFormat: document.getElementById("toggleFormat"),
+      toggleHideZeros: document.getElementById("toggleHideZeros"),
       toggleLabelDec: document.getElementById("toggleLabelDec"),
       toggleLabelHh: document.getElementById("toggleLabelHh"),
       btnOpenMapping: document.getElementById("btnOpenMapping"),
+      btnOpenImport: document.getElementById("btnOpenImport"),
+      btnCloseImport: document.getElementById("btnCloseImport"),
+      importModal: document.getElementById("importModal"),
       btnConsolidado: document.getElementById("btnConsolidado"),
+      selectExportScope: document.getElementById("selectExportScope"),
+      btnPrintContract: document.getElementById("btnPrintContract"),
+      btnPrintActive: document.getElementById("btnPrintActive"),
+      btnPrintVehicles: document.getElementById("btnPrintVehicles"),
+      btnVehiclePackage: document.getElementById("btnVehiclePackage"),
       dropzoneBoletim: document.getElementById("dropzoneBoletim"),
       dropzonePonto: document.getElementById("dropzonePonto"),
       inputBoletim: document.getElementById("inputBoletim"),
       inputPonto: document.getElementById("inputPonto"),
+      btnRunRotalog: document.getElementById("btnRunRotalog"),
+      rotalogCrawlerStatus: document.getElementById("rotalogCrawlerStatus"),
+      dropzoneRotalog: document.getElementById("dropzoneRotalog"),
       currentEmployeeTitle: document.getElementById("currentEmployeeTitle"),
       badgeRegistro: document.getElementById("badgeRegistro"),
       badgeBoletins: document.getElementById("badgeBoletins"),
@@ -822,6 +1661,32 @@
       tableHeaderGroup: document.getElementById("tableHeaderGroup"),
       tableHeaderSub: document.getElementById("tableHeaderSub"),
       tableBody: document.getElementById("tableBody"),
+      comparisonCard: document.getElementById("comparisonCard"),
+      vehiclesCard: document.getElementById("vehiclesCard"),
+      viewTabs: Array.from(document.querySelectorAll(".viewTab")),
+      selectVehicle: document.getElementById("selectVehicle"),
+      btnPreviousVehicle: document.getElementById("btnPreviousVehicle"),
+      btnNextVehicle: document.getElementById("btnNextVehicle"),
+      btnReloadVehicles: document.getElementById("btnReloadVehicles"),
+      vehicleInitialState: document.getElementById("vehicleInitialState"),
+      vehicleLoading: document.getElementById("vehicleLoading"),
+      vehicleTableContainer: document.getElementById("vehicleTableContainer"),
+      vehicleHeaderGroup: document.getElementById("vehicleHeaderGroup"),
+      vehicleHeaderSub: document.getElementById("vehicleHeaderSub"),
+      vehicleTableBody: document.getElementById("vehicleTableBody"),
+      servicesPanel: document.getElementById("servicesPanel"),
+      servicesTitle: document.getElementById("servicesTitle"),
+      servicesHeader: document.getElementById("servicesHeader"),
+      servicesBody: document.getElementById("servicesBody"),
+      vehicleInnerTabs: Array.from(document.querySelectorAll(".vehicleInnerTab")),
+      vehicleTimelineView: document.getElementById("vehicleTimelineView"),
+      vehicleEventsView: document.getElementById("vehicleEventsView"),
+      vehicleRawView: document.getElementById("vehicleRawView"),
+      vehicleEventCount: document.getElementById("vehicleEventCount"),
+      vehicleEventsHeader: document.getElementById("vehicleEventsHeader"),
+      vehicleEventsBody: document.getElementById("vehicleEventsBody"),
+      vehicleRawHeader: document.getElementById("vehicleRawHeader"),
+      vehicleRawBody: document.getElementById("vehicleRawBody"),
       
       // Modal Mapping Elements
       mappingModal: document.getElementById("mappingModal"),
@@ -894,32 +1759,56 @@
         if (data.ok) {
           state.dataMin = data.data_min;
           state.dataMax = data.data_max;
-          state.contratos = data.contratos;
           
           // Preencher campos de data com o intervalo padrão (ou último mês disponível)
-          elements.dataIni.value = state.dataMin;
+          const inicioUltimoMes = state.dataMax
+            ? `${state.dataMax.slice(0, 7)}-01`
+            : state.dataMin;
+          elements.dataIni.value = inicioUltimoMes < state.dataMin ? state.dataMin : inicioUltimoMes;
           elements.dataFim.value = state.dataMax;
           elements.dataIni.min = state.dataMin;
           elements.dataIni.max = state.dataMax;
           elements.dataFim.min = state.dataMin;
           elements.dataFim.max = state.dataMax;
           
-          // Preencher select de contratos
-          elements.selectContrato.innerHTML = '<option value="">-- Todos os Contratos --</option>';
-          state.contratos.forEach(c => {
-            const opt = document.createElement("option");
-            opt.value = c;
-            opt.textContent = c;
-            elements.selectContrato.appendChild(opt);
-          });
-          
-          await reloadEmployees();
+          await reloadContracts();
+          await Promise.all([reloadEmployees(), reloadVehicles()]);
         } else {
           showToast(data.message || "Erro ao obter filtros da API.", "error");
         }
       } catch (err) {
         console.error(err);
         showToast("Erro ao conectar com a API de filtros.", "error");
+      }
+    }
+
+    // Atualiza os contratos presentes somente no período selecionado
+    async function reloadContracts() {
+      const dataIni = elements.dataIni.value;
+      const dataFim = elements.dataFim.value;
+      if (!dataIni || !dataFim) return;
+
+      const contratoAnterior = elements.selectContrato.value;
+      try {
+        const params = new URLSearchParams({data_ini: dataIni, data_fim: dataFim});
+        const res = await fetch(`/boletim-x-ponto/api/filtros?${params}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || "Falha ao carregar contratos");
+
+        state.contratos = data.contratos || [];
+        elements.selectContrato.innerHTML = '<option value="">-- Todos os Contratos --</option>';
+        state.contratos.forEach(contrato => {
+          const option = document.createElement("option");
+          option.value = contrato;
+          option.textContent = contrato;
+          elements.selectContrato.appendChild(option);
+        });
+        elements.selectContrato.value = state.contratos.includes(contratoAnterior)
+          ? contratoAnterior
+          : "";
+      } catch (error) {
+        console.error(error);
+        showToast("Erro ao carregar contratos do período.", "error");
       }
     }
 
@@ -961,6 +1850,50 @@
       } catch (err) {
         console.error(err);
         showToast("Erro ao carregar lista de funcionários.", "error");
+      }
+    }
+
+    async function reloadVehicles() {
+      const dataIni = elements.dataIni.value;
+      const dataFim = elements.dataFim.value;
+      const contrato = elements.selectContrato.value;
+      if (!dataIni || !dataFim) return;
+      let url = `/boletim-x-ponto/api/veiculos?data_ini=${dataIni}&data_fim=${dataFim}`;
+      if (contrato) url += `&contrato=${encodeURIComponent(contrato)}`;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.message || "Falha ao carregar veículos");
+        state.vehicles = data.veiculos || [];
+        const anterior = state.selectedVehicle;
+        elements.selectVehicle.innerHTML = '<option value="">-- Escolha um Veículo --</option>';
+        state.vehicles.forEach(vehicle => {
+          const option = document.createElement("option");
+          option.value = vehicle;
+          option.textContent = vehicle;
+          elements.selectVehicle.appendChild(option);
+        });
+        elements.selectVehicle.disabled = state.vehicles.length === 0;
+        elements.btnPreviousVehicle.disabled = state.vehicles.length === 0;
+        elements.btnNextVehicle.disabled = state.vehicles.length === 0;
+        if (anterior && state.vehicles.includes(anterior)) {
+          elements.selectVehicle.value = anterior;
+        } else {
+          state.selectedVehicle = "";
+          elements.vehicleTableContainer.style.display = "none";
+          elements.servicesPanel.hidden = true;
+          elements.vehicleInitialState.classList.add("show");
+          elements.vehicleInitialState.textContent = state.vehicles.length
+            ? "Selecione um veículo para visualizar turnos e serviços do ROTALOG."
+            : "Nenhum veículo ROTALOG encontrado no filtro atual.";
+        }
+      } catch (error) {
+        console.error(error);
+        elements.selectVehicle.disabled = true;
+        elements.btnPreviousVehicle.disabled = true;
+        elements.btnNextVehicle.disabled = true;
+        elements.selectVehicle.innerHTML = '<option value="">Erro ao carregar veículos</option>';
+        showToast("Erro ao carregar veículos do ROTALOG.", "error");
       }
     }
 
@@ -1035,9 +1968,10 @@
       elements.badgeBoletins.textContent = `Boletins: ${data.boletins.length > 0 ? data.boletins.join(", ") : "nenhum"}`;
       
       // 1) Grupo headers (primeira linha do thead)
-      // Data + Boletim + Boletim_Horas + Ponto_Horas + Diferenca_Horas
+      // Data + ROTALOG + Boletim + horas
       let groupHtml = `
         <th rowspan="2" style="background:#0f172a;">Data</th>
+        <th rowspan="2" style="background:#0f172a;">ROTALOG</th>
         <th rowspan="2" style="background:#0f172a;">Boletim</th>
         <th colspan="${headers.length}" class="th-boletim">Boletim (Horas Declaradas)</th>
         <th colspan="${headers.length}" class="th-ponto">Ponto (Horas Registradas)</th>
@@ -1067,31 +2001,33 @@
       // Zippa as linhas
       const daysCount = gridB.length;
       for (let i = 0; i < daysCount; i++) {
-        const rowB = gridB[i]; // [data, boletim_num, val1, val2, ...]
+        const rowB = gridB[i]; // [data, rotalog, boletim_num, val1, ...]
         const rowP = gridP[i]; // [data, val1, val2, ...]
         const rowD = gridD[i]; // [data, val1, val2, ...]
         
         const dateStr = rowB[0];
-        const boletimNum = rowB[1] || "-";
+        const rotalogStatus = rowB[1] || "?";
+        const boletimNum = rowB[2] || "-";
         
         let rowHtml = `<tr>`;
         rowHtml += `<td class="td-date">${dateStr}</td>`;
+        rowHtml += `<td class="td-val">${rotalogStatus}</td>`;
         rowHtml += `<td class="td-boletim-num">${boletimNum}</td>`;
         
         // Boletim valores
-        for (let idx = 2; idx < rowB.length; idx++) {
-          rowHtml += `<td class="td-val td-bol">${rowB[idx]}</td>`;
+        for (let idx = 3; idx < rowB.length; idx++) {
+          rowHtml += `<td class="td-val td-bol">${displayGridValue(rowB[idx])}</td>`;
         }
         // Ponto valores
         for (let idx = 1; idx < rowP.length; idx++) {
-          rowHtml += `<td class="td-val td-pto">${rowP[idx]}</td>`;
+          rowHtml += `<td class="td-val td-pto">${displayGridValue(rowP[idx])}</td>`;
         }
         // Diferenca valores (destacando negativo)
         for (let idx = 1; idx < rowD.length; idx++) {
           const val = rowD[idx];
           const isNeg = val && val.toString().trim().startsWith("-");
           const classes = isNeg ? "td-val td-dif td-dif-negative" : "td-val td-dif";
-          rowHtml += `<td class="${classes}">${val}</td>`;
+          rowHtml += `<td class="${classes}">${displayGridValue(val)}</td>`;
         }
         
         rowHtml += `</tr>`;
@@ -1105,28 +2041,277 @@
       
       let totHtml = `<tr class="totalsRow">`;
       totHtml += `<td>TOTAIS</td>`;
+      totHtml += `<td></td>`;
       totHtml += `<td class="td-boletim-num"></td>`;
       
       // Totais Boletim
-      for (let idx = 2; idx < totB.length; idx++) {
-        totHtml += `<td class="td-val">${totB[idx]}</td>`;
+      for (let idx = 3; idx < totB.length; idx++) {
+        totHtml += `<td class="td-val">${displayGridValue(totB[idx])}</td>`;
       }
       // Totais Ponto
       for (let idx = 1; idx < totP.length; idx++) {
-        totHtml += `<td class="td-val">${totP[idx]}</td>`;
+        totHtml += `<td class="td-val">${displayGridValue(totP[idx])}</td>`;
       }
       // Totais Diferenca
       for (let idx = 1; idx < totD.length; idx++) {
         const val = totD[idx];
         const isNeg = val && val.toString().trim().startsWith("-");
         const classes = isNeg ? "td-val td-dif-negative" : "td-val";
-        totHtml += `<td class="${classes}">${val}</td>`;
+        totHtml += `<td class="${classes}">${displayGridValue(val)}</td>`;
       }
       totHtml += `</tr>`;
       bodyHtml += totHtml;
       
       elements.tableBody.innerHTML = bodyHtml;
       elements.tableContainer.style.display = "block";
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    function displayGridValue(value) {
+      const text = value == null ? "" : String(value).trim();
+      if (state.hideZeros) {
+        const normalized = text.replace(",", ".");
+        if (/^-?0+(?:\.0+)?$/.test(normalized) || /^-?0+:00$/.test(text)) return "";
+      }
+      return escapeHtml(text);
+    }
+
+    function formatVehicleHour(value) {
+      if (value === null || value === undefined || value === "") return "";
+      const number = Number(value);
+      if (!Number.isFinite(number)) return escapeHtml(value);
+      if (state.hideZeros && Math.abs(number) < 0.000001) return "";
+      if (!state.exibirHhmm) return number.toFixed(2).replace(".", ",");
+      const negative = number < 0;
+      let minutes = Math.round(Math.abs(number) * 60);
+      const hours = Math.floor(minutes / 60);
+      minutes %= 60;
+      return `${negative ? "-" : ""}${hours}:${String(minutes).padStart(2, "0")}`;
+    }
+
+    async function loadVehicleComparison() {
+      const vehicle = elements.selectVehicle.value;
+      if (!vehicle) return;
+      state.selectedVehicle = vehicle;
+      elements.vehicleInitialState.classList.remove("show");
+      elements.vehicleTableContainer.style.display = "none";
+      elements.servicesPanel.hidden = true;
+      elements.vehicleLoading.classList.add("show");
+      let url = `/boletim-x-ponto/api/veiculos/comparar?veiculo=${encodeURIComponent(vehicle)}`
+        + `&data_ini=${elements.dataIni.value}&data_fim=${elements.dataFim.value}`;
+      if (elements.selectContrato.value) {
+        url += `&contrato=${encodeURIComponent(elements.selectContrato.value)}`;
+      }
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.message || "Falha ao comparar veículo");
+        state.currentVehicleData = data;
+        renderVehicleTable(data);
+        renderVehicleEvents(data);
+        renderVehicleRaw(data);
+      } catch (error) {
+        console.error(error);
+        elements.vehicleInitialState.classList.add("show");
+        elements.vehicleInitialState.textContent = error.message;
+        showToast("Erro ao carregar os dados do veículo.", "error");
+      } finally {
+        elements.vehicleLoading.classList.remove("show");
+      }
+    }
+
+    function renderVehicleTable(data) {
+      elements.vehicleHeaderGroup.innerHTML = `
+        <th>Data</th><th>Eletricistas</th><th>ROTALOG</th><th>Serviços</th>`;
+      elements.vehicleHeaderSub.innerHTML = "";
+      elements.vehicleTableBody.innerHTML = (data.linhas || []).map((row, index) => {
+        const nomes = (row.eletricistas || []).length
+          ? row.eletricistas.map(item => `<span>${escapeHtml(item.nome_rotalog || item.nome)}</span>`).join("")
+          : `<span>${escapeHtml(row.funcionario)}</span>`;
+        const services = data.servicos?.[row.data] || [];
+        const colspan = 4;
+        return `<tr class="vehicleRow" data-index="${index}" data-date="${escapeHtml(row.data)}">
+          <td class="td-date">${escapeHtml(row.data_exibicao)}</td>
+          <td class="vehicleElectricians">${nomes}</td>
+          <td class="td-val">${formatVehicleHour(row.rotalog)}</td>
+          <td class="td-val">${row.quantidade_servicos || 0}</td>
+        </tr>${renderVehicleTimeline(row, services, colspan)}`;
+      }).join("");
+      elements.vehicleTableBody.querySelectorAll(".vehicleRow").forEach(row => {
+        row.addEventListener("click", () => {
+          elements.vehicleTableBody.querySelectorAll(".vehicleRow").forEach(item => item.classList.remove("selected"));
+          row.classList.add("selected");
+          renderServicesForDay(row.dataset.date);
+        });
+      });
+      elements.vehicleInitialState.classList.toggle("show", !(data.linhas || []).length);
+      if (!(data.linhas || []).length) {
+        elements.vehicleInitialState.textContent = "Nenhum registro encontrado para o veículo no filtro.";
+      }
+      elements.vehicleTableContainer.style.display = (data.linhas || []).length ? "block" : "none";
+    }
+
+    function setVehicleView(view) {
+      state.vehicleView = ["events", "raw"].includes(view) ? view : "timeline";
+      elements.vehicleTimelineView.hidden = state.vehicleView !== "timeline";
+      elements.vehicleEventsView.hidden = state.vehicleView !== "events";
+      elements.vehicleRawView.hidden = state.vehicleView !== "raw";
+      elements.vehicleInnerTabs.forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.vehicleView === state.vehicleView);
+      });
+    }
+
+    function renderVehicleEvents(data) {
+      const columns = [
+        ["Data", "data_exibicao"], ["Protocolo", "protocolo"],
+        ["Evento", "evento"], ["Tipo", "tipo"], ["Código", "codigo"],
+        ["Grupos", "grupos"], ["Imped.", "impedimento"],
+        ["Início desloc.", "inicio_deslocamento"], ["Tempo desloc.", "tempo_deslocamento"],
+        ["Início execução", "inicio_execucao"], ["Fim execução", "fim_execucao"],
+        ["Tempo execução", "tempo_execucao"], ["Retorno", "retorno"],
+        ["Tempo retorno", "tempo_retorno"], ["Eletricista 1", "eletricista_1"],
+        ["Eletricista 2", "eletricista_2"], ["Tablet", "tablet"],
+        ["Agência", "agencia"], ["Contrato", "contrato"],
+        ["Km informado", "km_informado"], ["Km autorizado", "km_autorizado"],
+        ["Ações", "acoes"],
+      ];
+      const events = data.eventos || [];
+      elements.vehicleEventCount.textContent = `${events.length} ${events.length === 1 ? "evento" : "eventos"}`;
+      elements.vehicleEventsHeader.innerHTML = `<tr>${columns.map(([label]) => `<th>${label}</th>`).join("")}</tr>`;
+      elements.vehicleEventsBody.innerHTML = events.length
+        ? events.map(event => `<tr>${columns.map(([, key]) => `<td>${escapeHtml(event[key] || "")}</td>`).join("")}</tr>`).join("")
+        : `<tr><td colspan="${columns.length}" style="text-align:center;">Nenhum evento encontrado no período selecionado.</td></tr>`;
+    }
+
+    function renderVehicleRaw(data) {
+      const raw = data.eventos_brutos || {};
+      const columns = raw.colunas || [];
+      const rows = raw.linhas || [];
+      elements.vehicleRawHeader.innerHTML = columns.length
+        ? `<tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join("")}</tr>`
+        : "";
+      elements.vehicleRawBody.innerHTML = rows.length
+        ? rows.map(row => `<tr>${columns.map(column => {
+            const value = row[column];
+            return `<td>${escapeHtml(value === null || value === undefined ? "" : value)}</td>`;
+          }).join("")}</tr>`).join("")
+        : `<tr><td colspan="${Math.max(1, columns.length)}" style="text-align:center;">Nenhum dado bruto encontrado no período selecionado.</td></tr>`;
+    }
+
+    function timelinePosition(isoValue, dateKey) {
+      if (!isoValue) return null;
+      const instant = new Date(isoValue);
+      const dayStart = new Date(`${dateKey}T00:00:00`);
+      if (Number.isNaN(instant.getTime()) || Number.isNaN(dayStart.getTime())) return null;
+      const minutes = (instant - dayStart) / 60000;
+      return Math.max(0, Math.min(1440, minutes));
+    }
+
+    function formatTimelineMinutes(totalMinutes) {
+      const rounded = Math.max(0, Math.round(totalMinutes));
+      const hours = Math.floor(rounded / 60);
+      return `${hours}:${String(rounded % 60).padStart(2, "0")}`;
+    }
+
+    function renderVehicleTimeline(row, services, colspan) {
+      const turno = row.turno || {};
+      const shiftStart = timelinePosition(turno.inicio, row.data);
+      const shiftEnd = timelinePosition(turno.fim, row.data);
+      const shiftHtml = shiftStart !== null && shiftEnd !== null
+        ? `<div class="timelineShift" style="left:${shiftStart / 14.4}%;width:${Math.max(0.35, (shiftEnd - shiftStart) / 14.4)}%" title="Turno: ${escapeHtml(turno.inicio_exibicao)} até ${escapeHtml(turno.fim_exibicao)}"></div>`
+        : "";
+      const positioned = (services || []).map(service => {
+        const start = timelinePosition(
+          service.inicio_execucao_iso,
+          row.data
+        );
+        const end = timelinePosition(
+          service.fim_execucao_iso,
+          row.data
+        );
+        return { service, start, end };
+      }).filter(item => item.start !== null && item.end !== null)
+        .sort((a, b) => a.start - b.start || a.end - b.end);
+      const laneEnds = [];
+      positioned.forEach(item => {
+        let lane = laneEnds.findIndex(end => item.start >= end + 2);
+        if (lane < 0) {
+          lane = laneEnds.length;
+          laneEnds.push(item.end);
+        } else {
+          laneEnds[lane] = item.end;
+        }
+        item.lane = lane;
+      });
+      const lanes = Math.max(1, laneEnds.length);
+      const bars = positioned.map(({ service, start, end, lane }) => {
+        const duration = service.tempo_execucao || formatTimelineMinutes(end - start);
+        const title = `${service.protocolo || "Serviço"} | ${service.inicio_execucao || "-"} - ${service.fim_execucao || "-"} | ${duration}`;
+        const width = Math.max(0.35, (end - start) / 14.4);
+        return `<div class="timelineService"
+          style="left:${start / 14.4}%;width:${width}%;top:${59 + lane * 19}px"
+          title="${escapeHtml(title)}">${escapeHtml(duration)}</div>`;
+      }).join("");
+      const occupied = positioned
+        .filter(item => item.end >= item.start)
+        .map(item => [Math.max(shiftStart, item.start), Math.min(shiftEnd, item.end)])
+        .filter(([start, end]) => end >= start)
+        .sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      occupied.forEach(([start, end]) => {
+        const current = merged[merged.length - 1];
+        if (current && start <= current[1]) current[1] = Math.max(current[1], end);
+        else merged.push([start, end]);
+      });
+      const gaps = [];
+      if (shiftStart !== null && shiftEnd !== null && shiftEnd > shiftStart) {
+        let cursor = shiftStart;
+        merged.forEach(([start, end]) => {
+          if (start > cursor) gaps.push([cursor, start]);
+          cursor = Math.max(cursor, end);
+        });
+        if (cursor < shiftEnd) gaps.push([cursor, shiftEnd]);
+      }
+      const gapBars = gaps.filter(([start, end]) => end - start >= 1).map(([start, end]) => {
+        const duration = formatTimelineMinutes(end - start);
+        return `<div class="timelineGap" style="left:${start / 14.4}%;width:${Math.max(0.35, (end - start) / 14.4)}%;top:40px" title="SEM EXECUÇÃO | ${duration}">SEM EXECUÇÃO ${duration}</div>`;
+      }).join("");
+      const ticks = Array.from({ length: 9 }, (_, index) => {
+        const hour = index * 3;
+        return `<span class="timelineTick" style="left:${hour / 24 * 100}%">${String(hour).padStart(2, "0")}h</span>`;
+      }).join("");
+      const height = 80 + lanes * 19;
+      return `<tr class="vehicleTimelineRow">
+        <td colspan="${colspan}">
+          <div class="timelineSummary">
+            <span>Turno: ${escapeHtml(turno.inicio_exibicao || "-")} → ${escapeHtml(turno.fim_exibicao || "-")}</span>
+            ${turno.duracao ? `<span>Duração do turno: ${escapeHtml(turno.duracao)}</span>` : ""}
+            <span class="timelineLegend"><span>Serviço</span><span class="legendNoExec">Sem execução</span></span>
+          </div>
+          <div class="vehicleTimeline" style="height:${height}px">
+            <div class="timelineAxis">${ticks}</div>${shiftHtml}${gapBars}${bars}
+          </div>
+        </td>
+      </tr>`;
+    }
+
+    function renderServicesForDay(dateKey) {
+      const services = state.currentVehicleData?.servicos?.[dateKey] || [];
+      elements.servicesPanel.hidden = false;
+      elements.servicesTitle.textContent = `Serviços de ${dateKey.split("-").reverse().join("/")}`;
+      const headers = ["Protocolo", "Evento", "Tipo", "Início desloc.", "Início execução", "Fim execução", "Tempo"];
+      elements.servicesHeader.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr>`;
+      elements.servicesBody.innerHTML = services.length ? services.map(service => `<tr>
+        <td>${escapeHtml(service.protocolo)}</td><td>${escapeHtml(service.evento)}</td>
+        <td>${escapeHtml(service.tipo)}</td><td>${escapeHtml(service.inicio_deslocamento)}</td>
+        <td>${escapeHtml(service.inicio_execucao)}</td><td>${escapeHtml(service.fim_execucao)}</td>
+        <td>${escapeHtml(service.tempo_execucao)}</td></tr>`).join("")
+        : '<tr><td colspan="7" style="text-align:center;">Nenhum serviço registrado para o dia.</td></tr>';
     }
 
     // Carregar Relação de Nomes
@@ -1181,13 +2366,62 @@
 
     // Event Listeners Configuration
     function setupListeners() {
-      // Inputs de filtros chamando reload de funcionários
-      elements.dataIni.addEventListener("change", reloadEmployees);
-      elements.dataFim.addEventListener("change", reloadEmployees);
-      elements.selectContrato.addEventListener("change", reloadEmployees);
+      // Datas atualizam contratos; contrato atualiza funcionários e veículos
+      const reloadPeriodFilters = async () => {
+        await reloadContracts();
+        await Promise.all([reloadEmployees(), reloadVehicles()]);
+      };
+      const reloadContractDependents = () => Promise.all([reloadEmployees(), reloadVehicles()]);
+      elements.dataIni.addEventListener("change", reloadPeriodFilters);
+      elements.dataFim.addEventListener("change", reloadPeriodFilters);
+      elements.selectContrato.addEventListener("change", reloadContractDependents);
       
       // Seleção de funcionário acionando o grid
       elements.selectFuncionario.addEventListener("change", loadComparison);
+      elements.tableBody.addEventListener("click", event => {
+        const row = event.target.closest("tr:not(.totalsRow)");
+        if (!row || !elements.tableBody.contains(row)) return;
+        elements.tableBody.querySelectorAll("tr.comparisonRowSelected")
+          .forEach(item => item.classList.remove("comparisonRowSelected"));
+        row.classList.add("comparisonRowSelected");
+      });
+      const moveEmployee = direction => {
+        const options = Array.from(elements.selectFuncionario.options).filter(option => option.value);
+        if (!options.length) return;
+        let index = options.findIndex(option => option.value === elements.selectFuncionario.value);
+        if (index < 0) index = direction > 0 ? -1 : 0;
+        index = (index + direction + options.length) % options.length;
+        elements.selectFuncionario.value = options[index].value;
+        elements.selectFuncionario.dispatchEvent(new Event("change"));
+      };
+      elements.btnPreviousEmployee.addEventListener("click", () => moveEmployee(-1));
+      elements.btnNextEmployee.addEventListener("click", () => moveEmployee(1));
+      const moveVehicle = direction => {
+        const options = Array.from(elements.selectVehicle.options).filter(option => option.value);
+        if (!options.length) return;
+        let index = options.findIndex(option => option.value === elements.selectVehicle.value);
+        if (index < 0) index = direction > 0 ? -1 : 0;
+        index = (index + direction + options.length) % options.length;
+        elements.selectVehicle.value = options[index].value;
+        elements.selectVehicle.dispatchEvent(new Event("change"));
+      };
+      elements.btnPreviousVehicle.addEventListener("click", () => moveVehicle(-1));
+      elements.btnNextVehicle.addEventListener("click", () => moveVehicle(1));
+      elements.selectVehicle.addEventListener("change", loadVehicleComparison);
+      elements.vehicleInnerTabs.forEach(tab => tab.addEventListener("click", () => {
+        setVehicleView(tab.dataset.vehicleView);
+      }));
+      elements.btnReloadVehicles.addEventListener("click", async () => {
+        await reloadVehicles();
+        if (elements.selectVehicle.value) await loadVehicleComparison();
+      });
+      elements.viewTabs.forEach(tab => tab.addEventListener("click", () => {
+        const vehicles = tab.dataset.view === "vehicles";
+        elements.comparisonCard.hidden = vehicles;
+        elements.vehiclesCard.hidden = !vehicles;
+        elements.viewTabs.forEach(item => item.classList.toggle("active", item === tab));
+        if (vehicles) reloadVehicles();
+      }));
       
       // Toggle Switch de formato
       elements.toggleFormat.addEventListener("change", () => {
@@ -1196,8 +2430,96 @@
         if (state.selectedFuncionario) {
           loadComparison();
         }
+        if (state.currentVehicleData) {
+          renderVehicleTable(state.currentVehicleData);
+        }
+      });
+      elements.toggleHideZeros.addEventListener("change", () => {
+        state.hideZeros = elements.toggleHideZeros.checked;
+        if (state.currentResponseData) renderComparisonTable(state.currentResponseData);
+        if (state.currentVehicleData) renderVehicleTable(state.currentVehicleData);
+      });
+      elements.btnPrintActive.addEventListener("click", () => {
+        if (!state.currentResponseData) {
+          showToast("Selecione um funcionário antes de imprimir.", "error");
+          return;
+        }
+        window.print();
+      });
+      elements.btnPrintVehicles.addEventListener("click", () => {
+        if (!state.currentVehicleData) {
+          showToast("Selecione um veículo antes de imprimir.", "error");
+          return;
+        }
+        window.print();
+      });
+      elements.btnPrintContract.addEventListener("click", () => {
+        const contract = elements.selectContrato.value;
+        if (!contract) {
+          showToast("Selecione um contrato para imprimir os funcionários.", "error");
+          return;
+        }
+        const params = new URLSearchParams({
+          contrato: contract,
+          data_ini: elements.dataIni.value,
+          data_fim: elements.dataFim.value,
+          hour_format: state.exibirHhmm ? "hhmm" : "decimal",
+          hide_zeros: state.hideZeros ? "true" : "false",
+        });
+        window.open(`/boletim-x-ponto/print/funcionarios?${params}`, "_blank");
+      });
+      elements.btnVehiclePackage.addEventListener("click", () => {
+        const vehicle = elements.selectVehicle.value;
+        if (!vehicle) {
+          showToast("Selecione um veículo para gerar o pacote.", "error");
+          return;
+        }
+        const params = new URLSearchParams({
+          veiculo: vehicle,
+          data_ini: elements.dataIni.value,
+          data_fim: elements.dataFim.value,
+          hour_format: state.exibirHhmm ? "hhmm" : "decimal",
+        });
+        if (elements.selectContrato.value) params.set("contrato", elements.selectContrato.value);
+        window.open(`/boletim-x-ponto/api/export/veiculo-pacote?${params}`, "_blank");
+        showToast("Gerando pacote da equipe...", "success");
       });
       
+      // Modal de importação
+      elements.btnOpenImport.addEventListener("click", () => {
+        elements.importModal.classList.add("show");
+      });
+      elements.btnCloseImport.addEventListener("click", () => {
+        elements.importModal.classList.remove("show");
+      });
+      elements.btnRunRotalog.addEventListener("click", async () => {
+        const dataIni = elements.dataIni.value;
+        const dataFim = elements.dataFim.value;
+        elements.btnRunRotalog.disabled = true;
+        elements.rotalogCrawlerStatus.textContent = `Sincronizando ${dataIni} a ${dataFim}...`;
+        try {
+          const response = await fetch("/boletim-x-ponto/api/import/rotalog", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({data_ini: dataIni, data_fim: dataFim}),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message || "Falha ao sincronizar ROTALOG");
+          }
+          elements.rotalogCrawlerStatus.textContent =
+            `${result.equipes_capturadas} equipes e ${result.eventos_capturados} eventos processados.`;
+          showToast("ROTALOG sincronizado com sucesso.", "success");
+          await Promise.all([reloadEmployees(), reloadVehicles()]);
+        } catch (error) {
+          console.error(error);
+          elements.rotalogCrawlerStatus.textContent = error.message;
+          showToast(error.message, "error");
+        } finally {
+          elements.btnRunRotalog.disabled = false;
+        }
+      });
+
       // Modal Mapping triggers
       elements.btnOpenMapping.addEventListener("click", async () => {
         // Limpa campos
@@ -1314,28 +2636,29 @@
       const di = elements.dataIni.value;
       const df = elements.dataFim.value;
       const hourFormat = state.exibirHhmm ? "hhmm" : "decimal";
-      
-      // Vamos obter os contratos selecionados (ou se for todos, obter todos os contratos disponíveis)
-      const selectedContrato = elements.selectContrato.value;
-      let contratosStr = "";
-      
-      if (selectedContrato) {
-        contratosStr = selectedContrato;
-      } else {
-        // Zippa todos os contratos listados
-        const contracts = Array.from(elements.selectContrato.options)
-                               .map(o => o.value)
-                               .filter(v => v !== "");
-        if (contracts.length === 0) {
-          showToast("Nenhum contrato cadastrado para exportação.", "error");
+      const scope = elements.selectExportScope.value;
+      let contracts = [];
+      let mode = "combined";
+
+      if (scope === "current") {
+        if (!elements.selectContrato.value) {
+          showToast("Selecione um contrato para esta opção de exportação.", "error");
           return;
         }
-        contratosStr = contracts.join(",");
+        contracts = [elements.selectContrato.value];
+      } else {
+        contracts = state.contratos.slice();
+        mode = scope === "separate" ? "separate" : "combined";
       }
-      
-      const url = `/boletim-x-ponto/api/export/totais-consolidados?contratos=${encodeURIComponent(contratosStr)}&data_ini=${di}&data_fim=${df}&hour_format=${hourFormat}`;
+      if (!contracts.length) {
+        showToast("Nenhum contrato cadastrado para exportação.", "error");
+        return;
+      }
+
+      const url = `/boletim-x-ponto/api/export/totais-consolidados?contratos=${encodeURIComponent(contracts.join(","))}`
+        + `&data_ini=${di}&data_fim=${df}&hour_format=${hourFormat}&mode=${mode}`;
       window.open(url, "_blank");
-      showToast("Exportando Zip consolidado por contrato...", "success");
+      showToast(mode === "separate" ? "Gerando arquivos separados por contrato..." : "Gerando consolidado...", "success");
     }
 
     // Handler genérico de Drag and Drop
@@ -1346,7 +2669,7 @@
       // Alteração do arquivo envia imediatamente
       fileInput.addEventListener("change", () => {
         if (fileInput.files.length > 0) {
-          handleFileUpload(fileInput.files[0], uploadUrl, dropzone);
+          handleFileUpload(Array.from(fileInput.files), uploadUrl, dropzone);
         }
       });
       
@@ -1368,26 +2691,26 @@
       // Drop event
       dropzone.addEventListener("drop", (e) => {
         const dt = e.dataTransfer;
-        const files = dt.files;
+        const files = Array.from(dt.files);
         if (files.length > 0) {
-          handleFileUpload(files[0], uploadUrl, dropzone);
+          handleFileUpload(files, uploadUrl, dropzone);
         }
       });
     }
 
-    // Processa o Envio do Arquivo para a API
-    async function handleFileUpload(file, uploadUrl, dropzone) {
+    // Processa o envio dos arquivos para a API
+    async function handleFileUpload(files, uploadUrl, dropzone) {
       const originalText = dropzone.querySelector(".dropzoneText").textContent;
       const originalSub = dropzone.querySelector(".dropzoneSubtext").textContent;
       const icon = dropzone.querySelector(".dropzoneIcon");
       
       // UI visual de progresso
-      dropzone.querySelector(".dropzoneText").textContent = "Enviando arquivo...";
-      dropzone.querySelector(".dropzoneSubtext").textContent = file.name;
+      dropzone.querySelector(".dropzoneText").textContent = "Enviando arquivos...";
+      dropzone.querySelector(".dropzoneSubtext").textContent = `${files.length} arquivo(s) selecionado(s)`;
       icon.innerHTML = `<div class="spinner"></div>`;
       
       const formData = new FormData();
-      formData.append("file", file);
+      files.forEach(file => formData.append("files", file));
       
       try {
         const res = await fetch(uploadUrl, {

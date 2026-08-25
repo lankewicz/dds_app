@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Solicitar acesso | {{ app_title }}</title>
+  <link rel="stylesheet" href="/static/login.css"><link rel="icon" type="image/svg+xml" href="/static/favicon-portal.svg">
+  <style>.access-note{padding:12px;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:13px;margin-bottom:18px}.success{display:none;padding:18px;border-radius:10px;background:#dcfce7;color:#166534;text-align:center}.secondary-link{display:block;margin-top:18px;text-align:center;color:#2563eb;font-weight:600;text-decoration:none}</style>
+</head>
+<body><div class="login-container"><div class="login-card">
+  <div class="logo-section"><h1>Solicitar acesso</h1><p class="subtitle">Crie sua conta no Portal DDS</p></div>
+  <div class="access-note">Antes da aprovação, você terá acesso somente leitura ao Monitor de Turnos e à Produtividade. Sua senha vai diretamente para o Firebase e não fica visível aos administradores.</div>
+  <div id="error-message"></div><div id="success" class="success"></div>
+  <form id="request-form">
+    <div class="form-group"><label for="name">Nome completo</label><input id="name" required minlength="2" autocomplete="name"></div>
+    <div class="form-group"><label for="email">E-mail</label><input id="email" type="email" required autocomplete="email"></div>
+    <div class="form-group"><label for="password">Senha</label><input id="password" type="password" required minlength="8" autocomplete="new-password"></div>
+    <div class="form-group"><label for="confirm-password">Confirmar senha</label><input id="confirm-password" type="password" required minlength="8" autocomplete="new-password"></div>
+    <button class="login-btn" type="submit"><span class="btn-text">Criar minha conta</span><div class="loading-spinner"></div></button>
+  </form><a class="secondary-link" href="/login">← Voltar ao login</a>
+</div></div>
+<script>
+const csrfToken={{ csrf_token|tojson }};document.getElementById('request-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button'),error=document.getElementById('error-message'),success=document.getElementById('success'),password=document.getElementById('password').value,confirmation=document.getElementById('confirm-password').value;error.style.display='none';if(password!==confirmation){error.textContent='As senhas não coincidem.';error.style.display='block';return;}button.disabled=true;try{const response=await fetch('/api/request-access',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({name:document.getElementById('name').value,email:document.getElementById('email').value,password})});const result=await response.json();if(!response.ok||!result.ok)throw new Error(result.message||'Não foi possível criar a conta.');form.style.display='none';success.textContent=result.message;success.style.display='block';}catch(err){error.textContent=err.message;error.style.display='block';}finally{button.disabled=false;}});
+</script></body></html>

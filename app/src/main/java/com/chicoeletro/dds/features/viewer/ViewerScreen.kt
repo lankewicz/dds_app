@@ -14,6 +14,7 @@ package com.chicoeletro.dds.features.viewer
 
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -45,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.layout.ContentScale
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.ui.window.Dialog
@@ -89,6 +93,13 @@ fun ViewerScreen(
 
     val currentIndex = ui.currentIndex
     val readOnlyMode = !canConclude
+
+    if (forceLandscape) {
+        DisposableEffect(Unit) {
+            com.chicoeletro.dds.core.ScreenRotationState.applyOrientation(context)
+            onDispose { }
+        }
+    }
 
 // ==========================================================
     // DDS ONLINE: liberação do acesso ao Agora apenas 15 min antes
@@ -399,7 +410,13 @@ fun ViewerScreen(
                                 if (readOnlyMode || jaConcluido || !ui.started) {
                                     viewModel.showSlideReadOnly(target)
                                 } else {
-                                    viewModel.requestGoToSlide(target)
+                                    val ok = viewModel.requestGoToSlide(target)
+                                    if (!ok) {
+                                        val msg = viewModel.ui.value.blockMessage
+                                        if (!msg.isNullOrBlank()) {
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.height(52.dp).widthIn(min = 160.dp),
@@ -494,7 +511,7 @@ fun ViewerScreen(
                                     },
                                     title = {
                                         val titleText = when (whyMode) {
-                                            WhyDialogMode.MIN_TIME -> "Quase lá! ⏱️"
+                                            WhyDialogMode.MIN_TIME -> "⏱️ Tempo Mínimo de Treinamento (02:00)"
                                             WhyDialogMode.MAX_TIME_EXCEEDED -> "Tempo Limite Excedido 🚨"
                                             else -> "DDS Online programado"
                                         }
@@ -503,7 +520,9 @@ fun ViewerScreen(
                                     text = {
                                         val msg = when (whyMode) {
                                             WhyDialogMode.MIN_TIME ->
-                                                "Para garantir atenção e retenção do conteúdo, este DDS requer pelo menos 2 minutos de dedicação.\n\nContinue discutindo o tema com a equipe; assim que completar o tempo, você poderá concluir."
+                                                "Tempo decorrido até o momento: ${formatMs(ui.elapsedMs)} (Mínimo necessário: 02:00).\n\n" +
+                                                "O tempo mínimo de 2 minutos é essencial para assegurar que os tópicos de segurança sejam revisados e discutidos com a equipe.\n\n" +
+                                                "Aguarde o término do tempo mínimo para liberar a opção de conclusão."
                                             WhyDialogMode.ONLINE_LOCK ->
                                                 if (scheduledStartMs == null) "Este DDS é online. O acesso é liberado 15 minutos antes do horário agendado."
                                                 else "O acesso ao DDS Online é liberado 15 minutos antes do horário agendado.\n\n⏳ Liberação ${formatRemainingForMessage(remainingMin)}."
@@ -666,7 +685,17 @@ fun ViewerScreen(
                                 Button(
                                     onClick = {
                                         val target = (currentIndex + 1).coerceAtMost(ui.images.lastIndex)
-                                        if (readOnlyMode) viewModel.showSlideReadOnly(target) else viewModel.requestGoToSlide(target)
+                                        if (readOnlyMode) {
+                                            viewModel.showSlideReadOnly(target)
+                                        } else {
+                                            val ok = viewModel.requestGoToSlide(target)
+                                            if (!ok) {
+                                                val msg = viewModel.ui.value.blockMessage
+                                                if (!msg.isNullOrBlank()) {
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                 ) {
@@ -719,10 +748,13 @@ fun ViewerScreen(
                                     AlertDialog(
                                         onDismissRequest = { showWhyDialogFull = false },
                                         confirmButton = { Button(onClick = { showWhyDialogFull = false }) { Text("OK") } },
-                                        title = { Text(if (whyModeFull == WhyDialogMode.MIN_TIME) "Quase lá!" else "DDS Agendado") },
+                                        title = { Text(if (whyModeFull == WhyDialogMode.MIN_TIME) "⏱️ Tempo Mínimo de Treinamento (02:00)" else "DDS Agendado") },
                                         text = {
                                             if (whyModeFull == WhyDialogMode.MIN_TIME) {
-                                                Text("Este DDS requer 2 minutos de dedicação para garantir a fixação do conteúdo.")
+                                                Text(
+                                                    "Tempo decorrido até o momento: ${formatMs(ui.elapsedMs)} (Mínimo necessário: 02:00).\n\n" +
+                                                    "O tempo mínimo de 2 minutos é essencial para assegurar que os tópicos de segurança sejam revisados e discutidos com a equipe."
+                                                )
                                             } else {
                                                 Text("O acesso ao DDS Online será liberado 15min antes do horário agendado.")
                                             }

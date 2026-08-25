@@ -37,6 +37,7 @@ def import_whitelist():
             "email": email,
             "active": True,
             "role": "user", # Padrão inicial
+            "permissions": [],
             "imported_at": pd.Timestamp.now()
         }, merge=True)
         

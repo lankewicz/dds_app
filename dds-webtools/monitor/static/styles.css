@@ -831,6 +831,40 @@ button:disabled {
   visibility: hidden;
 }
 
+.serviceLine {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 16px;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, .88);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.serviceIdentifier {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.serviceStatus {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.serviceStatus--D { background: #2563eb; }
+.serviceStatus--E { background: #16a34a; }
+.serviceStatus--C { background: #64748b; }
+
 .badge {
   display: inline-block;
   font-size: 12px;
@@ -848,11 +882,18 @@ button:disabled {
 }
 
 .contactLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.3px;
+}
+
+.contactLabel .origemBadge {
+  margin-left: 0;
 }
 
 .contactValue {

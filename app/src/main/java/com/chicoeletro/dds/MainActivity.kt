@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
     private val syncVM: TrainingSyncViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        com.chicoeletro.dds.core.ScreenRotationState.applyOrientation(this)
         super.onCreate(savedInstanceState)
 
         ensureAuthenticated()
@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        com.chicoeletro.dds.core.ScreenRotationState.applyOrientation(this)
     }
 
     /**

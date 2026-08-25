@@ -74,6 +74,7 @@ fun FormScreen(
     fotoUri: Uri?,
     scope: CoroutineScope,
     setFotoUri: (Uri?) -> Unit,
+    onTirarFoto: () -> Unit = {},
     tempoInicioMillis: Long?,
     modoTesteAtivo: Boolean,
     // NOVOS PARÂMETROS 👇
@@ -410,7 +411,7 @@ fun FormScreen(
                     item {
                         val fotoTirada = fotoUri != null
                         Button(
-                            onClick = { setFotoUri(null) },
+                            onClick = { onTirarFoto() },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !isSubmitting,
                             colors = ButtonDefaults.buttonColors(
@@ -423,7 +424,7 @@ fun FormScreen(
                         ) {
                             Icon(Icons.Filled.CameraAlt, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (fotoTirada) "FOTO OK" else "Tirar Foto")
+                            Text(if (fotoTirada) "FOTO OK (Tirar outra)" else "Tirar Foto")
                         }
                     }
                 }
@@ -477,12 +478,14 @@ fun FormScreen(
                                 Text("OK")
                             }
                         },
-                        title = { Text("Atenção ao Treinamento") },
+                        title = { Text("⏱️ Duração Registrada: $tempoFormatadoAviso") },
                         text = {
                             Text(
-                                "Você concluiu o treinamento em apenas $tempoFormatadoAviso.\n\n" +
-                                        "É importante que o DDS seja realizado com atenção, lendo todo o conteúdo apresentado.\n\n" +
-                                        "Discuta os temas apresentados entre os integrantes da equipe"
+                                "O tempo total decorrido para a apresentação deste DDS foi de $tempoFormatadoAviso.\n\n" +
+                                "Para garantir a eficácia das orientações de segurança em campo:\n" +
+                                "• Certifique-se de que todos os itens de risco e prevenção foram devidamente repassados.\n" +
+                                "• Incentive o debate e esclareça dúvidas entre os integrantes da equipe antes de iniciar as atividades.\n" +
+                                "• A aplicação correta dos procedimentos de segurança salva vidas."
                             )
                         }
                     )

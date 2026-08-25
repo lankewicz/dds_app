@@ -18,7 +18,7 @@
                     <img src="/static/img/logo_chico_header.webp" alt="Chico Eletro" style="max-width: 220px; display: block;">
                 </div>
                 <h1>Acesso à Organização</h1>
-                <p class="subtitle">Insira seu e-mail da Chico Eletro</p>
+                <p class="subtitle">Entre com sua conta autorizada</p>
             </div>
 
             <div id="error-message"></div>
@@ -28,12 +28,19 @@
                     <label for="username">E-mail</label>
                     <input type="email" id="username" placeholder="seuemail@chicoeletro.com.br" required autocomplete="email">
                 </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" placeholder="Sua senha" required autocomplete="current-password">
+                </div>
                 
                 <button type="submit" class="login-btn">
                     <span class="btn-text">Verificar Acesso</span>
                     <div class="loading-spinner"></div>
                 </button>
             </form>
+            <div style="margin-top:18px;text-align:center">
+                <a href="/request-access" style="color:#2563eb;font-weight:600;text-decoration:none">Ainda não tenho acesso</a>
+            </div>
         </div>
     </div>
 
@@ -50,13 +57,35 @@
             spinner.style.display = 'block';
             errorMsg.style.display = 'none';
 
-            const email = document.getElementById('username').value;
+            const email = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
 
             try {
+                const apiKey = {{ firebase_api_key | tojson }};
+                if (!apiKey) {
+                    throw new Error('Firebase não está configurado no servidor.');
+                }
+
+                const firebaseResponse = await fetch(
+                    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password, returnSecureToken: true })
+                    }
+                );
+                const firebaseResult = await firebaseResponse.json();
+                if (!firebaseResponse.ok || !firebaseResult.idToken) {
+                    throw new Error('E-mail ou senha inválidos');
+                }
+
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
+                    body: JSON.stringify({
+                        id_token: firebaseResult.idToken,
+                        csrf_token: {{ csrf_token | tojson }}
+                    })
                 });
 
                 const result = await response.json();

@@ -28,11 +28,9 @@ fun BlockReason.message(remainSeconds: Long): String {
             "Navegação orientada: visite os slides na ordem para evitar perda de informações de segurança."
 
         BlockReason.MIN_DWELL_FIRST_SLIDE ->
-            "Atenção necessária: este primeiro slide traz informações essenciais de segurança. " +
-            "Aguarde ${s}s para garantir a leitura completa antes de avançar."
+            "⏳ Aguarde mais ${s}s de leitura neste 1º slide para liberar o próximo."
 
         BlockReason.MIN_DWELL_OTHER_SLIDE ->
-            "Conteúdo de segurança: este slide orienta a execução segura das atividades. " +
-            "Aguarde ${s}s para avançar e evitar falhas por leitura apressada."
+            "⏳ Aguarde mais ${s}s de leitura neste slide para liberar o próximo."
     }
 }

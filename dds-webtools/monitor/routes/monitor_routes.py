@@ -86,11 +86,11 @@ def update_config(payload: MonitorConfigPayload):
 def get_crash_reports():
     from services.crash_reports_service import list_crash_reports
     reports = list_crash_reports(limit=50)
-    return JSONResponse({
+    return JSONResponse(jsonable_encoder({
         "ok": True,
         "count": len(reports),
         "reports": reports
-    })
+    }))
 
 
 @router.delete("/api/crash-reports/{report_id}")
