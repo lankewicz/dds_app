@@ -31,7 +31,7 @@ _TEAMS_CACHE: dict[str, Any] = {
     "data": None,
     "updatedAt": None
 }
-TEAMS_CACHE_TTL_SEC = 300 # 5 minutos
+TEAMS_CACHE_TTL_SEC = 86400  # 24 horas
 
 
 EQUIPMENT_DEFAULTS: dict[str, dict[str, Any]] = {

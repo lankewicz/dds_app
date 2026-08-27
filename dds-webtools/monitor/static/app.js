@@ -44,6 +44,7 @@ const cfgAutoInactivateHours = document.getElementById("cfgAutoInactivateHours")
 const cfgPollingSeconds = document.getElementById("cfgPollingSeconds");
 const activityFeedPanel = document.getElementById("activityFeedPanel");
 const activityFeedList = document.getElementById("activityFeedList");
+const activityFeedSummary = document.getElementById("activityFeedSummary");
 
 
 let cfg = null;
@@ -166,19 +167,29 @@ function mergeActivityFeedItems(localItems, newItems) {
   return mergedList.slice(0, 30);
 }
 
-function renderActivityFeed(items = []) {
+function renderActivityFeed(items = [], summary = null) {
   if (!activityFeedPanel || !activityFeedList) return;
-  const visible = items.slice(0, 30);
+  if (activityFeedSummary && summary) {
+    const abertas = Number(summary.abertas || 0);
+    const comerciais = Number(summary.comerciais || 0);
+    const emergenciais = Number(summary.emergenciais || 0);
+    activityFeedSummary.textContent = `${abertas} Abertas · ${comerciais} Comerciais · ${emergenciais} Emergenciais`;
+  }
+  const visible = items
+    .filter((item) => String(item?.label || '').trim().toLowerCase() !== 'rotalog')
+    .slice(0, 30);
   if (!visible.length) {
-    activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem atividades recentes</div>';
+    activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem mudanças recentes</div>';
     return;
   }
   activityFeedList.innerHTML = visible.map((item) => {
     const time = escapeHtml(item.time || fmtHourMinute(item.activityAt));
-    const team = escapeHtml(item.teamKey || item.equipe || '-');
-    const label = escapeHtml(item.label || item.source || 'Atividade');
+    const team = String(item.teamKey || item.equipe || '-').trim().toUpperCase();
+    const rawLabel = String(item.label || 'Mudança operacional').trim();
+    const alreadyIdentified = team !== '-' && rawLabel.toUpperCase().startsWith(`${team} -`);
+    const label = escapeHtml(alreadyIdentified ? rawLabel : `${team} - ${rawLabel}`);
     const source = escapeHtml(item.source || '');
-    return `<div class="activityFeedItem" data-source="${source}"><span class="activityFeedTime">${time}</span><span class="activityFeedTeam">${team}</span><span class="activityFeedLabel">${label}</span></div>`;
+    return `<div class="activityFeedItem" data-source="${source}"><span class="activityFeedTime">${time}</span><span class="activityFeedLabel">${label}</span></div>`;
   }).join('');
 }
 
@@ -205,7 +216,7 @@ async function loadActivityFeed() {
     }
     const updatedCache = mergeActivityFeedItems(initialCached, data.items);
     saveLocalFeedCache(empresa, updatedCache);
-    renderActivityFeed(updatedCache);
+    renderActivityFeed(updatedCache, data.summary || null);
   } catch (error) {
     console.warn('Erro ao carregar feed de atividades:', error);
     if (initialCached.length === 0) {
@@ -632,11 +643,13 @@ function getOrigemTitle(item) {
 
 function getRotalogService(item) {
   const snapshot = item?.rotalogSnapshot || {};
-  const current = snapshot.atividadeAtual || null;
-  const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
-  const service = current || completed[completed.length - 1] || null;
+  const current = snapshot.atividadeAtual || item?.atividadeAtual || null;
+  const completed = (Array.isArray(snapshot.ssExecutadas) && snapshot.ssExecutadas.length)
+    ? snapshot.ssExecutadas
+    : (Array.isArray(item?.bdoList) ? item.bdoList : []);
+  const service = current || (completed.length ? completed[completed.length - 1] : null);
   if (!service) return null;
-  const rawStatus = safeUpper(service.status);
+  const rawStatus = safeUpper(service.status || item?.atividadeStatus || item?.monitorStatus);
   const statusChar = rawStatus === 'DESLOCAMENTO'
     ? 'D'
     : rawStatus === 'EXECUCAO'
@@ -645,12 +658,12 @@ function getRotalogService(item) {
         ? 'C'
         : '';
   const portalSs = hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '';
-  const realProtocol = service.protocolo || '';
-  const serviceId = service.ssId || service.protocoloBruto || '';
+  const realProtocol = service.protocolo || service.ssId || item?.nocSs || '';
+  const serviceId = service.protocoloBruto || service.ssId || '';
   const serviceType = service.tipo || '';
   const hasDistinctServiceId = serviceId && String(serviceId) !== String(serviceType);
   const identifier = portalSs || realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
-  const identifierLabel = portalSs || realProtocol || hasDistinctServiceId ? 'SS' : 'Tipo';
+  const identifierLabel = (portalSs || realProtocol || hasDistinctServiceId) ? 'SS' : 'Tipo';
   if (!identifier) return null;
   return { identifier: String(identifier), identifierLabel, statusChar, rawStatus };
 }
@@ -1281,12 +1294,13 @@ function startPolling() {
     return;
   }
 
-  if (!db) {
-    // Fallback: usar HTTP polling normal
+  const useHttpPolling = !db || String(lastData?.persistenceMode || 'json').toLowerCase() !== 'firestore';
+  if (useHttpPolling) {
+    // JSON/GCS: atualização via API, sem listeners Firestore
     nextRefresh.textContent = "Polling Ativo ⏳";
     const safeSeconds = Math.max(15, pollingSeconds);
     pollingTimer = setInterval(() => {
-      load({ forceRefresh: true });
+      load();
     }, safeSeconds * 1000);
 
     countdownTimer = setInterval(() => {
@@ -1523,6 +1537,22 @@ async function load(options = {}) {
   }
 }
 
+function getTeamUpdateSignature(item) {
+  const snapshot = item?.rotalogSnapshot || {};
+  const activity = snapshot.atividadeAtual || {};
+  return JSON.stringify({
+    state: item?.estado || null,
+    updatedAt: item?.updatedAt || null,
+    service: item?.ss || null,
+    rotalogVersion: snapshot.updatedAtIso || snapshot.eventTimestampMs || null,
+    activityStatus: activity.status || null,
+    activityType: activity.tipo || null,
+    activityProtocol: activity.protocolo || activity.protocoloBruto || activity.ssId || null,
+    messages: item?.unreadMap || {},
+    dds: (item?.ddsHistory || []).slice(-1)[0] || null,
+  });
+}
+
 function updateSingleTeamCard(item) {
   const teamKey = item.teamKey || item.equipe;
   if (!teamKey) return;
@@ -1530,14 +1560,7 @@ function updateSingleTeamCard(item) {
   const card = document.getElementById(cardId);
   if (!card) return;
 
-  const coreData = JSON.stringify({
-    st: item.estado,
-    al: item.alerta,
-    cr: item.critico,
-    ss: item.ss,
-    msg: item.unreadMap,
-    dds: (item.ddsHistory || []).slice(-1)[0]
-  });
+  const coreData = getTeamUpdateSignature(item);
 
   const oldCore = card.dataset.core;
   const hasChanged = oldCore !== coreData;
@@ -1622,14 +1645,7 @@ function renderData(items, meta, kpiSourceItems) {
     const html = tile(item);
 
     // Dados vitais para decidir se deve 'piscar' (ignora relógio)
-    const coreData = JSON.stringify({
-      st: item.estado,
-      al: item.alerta,
-      cr: item.critico,
-      ss: item.ss,
-      msg: item.unreadMap,
-      dds: (item.ddsHistory || []).slice(-1)[0]
-    });
+    const coreData = getTeamUpdateSignature(item);
 
     if (!card) {
       const temp = document.createElement('div');

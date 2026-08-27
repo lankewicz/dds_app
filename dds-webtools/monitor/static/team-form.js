@@ -22,7 +22,10 @@ const teamFormVehicle = document.getElementById('teamFormVehicle');
 const teamFormTitle = document.getElementById('teamFormTitle');
 const teamFormSubtitle = document.getElementById('teamFormSubtitle');
 const teamLiveStatus = document.getElementById('teamLiveStatus');
-const teamLiveSs = document.getElementById('teamLiveSs');
+const teamLiveActivity = document.getElementById('teamLiveActivity');
+const teamLiveService = document.getElementById('teamLiveService');
+const teamLiveProtocol = document.getElementById('teamLiveProtocol');
+const teamLiveSource = document.getElementById('teamLiveSource');
 const teamLiveUpdatedAt = document.getElementById('teamLiveUpdatedAt');
 const teamLiveAgo = document.getElementById('teamLiveAgo');
 const teamLiveDds = document.getElementById('teamLiveDds');
@@ -324,11 +327,72 @@ function updateHeader(item, teamKey) {
   teamFormSubtitle.textContent = empresa ? `Empresa ${empresa}` : 'Cadastro e situação atual do turno';
 }
 
+function normalizeOperationalProtocol(...candidates) {
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    const commercial = raw.match(/(?:^|\D)(202\d{11})(?:\D|$)/);
+    if (commercial) return commercial[1];
+    const normalized = raw.replace(/\.\d+(?:\.\d+)?$/, '');
+    if (/^\d{7,8}$/.test(normalized)) return normalized;
+  }
+  return '';
+}
+
+function getOperationalRotalogData(item) {
+  const snapshot = item?.rotalogSnapshot || {};
+  const inProgress = Array.isArray(snapshot.ssEmAndamento) ? snapshot.ssEmAndamento : [];
+  const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
+  const service = snapshot.atividadeAtual || inProgress[0] || completed[completed.length - 1] || null;
+  const activity = service?.status
+    || item?.atividadeStatusRotalog
+    || item?.atividadeStatus
+    || item?.monitorStatusRotalog
+    || snapshot.estadoConsolidado
+    || '-';
+  const category = String(service?.categoria || '').trim();
+  const type = String(service?.tipo || service?.descricao || service?.nome || '').trim();
+  const serviceLabel = [category, type]
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .join(' · ');
+  const protocol = normalizeOperationalProtocol(
+    service?.protocolo,
+    service?.protocoloBruto,
+    service?.ssId,
+    hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '',
+  );
+  const updatedAt = snapshot.updatedAtIso || item?.updatedAt || null;
+  const updatedMs = updatedAt ? Date.parse(updatedAt) : NaN;
+  const ageMinutes = Number.isFinite(updatedMs)
+    ? Math.max(0, Math.floor((Date.now() - updatedMs) / 60000))
+    : item?.minutosDesdeAtualizacao;
+  const fromRotalog = Boolean(item?.rotalogSnapshot)
+    || String(item?.deviceIdLastWriter || '').toUpperCase() === 'ROTALOG_AUTO_SYNC'
+    || String(item?.origemAtualizacao || '').toUpperCase() === 'ROTALOG_MAIS_RECENTE';
+  return {
+    status: snapshot.estadoConsolidado || item?.estado || '-',
+    activity,
+    serviceLabel: serviceLabel || 'Nenhum serviço em andamento',
+    protocol: protocol || '-',
+    updatedAt,
+    ageMinutes,
+    source: fromRotalog ? 'ROTALOG' : 'DDS',
+  };
+}
+
 function updateLiveSummary(item) {
-  teamLiveStatus.textContent = stateLabel(item?.estado || '-');
-  teamLiveSs.textContent = detailValue(item?.ss);
-  teamLiveUpdatedAt.textContent = fmtDateTime(item?.updatedAt);
-  teamLiveAgo.textContent = Number.isFinite(item?.minutosDesdeAtualizacao) ? fmtAgeFromMinutes(item.minutosDesdeAtualizacao) : '-';
+  const operational = getOperationalRotalogData(item);
+  teamLiveStatus.textContent = stateLabel(operational.status);
+  if (teamLiveActivity) teamLiveActivity.textContent = stateLabel(operational.activity);
+  if (teamLiveService) teamLiveService.textContent = operational.serviceLabel;
+  if (teamLiveProtocol) teamLiveProtocol.textContent = operational.protocol;
+  if (teamLiveSource) {
+    teamLiveSource.textContent = operational.source;
+    teamLiveSource.classList.toggle('isRotalog', operational.source === 'ROTALOG');
+  }
+  teamLiveUpdatedAt.textContent = fmtDateTime(operational.updatedAt);
+  teamLiveAgo.textContent = Number.isFinite(operational.ageMinutes)
+    ? `Há ${fmtAgeFromMinutes(operational.ageMinutes)}`
+    : '-';
 
   const ddsToggle = document.getElementById('ddsToggle');
   const isDdsChecked = ddsToggle ? ddsToggle.checked : false;
@@ -348,8 +412,6 @@ function updateLiveSummary(item) {
         showMeta: false,
         containerClass: 'ddsRowModal',
       });
-    } else {
-      teamLiveDds.innerHTML = '<div class="popoverEmpty" style="margin-top: 0;">Nenhum DDS registrado recentemente</div>';
     }
   }
 }

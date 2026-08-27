@@ -119,13 +119,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error starting background listener: {e}")
 
-    rotalog_enabled = os.getenv("ROTALOG_SCHEDULER_ENABLED", "true").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    rotalog_execution_mode = os.getenv("ROTALOG_EXECUTION_MODE", "embedded").strip().lower()
+    rotalog_enabled = (
+        rotalog_execution_mode == "embedded"
+        and os.getenv("ROTALOG_SCHEDULER_ENABLED", "true").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+    )
     if rotalog_enabled:
         try:
             from boletim_x_ponto.services.rotalog_sync_task import RotalogBackgroundScheduler
-            interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "300")))
+            interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "590")))
             rotalog_scheduler = RotalogBackgroundScheduler(interval_seconds=interval_seconds)
             rotalog_scheduler.start()
         except Exception as e:

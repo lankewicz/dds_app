@@ -696,7 +696,7 @@ button:disabled {
 }
 
 .tileBorderPulse {
-  animation: pulseBorder 2s ease-in-out infinite;
+  box-shadow: 0 0 0 2px var(--alert-pulse-border-strong) inset, 0 8px 24px rgba(0, 0, 0, .22);
 }
 
 .tileMain {
@@ -3066,11 +3066,29 @@ input:checked + .switchSlider:before {
   min-height: unset;
 }
 
+.activityFeedSummary {
+  min-height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+  z-index: 2;
+}
+
 .activityFeedList {
   display: grid;
   gap: 3px;
   padding: 7px 10px 9px 10px;
-  height: 123px; /* Altura fixa de 5 linhas: 5 * 19px + 4 * 3px + 16px padding vertical */
+  height: 123px; /* cinco mudanças visíveis; o resumo permanece fixo acima */
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(96, 165, 250, 0.3) transparent;
@@ -3091,7 +3109,7 @@ input:checked + .switchSlider:before {
 
 .activityFeedItem {
   display: grid;
-  grid-template-columns: 42px 58px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   gap: 7px;
   align-items: center;
   min-height: 19px;
@@ -3142,7 +3160,7 @@ input:checked + .switchSlider:before {
   }
 
   .activityFeedItem {
-    grid-template-columns: 38px 52px minmax(0, 1fr);
+    grid-template-columns: 38px minmax(0, 1fr);
     gap: 6px;
     font-size: 10.5px;
   }
@@ -3324,6 +3342,114 @@ input:checked + .switchSlider:before {
   color: #ffffff;
   border: 1px solid #fcd34d;
 }
+/* Resumo operacional ROTALOG no formulário da equipe */
+.turnoSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 
+.turnoSectionHeader .modalSectionSubtitle {
+  margin-top: 4px;
+  color: #8fa6c8;
+  font-size: 12px;
+}
 
+.turnoSourceBadge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .10);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
 
+.turnoSourceBadge.isRotalog {
+  border-color: rgba(56, 189, 248, .34);
+  background: rgba(14, 165, 233, .12);
+  color: #7dd3fc;
+}
+
+.liveSummaryOperational {
+  align-items: stretch;
+}
+
+.liveSummaryOperational .liveSummaryItem {
+  min-height: 76px;
+}
+
+.liveSummaryOperational .liveSummaryItemWide {
+  grid-column: 1 / -1;
+}
+
+.liveSummaryOperational .liveSummaryItemStatus strong {
+  color: #7dd3fc;
+  font-size: 16px;
+}
+
+.liveSummaryOperational .liveSummaryItem small {
+  display: block;
+  margin-top: 4px;
+  color: #8fa6c8;
+  font-size: 11px;
+}
+
+.manualTurnoEditor {
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, .30);
+  overflow: hidden;
+}
+
+.manualTurnoEditor > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  color: #e2e8f0;
+}
+
+.manualTurnoEditor > summary::-webkit-details-marker {
+  display: none;
+}
+
+.manualTurnoEditor > summary small {
+  display: block;
+  margin-top: 3px;
+  color: #8fa6c8;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.manualTurnoChevron {
+  color: #8fa6c8;
+  font-size: 18px;
+  transition: transform .18s ease;
+}
+
+.manualTurnoEditor[open] .manualTurnoChevron {
+  transform: rotate(180deg);
+}
+
+.manualTurnoFields {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  padding-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .turnoSectionHeader {
+    align-items: center;
+  }
+
+  .liveSummaryOperational .liveSummaryItemWide {
+    grid-column: auto;
+  }
+}

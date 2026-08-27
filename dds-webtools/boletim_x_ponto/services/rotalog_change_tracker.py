@@ -6,12 +6,20 @@ compartilhada entre portal, tablet e monitor.
 
 from __future__ import annotations
 
+import datetime
+import gzip
 import json
 import os
 import tempfile
 import threading
 import typing
 
+
+def _json_cache_default(value: typing.Any) -> typing.Any:
+    """Converte timestamps do Firestore para ISO sem mascarar tipos inválidos."""
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 TRACKED_FIELDS = (
     "estadoConsolidado",
@@ -82,13 +90,22 @@ class RotalogLocalCache:
             self._load().update(snapshots)
             self._flush()
 
+    def snapshot(self) -> dict[str, dict[str, typing.Any]]:
+        with self._lock:
+            return {key: dict(value) for key, value in self._load().items() if isinstance(value, dict)}
+
+    def replace(self, snapshots: dict[str, dict[str, typing.Any]]) -> None:
+        with self._lock:
+            self._data = {key: dict(value) for key, value in snapshots.items() if isinstance(value, dict)}
+            self._flush()
+
     def _flush(self) -> None:
         directory = os.path.dirname(self.path) or "."
         os.makedirs(directory, exist_ok=True)
         fd, temp_path = tempfile.mkstemp(prefix="rotalog-cache-", suffix=".json", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(self._data, stream, ensure_ascii=False, sort_keys=True)
+                json.dump(self._data, stream, ensure_ascii=False, sort_keys=True, default=_json_cache_default)
             os.replace(temp_path, self.path)
         except Exception:
             try:
@@ -96,3 +113,62 @@ class RotalogLocalCache:
             except OSError:
                 pass
             raise
+class RotalogGcsSnapshotStore:
+    """Snapshot JSON gzip durável; não realiza nenhuma operação no Firestore."""
+
+    def __init__(
+        self,
+        bucket_name: str,
+        blob_name: str,
+        *,
+        client_factory: typing.Callable[[], typing.Any] | None = None,
+    ):
+        self.bucket_name = bucket_name.strip()
+        self.blob_name = blob_name.strip().lstrip("/")
+        self._client_factory = client_factory
+        self._client = None
+        self._lock = threading.RLock()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.bucket_name and self.blob_name)
+
+    def _blob(self):
+        if not self.enabled:
+            raise RuntimeError("Cache GCS do ROTALOG não configurado.")
+        if self._client is None:
+            if self._client_factory is not None:
+                self._client = self._client_factory()
+            else:
+                from google.cloud import storage
+
+                self._client = storage.Client()
+        return self._client.bucket(self.bucket_name).blob(self.blob_name)
+
+    def load(self) -> dict[str, typing.Any]:
+        with self._lock:
+            try:
+                compressed = self._blob().download_as_bytes()
+            except Exception as exc:
+                # 404 é tratado pelo chamador como cache ainda não criado.
+                if getattr(exc, "code", None) == 404:
+                    return {}
+                raise
+            loaded = json.loads(gzip.decompress(compressed).decode("utf-8"))
+            return loaded if isinstance(loaded, dict) else {}
+
+    def save(self, snapshots: dict[str, typing.Any]) -> None:
+        with self._lock:
+            raw = json.dumps(
+                snapshots,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=_json_cache_default,
+            ).encode("utf-8")
+            blob = self._blob()
+            blob.content_encoding = "gzip"
+            blob.upload_from_string(
+                gzip.compress(raw, compresslevel=6),
+                content_type="application/json",
+            )

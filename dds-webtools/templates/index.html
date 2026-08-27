@@ -36,6 +36,7 @@
 
     <div class="topbarActivity">
       <section class="activityFeedPanel activityFeedPanelHeader" id="activityFeedPanel" aria-live="polite">
+        <div class="activityFeedSummary" id="activityFeedSummary">-- Abertas · -- Comerciais · -- Emergenciais</div>
         <div class="activityFeedList" id="activityFeedList">
           <div class="activityFeedEmpty">Carregando atividades...</div>
         </div>
@@ -297,13 +298,32 @@
             </section>
 
             <section class="modalSection formSection formSectionDark">
-              <div class="modalSectionTitle">Situação Atual do Turno</div>
+              <div class="turnoSectionHeader">
+                <div>
+                  <div class="modalSectionTitle">Situação Atual do Turno</div>
+                  <div class="modalSectionSubtitle">Dados operacionais obtidos da última sincronização</div>
+                </div>
+                <span class="turnoSourceBadge" id="teamLiveSource">DDS</span>
+              </div>
 
-              <div class="liveSummary" id="teamLiveSummary">
-                <div class="liveSummaryItem"><span>Status atual</span><strong id="teamLiveStatus">-</strong></div>
-                <div class="liveSummaryItem"><span>SS / NOC</span><strong id="teamLiveSs">-</strong></div>
-                <div class="liveSummaryItem"><span>Atualizado</span><strong id="teamLiveUpdatedAt">-</strong></div>
-                <div class="liveSummaryItem"><span>Há</span><strong id="teamLiveAgo">-</strong></div>
+              <div class="liveSummary liveSummaryOperational" id="teamLiveSummary">
+                <div class="liveSummaryItem liveSummaryItemStatus">
+                  <span>Status do turno</span><strong id="teamLiveStatus">-</strong>
+                </div>
+                <div class="liveSummaryItem">
+                  <span>Atividade</span><strong id="teamLiveActivity">-</strong>
+                </div>
+                <div class="liveSummaryItem liveSummaryItemWide">
+                  <span>Serviço atual</span><strong id="teamLiveService">Nenhum serviço em andamento</strong>
+                </div>
+                <div class="liveSummaryItem">
+                  <span>Protocolo</span><strong id="teamLiveProtocol">-</strong>
+                </div>
+                <div class="liveSummaryItem">
+                  <span>Última atualização</span>
+                  <strong id="teamLiveUpdatedAt">-</strong>
+                  <small id="teamLiveAgo">-</small>
+                </div>
               </div>
 
               <div class="modalSectionTitle modalSectionTitleDds" style="margin-top: 1.5rem; display: none;">Presenças no DDS (Últimas 3 semanas)</div>
@@ -311,44 +331,53 @@
                 <div class="popoverEmpty">Nenhum DDS registrado</div>
               </div>
 
-              <div class="formGrid">
-                <label class="formField formFieldFull">
-                  <span class="formLabel">Status</span>
-                  <select id="formEstado">
-                    <option value="ABERTO">ABERTO</option>
-                    <option value="INTERVALO">INTERVALO</option>
-                    <option value="DESLOCAMENTO_ESPECIAL">DESLOCAMENTO ESPECIAL</option>
-                    <option value="FECHADO">FECHADO</option>
-                    <option value="DESATUALIZADO">DESATUALIZADO</option>
-                    <option value="DESCONHECIDO">DESCONHECIDO</option>
-                  </select>
-                </label>
+              <details class="manualTurnoEditor">
+                <summary>
+                  <span>
+                    <strong>Correção manual do turno</strong>
+                    <small>Use somente quando o estado sincronizado precisar ser corrigido</small>
+                  </span>
+                  <span class="manualTurnoChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="formGrid manualTurnoFields">
+                  <label class="formField formFieldFull">
+                    <span class="formLabel">Status</span>
+                    <select id="formEstado">
+                      <option value="ABERTO">ABERTO</option>
+                      <option value="INTERVALO">INTERVALO</option>
+                      <option value="DESLOCAMENTO_ESPECIAL">DESLOCAMENTO ESPECIAL</option>
+                      <option value="FECHADO">FECHADO</option>
+                      <option value="DESATUALIZADO">DESATUALIZADO</option>
+                      <option value="DESCONHECIDO">DESCONHECIDO</option>
+                    </select>
+                  </label>
 
-                <label class="formField formFieldFull">
-                  <span class="formLabel">SS / NOC</span>
-                  <input id="formNocSs" type="text" placeholder="Ex.: SS-45678" />
-                </label>
+                  <label class="formField formFieldFull">
+                    <span class="formLabel">SS / NOC manual</span>
+                    <input id="formNocSs" type="text" placeholder="Ex.: SS-45678" />
+                  </label>
 
-                <label class="formField formFieldFull">
-                  <span class="formLabel">Motivo</span>
-                  <input id="formMotivo" type="text" placeholder="Ex.: Manutenção de rede" />
-                </label>
+                  <label class="formField formFieldFull">
+                    <span class="formLabel">Motivo da correção</span>
+                    <input id="formMotivo" type="text" placeholder="Ex.: Manutenção de rede" />
+                  </label>
 
-                <label class="formField">
-                  <span class="formLabel">Hora de entrada</span>
-                  <input id="formHoraEntrada" type="time" />
-                </label>
+                  <label class="formField">
+                    <span class="formLabel">Hora de entrada</span>
+                    <input id="formHoraEntrada" type="time" />
+                  </label>
 
-                <label class="formField">
-                  <span class="formLabel">Hora de saída</span>
-                  <input id="formHoraSaida" type="time" />
-                </label>
+                  <label class="formField">
+                    <span class="formLabel">Hora de saída</span>
+                    <input id="formHoraSaida" type="time" />
+                  </label>
 
-                <label class="formField formFieldFull">
-                  <span class="formLabel">Observações</span>
-                  <textarea id="formObservacoes" rows="6" placeholder="Observações complementares do turno"></textarea>
-                </label>
-              </div>
+                  <label class="formField formFieldFull">
+                    <span class="formLabel">Observações</span>
+                    <textarea id="formObservacoes" rows="4" placeholder="Observações complementares do turno"></textarea>
+                  </label>
+                </div>
+              </details>
             </section>
 
             <!-- Seção de comunicação removida -->

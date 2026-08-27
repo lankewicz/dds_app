@@ -93,22 +93,22 @@ def clear_all_monitor_caches():
 
 def update_productivity_metadata(empresa: str = DEFAULT_EMPRESA):
     """
-    Atualiza o documento de metadados da produtividade com a \u00faltima compet\u00eancia 
+    Atualiza o documento de metadados da produtividade com a \u00faltima compet\u00eancia
     e listas de filtros dispon\u00edveis (cidades, bases, etc).
     """
     try:
         from produtividade.services.productivity_service import get_latest_competence, list_productivity_data
-        
+
         # 1. Busca a \u00faltima compet\u00eancia usando o m\u00e9todo de varredura (por enquanto)
         year, month = get_latest_competence()
         if not year or not month:
             return
 
         competencia = f"{year}-{month:02d}"
-        
+
         # 2. Busca todos os dados apenas daquela compet\u00eancia para extrair metadados geogr\u00e1ficos
         data_latest = list_productivity_data(year=year, month=month)
-        
+
         cities = sorted(list(set(d.get("cityBase") for d in data_latest if d.get("cityBase"))))
         bases = sorted(list(set(d.get("base") for d in data_latest if d.get("base"))))
         agencies = sorted(list(set(d.get("agency") for d in data_latest if d.get("agency"))))
@@ -123,7 +123,7 @@ def update_productivity_metadata(empresa: str = DEFAULT_EMPRESA):
             "availableAgencies": agencies,
             "updatedAt": firestore.SERVER_TIMESTAMP
         }, merge=True)
-        
+
     except Exception as e:
         print(f"[update_productivity_metadata] Erro: {e}")
 
@@ -241,7 +241,7 @@ def _storage_client() -> storage.Client:
         _STORAGE_CLIENT = storage.Client()
         try:
             from requests.adapters import HTTPAdapter
-            adapter = HTTPAdapter(pool_connections=60, pool_maxsize=60)
+            adapter = HTTPAdapter(pool_connections=200, pool_maxsize=200)
             _STORAGE_CLIENT._http.mount("https://", adapter)
             _STORAGE_CLIENT._http._auth_request.session.mount("https://", adapter)
         except Exception:
@@ -382,7 +382,7 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
 
     items = cache.get("items") or []
     team_key = team_item.get("teamKey")
-    
+
     # Substitui ou adiciona o item
     found = False
     new_items = []
@@ -392,7 +392,7 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
             found = True
         else:
             new_items.append(it)
-    
+
     if not found:
         new_items.append(team_item)
         # Mantém a ordenação por nome da equipe
@@ -407,18 +407,9 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
         "_cachedAt": _utc_now_iso(),
         "manualRefresh": False
     }
-    
+
     with _cache_lock:
         _MONITOR_VIEW_CACHE[empresa] = updated_cache
-    try:
-        blob_name = _monitor_view_cache_blob(empresa)
-        blob = _storage_bucket().blob(blob_name)
-        blob.upload_from_string(
-            json.dumps(updated_cache, ensure_ascii=False, cls=_DatetimeEncoder),
-            content_type="application/json; charset=utf-8",
-        )
-    except Exception:
-        pass
 
 
 
@@ -683,22 +674,31 @@ def _activity_feed_item(
     }
 
 
+_ACTIVITY_FEED_CACHE: dict[str, list[dict[str, Any]]] = {}
+_ACTIVITY_FEED_LOCK = threading.RLock()
+
+
 def _update_activity_feed(empresa: str, feed_item: dict[str, Any], limit: int = 5) -> None:
     """Mantém um documento pequeno com as últimas atividades para a tela."""
     ref = _monitor_subcollection("activity_feed").document(empresa)
     try:
-        snap = ref.get()
-        current = (snap.to_dict() or {}).get("items") if snap.exists else []
-        items = [feed_item]
-        seen = {feed_item.get("eventId")}
-        for item in current or []:
-            event_id = item.get("eventId")
-            if event_id in seen:
-                continue
-            seen.add(event_id)
-            items.append(item)
-        items.sort(key=lambda item: str(item.get("activityAt") or ""), reverse=True)
-        ref.set({"empresa": empresa, "items": items[:limit], "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+        with _ACTIVITY_FEED_LOCK:
+            current = _ACTIVITY_FEED_CACHE.get(empresa)
+            if current is None:
+                snap = ref.get()
+                current = list((snap.to_dict() or {}).get("items") or []) if snap.exists else []
+            items = [feed_item]
+            seen = {feed_item.get("eventId")}
+            for item in current:
+                event_id = item.get("eventId")
+                if event_id in seen:
+                    continue
+                seen.add(event_id)
+                items.append(item)
+            items.sort(key=lambda item: str(item.get("activityAt") or ""), reverse=True)
+            compact_items = items[:limit]
+            ref.set({"empresa": empresa, "items": compact_items, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+            _ACTIVITY_FEED_CACHE[empresa] = compact_items
     except Exception as exc:
         print(f"[activity_feed] Erro ao atualizar feed: {exc}")
 
@@ -713,6 +713,8 @@ def _record_team_activity(
     event_ref: str | None = None,
     active_after_event: bool | None = None,
     extra: dict[str, Any] | None = None,
+    persist_history: bool = True,
+    persist_team: bool = True,
 ) -> None:
     activity_dt = to_utc_dt(activity_at) or _parse_iso_datetime(activity_at) or _utc_now()
     day_key = _local_day_key(activity_dt) or _utc_now().strftime("%Y-%m-%d")
@@ -735,31 +737,33 @@ def _record_team_activity(
         "receivedAt": firestore.SERVER_TIMESTAMP,
         **extra,
     }
-    _monitor_subcollection("activity_events").document(day_key).collection("events").document(event_id).set(payload, merge=True)
-    _monitor_subcollection("activity_state").document(f"{empresa}_{team_key}").set(
-        {
-            "empresa": empresa,
-            "teamKey": team_key,
-            "equipe": equipe or team_key,
-            "active": active_after_event,
-            "lastActivityAt": activity_dt,
-            "lastActivitySource": source,
-            "lastEventId": event_id,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
+    if persist_history:
+        _monitor_subcollection("activity_events").document(day_key).collection("events").document(event_id).set(payload, merge=True)
+        _monitor_subcollection("activity_state").document(f"{empresa}_{team_key}").set(
+            {
+                "empresa": empresa,
+                "teamKey": team_key,
+                "equipe": equipe or team_key,
+                "active": active_after_event,
+                "lastActivityAt": activity_dt,
+                "lastActivitySource": source,
+                "lastEventId": event_id,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
     _update_activity_feed(empresa, feed_item)
-    _safe_merge(
-        _team_doc_ref(team_key),
-        {
-            "lastActivityAt": activity_dt,
-            "lastActivitySource": source,
-            "lastActivityEventId": event_id,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            **({"active": active_after_event} if isinstance(active_after_event, bool) else {}),
-        },
-    )
+    if persist_team:
+        _safe_merge(
+            _team_doc_ref(team_key),
+            {
+                "lastActivityAt": activity_dt,
+                "lastActivitySource": source,
+                "lastActivityEventId": event_id,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                **({"active": active_after_event} if isinstance(active_after_event, bool) else {}),
+            },
+        )
 
 
 def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
@@ -773,7 +777,20 @@ def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
         return {"empresa": empresa, "items": [], "cached": False, "error": str(exc)}
 
 
-def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 5) -> dict[str, Any]:
+def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 30) -> dict[str, Any]:
+    if os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower() != "firestore":
+        try:
+            from boletim_x_ponto.services.rotalog_sync_task import get_rotalog_activity_feed
+            result = get_rotalog_activity_feed(limit=limit)
+            return {"empresa": empresa, **result}
+        except Exception as exc:
+            return {
+                "empresa": empresa,
+                "items": [],
+                "summary": {"abertas": 0, "comerciais": 0, "emergenciais": 0},
+                "source": "json",
+                "error": str(exc),
+            }
     return _read_activity_feed(empresa, limit=limit)
 
 
@@ -1385,6 +1402,47 @@ def _persist_team_inactive_checkpoint(
         payload["autoInactiveLastSeenDdsDay"] = source_dds_day
     _safe_merge(_team_doc_ref(team_key), payload)
 
+def _rotalog_json_snapshots() -> dict[str, dict[str, Any]]:
+    try:
+        from boletim_x_ponto.services.rotalog_sync_task import get_rotalog_live_snapshots
+        return get_rotalog_live_snapshots()
+    except Exception as exc:
+        logger.warning("Não foi possível carregar a visão ROTALOG do JSON: %s", exc)
+        return {}
+
+
+def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    if not snapshot:
+        return item
+    merged = dict(item)
+    merged["rotalogSnapshot"] = snapshot
+    merged["atividadeStatusRotalog"] = (snapshot.get("atividadeAtual") or {}).get("status")
+    merged["monitorStatusRotalog"] = merged["atividadeStatusRotalog"] or snapshot.get("estadoConsolidado")
+
+    activity = snapshot.get("atividadeAtual") or {}
+    protocol = activity.get("protocolo") or activity.get("protocoloBruto") or activity.get("ssId")
+    if protocol:
+        merged["ss"] = protocol
+
+    rotalog_ms = int(snapshot.get("eventTimestampMs") or 0)
+    current_dt = to_utc_dt(merged.get("updatedAt"))
+    current_ms = int(current_dt.timestamp() * 1000) if current_dt else 0
+    previous_writer = str(merged.get("deviceIdLastWriter") or "").strip().upper()
+    can_apply_state = bool(rotalog_ms) and (
+        not current_ms
+        or rotalog_ms >= current_ms
+        or previous_writer in {"ROTALOG_AUTO_SYNC", "ROTALOG_JSON", "ADMIN_FECHAR_TODOS"}
+    )
+    estado_rotalog = normalize_estado(snapshot.get("estadoConsolidado") or "DESCONHECIDO")
+    if can_apply_state and estado_rotalog != "DESCONHECIDO":
+        merged["estado"] = estado_rotalog
+        merged["estadoOriginal"] = estado_rotalog
+        merged["origemAtualizacao"] = "ROTALOG_JSON"
+        merged["deviceIdLastWriter"] = "ROTALOG_JSON"
+        if estado_rotalog in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}:
+            merged["active"] = True
+    return merged
+
 def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: bool = False, setor: str = CURRENT_SETOR) -> dict[str, Any]:
     # ------------------------------------------------------------------
     # Cache de vis\u00e3o completa: serve do cache quando n\u00e3o \u00e9 refresh manual.
@@ -1401,8 +1459,13 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
                 today_day = _utc_now_iso().split('T')[0]
                 if cached_day != today_day:
                     cached = None # For\u00e7a rec\u00e1lculo
-        
+
         if cached:
+            rotalog_snapshots = _rotalog_json_snapshots()
+            cached["items"] = [
+                _overlay_rotalog_json(item, rotalog_snapshots.get(str(item.get("teamKey") or "").upper()))
+                for item in (cached.get("items") or [])
+            ]
             # Remove chave interna antes de retornar
             cached = {k: v for k, v in cached.items() if k != "_cachedAt"}
             # Aplica filtro de active em mem\u00f3ria (se solicitado)
@@ -1438,8 +1501,8 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
     now = _get_now()
     pending_by_day: dict[str, set[str]] = {day: set() for day in mutable_dds_days}
 
-    all_keys = set(turno_docs.keys()) | set(teams_map.keys())
-
+    rotalog_snapshots = _rotalog_json_snapshots()
+    all_keys = set(turno_docs.keys()) | set(teams_map.keys()) | set(rotalog_snapshots.keys())
     def process_task(team_key):
         return _process_single_team(
             team_key=team_key,
@@ -1465,8 +1528,11 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
     with ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(process_task, all_keys))
 
-    all_items = [it for it in results if it]
-
+    all_items = [
+        _overlay_rotalog_json(it, rotalog_snapshots.get(str(it.get("teamKey") or "").upper()))
+        for it in results
+        if it
+    ]
     for day in recent_dds_days:
         entry = _DDS_DAY_CACHE.get(day)
         if not entry:
@@ -1486,6 +1552,7 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
         "empresa": empresa,
         "serverTime": now.isoformat(),
         "manualRefresh": manual_refresh,
+        "persistenceMode": os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower(),
         "items": all_items,
     }
 
@@ -1651,7 +1718,7 @@ def _process_single_team(
 
     ts = data.get("serverUpdatedAt") or data.get("updatedAt")
     dt = to_utc_dt(ts)
-    
+
     # ÚLTIMO CONTATO: Max entre sinal do Turno, DDS, Mensagens e lastActivityAt consolidado
     last_contact_dt = dt
     last_contact_src = "T" if dt else None
@@ -1673,7 +1740,7 @@ def _process_single_team(
     if rotalog_contact_dt and (not last_contact_dt or rotalog_contact_dt > last_contact_dt):
         last_contact_dt = rotalog_contact_dt
         last_contact_src = "R"
-            
+
     # Mensagens enviadas pelos aliases
     for alias in aliases:
         msg_ts = last_messages_map.get(alias)
@@ -1924,11 +1991,11 @@ def _process_single_team(
         total_inactivate_tolerance_h = auto_close_open_h + auto_desat_fechado_h + critico_desat_h + auto_inactivate_h
         total_no_contact_h = int((now - last_contact_dt).total_seconds() // 3600) if last_contact_dt else horas_estagio
         horas_restantes = total_inactivate_tolerance_h - total_no_contact_h
-        
+
         if 0 < horas_restantes <= 12:
             last_sent_dt = to_utc_dt(team_data.get("lastPreInactiveWarningSentAt"))
             should_send = (not last_sent_dt) or ((now - last_sent_dt).total_seconds() >= 3600)
-            
+
             if should_send:
                 stage_key = str(state_start_dt)
                 _send_pre_inactivation_warning(
@@ -2025,7 +2092,7 @@ def _process_single_team(
     dds_today = dds_history[-1] if dds_history else "neutral"
     unread_map = unread_map_global.get(team_key) or unread_map_global.get(equipe) or {}
     last_was_descanso_semanal = bool(data.get("lastWasDescansoSemanal", False))
-    
+
     return {
         "teamKey": team_key,
         "equipe": equipe,
@@ -2069,6 +2136,13 @@ def update_realtime_view(empresa: str = DEFAULT_EMPRESA, manual_refresh: bool = 
 
     data = list_turnos(empresa=empresa, manual_refresh=manual_refresh, **kwargs)
 
+    if os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower() != "firestore":
+        return {
+            **data,
+            "lastViewUpdate": _get_now().isoformat(),
+            "persistenceMode": "json",
+            "realtimeFirestorePersisted": False,
+        }
     # Persiste no Firestore com itens completos (com DDS) para o listener em tempo real
     # Lemos do cache completo (antes do strip) para persistir os campos DDS
     full_cache = _read_monitor_view_cache(empresa)
@@ -2088,20 +2162,20 @@ def update_realtime_view(empresa: str = DEFAULT_EMPRESA, manual_refresh: bool = 
             batch.commit()
             batch = db.batch()
             count = 0
-            
+
     if count > 0:
         batch.commit()
-        
+
     # Salva metadado da última atualização
     sync_time = _get_now().isoformat()
     db.collection("turno").document(empresa).set({
         "lastViewUpdate": sync_time,
         "lastViewUpdateBy": "MONITOR_SYNC"
     }, merge=True)
-    
+
     # Atualiza metadados de produtividade
     update_productivity_metadata(empresa)
-    
+
     # Retorna items sem DDS heavy (lazy loading via /api/turnos/dds)
     return {**data, "lastViewUpdate": sync_time}
 
@@ -2110,7 +2184,12 @@ _CONSOLIDATION_LOCKS = {} # { (empresa, team_key): last_consolidated_timestamp }
 _locks_mutex = threading.Lock()
 
 
-def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
+def consolidate_single_team(
+    empresa: str,
+    team_key: str,
+    *,
+    turno_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Consolida a visão de uma ÚNICA equipe e salva no Firestore Realtime.
     Evita buscar toda a base de dados do turno, mas utiliza o cache de DDS
@@ -2127,13 +2206,13 @@ def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
 
     now = _get_now()
     rules = get_monitor_rules()
-    
+
     # 1. Busca dados da equipe e do turno
     from services.teams_service import get_team
     from services.turno_equipes_service import get_turno_equipe
     team_data = get_team(team_key) or {}
-    turno_doc = get_turno_equipe(empresa, team_key) or {}
-    
+    turno_doc = turno_data if turno_data is not None else (get_turno_equipe(empresa, team_key) or {})
+
     if not team_data and not turno_doc:
         # Se não existe em lugar nenhum, remove do realtime se existir
         db.collection("turno").document(empresa).collection("realtime").document(team_key).delete()
@@ -2149,7 +2228,7 @@ def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
         dds_timestamps_by_day,
         dds_photos_by_day,
     ) = _load_recent_dds_presence(manual_refresh=False)
-    
+
     from services.messaging_service import get_unread_counts, get_all_unread_counts_map, get_last_messages_map
     unread_counts = get_unread_counts() # Setor padrão
     unread_map_global = get_all_unread_counts_map()
@@ -2175,11 +2254,11 @@ def consolidate_single_team(empresa: str, team_key: str) -> dict[str, Any]:
         rules=rules,
         pending_by_day={} # Não precisamos rastrear pendências globais na consolidação granular
     )
-    
+
     if item:
         # 4. Salva no Firestore Realtime
         db.collection("turno").document(empresa).collection("realtime").document(team_key).set(item)
-        
+
         # 5. ATUALIZAÇÃO INCREMENTAL: Em vez de invalidar tudo, 'remenda' o cache existente
         _patch_monitor_view_cache(empresa, item)
 
@@ -2207,8 +2286,6 @@ def get_team_keys_for_equipe_name(equipe_name: str) -> list[str]:
         if any(_normalized_alias_matches(norm_name, alias) for alias in aliases):
             matching_keys.append(team_key)
     return matching_keys
-
-
 def invalidate_dds_day_cache(day: str):
     with _cache_lock:
         _DDS_DAY_CACHE.pop(day, None)
@@ -2219,6 +2296,113 @@ def invalidate_dds_day_cache(day: str):
         pass
 
 
+from boletim_x_ponto.services.rotalog_tempo_real_service import formatar_protocolo_copel
+
+
+def _describe_team_change_details(data: dict[str, Any], team_key: str = "", empresa: str = "") -> str:
+    """Formata a mensagem de sincronização no padrão exato:
+    E3V75 - ChicoEletro - Atividade: EXECUCAO - Emergência: CHAVE - Protocolo: 50954710 - (Via Rotalog).
+    """
+    if not data:
+        return f"{team_key} - {empresa} - (Via Rotalog)."
+
+    equipe_code = data.get("equipe") or team_key or "EQUIPE"
+    empresa_str = data.get("empresa") or empresa or "ChicoEletro"
+
+    # 1. Atividade / Status
+    atividade_status = (
+        data.get("atividadeStatus") or
+        data.get("monitorStatus") or
+        data.get("estado") or
+        data.get("estadoConsolidado") or
+        "TURNO ABERTO"
+    )
+    if atividade_status == "EXECUCAO":
+        atividade_str = "EXECUCAO"
+    elif atividade_status == "DESLOCAMENTO":
+        atividade_str = "DESLOCAMENTO"
+    elif atividade_status == "INTERVALO":
+        atividade_str = "INTERVALO"
+    elif atividade_status == "FECHADO":
+        atividade_str = "TURNO FECHADO"
+    elif atividade_status == "ABERTO":
+        atividade_str = "TURNO ABERTO"
+    else:
+        atividade_str = str(atividade_status)
+
+    # 2. Busca serviço em andamento ou último executado
+    rotalog_snap = data.get("rotalogSnapshot") if isinstance(data.get("rotalogSnapshot"), dict) else {}
+    bdo_list = data.get("bdoList") or rotalog_snap.get("bdoList") or rotalog_snap.get("ssExecutadas") or []
+    ss_andamento = (
+        rotalog_snap.get("ssEmAndamento") or
+        data.get("ssEmAndamento") or
+        ([data.get("atividadeAtual")] if data.get("atividadeAtual") else []) or
+        ([rotalog_snap.get("atividade_atual")] if rotalog_snap.get("atividade_atual") else []) or
+        (bdo_list if isinstance(bdo_list, list) else [])
+    )
+
+    servico_str = ""
+    protocolo_str = ""
+
+    if isinstance(ss_andamento, list) and ss_andamento and isinstance(ss_andamento[0], dict):
+        ss1 = ss_andamento[0]
+        cat = str(ss1.get("categoria") or "").upper()
+
+        # Protocolo bruto (ex: 20265259525570.4.2 ou 50954710)
+        raw_proto = str(
+            ss1.get("protocolo") or
+            ss1.get("protocoloBruto") or
+            ss1.get("ssId") or
+            data.get("nocSs") or
+            data.get("protocolo") or
+            ""
+        ).strip()
+
+        proto_limpo = formatar_protocolo_copel(raw_proto)
+
+        # Tipo de serviço (ex: 9979, TRAFO, UC, CHAVE)
+        raw_tipo = str(ss1.get("tipo") or ss1.get("descricao") or ss1.get("nome") or "").strip()
+        tipo_limpo = re.sub(r"\.\d+(\.\d+)?$", "", raw_tipo) if raw_tipo else ""
+
+        # Se tipo_limpo e proto_limpo forem iguais (ambos contendo apenas o número do protocolo), tenta buscar descrição alternativa
+        if tipo_limpo and proto_limpo and tipo_limpo == proto_limpo:
+            alt_tipo = str(ss1.get("descricao") or ss1.get("nome") or ss1.get("tipoServico") or "").strip()
+            if alt_tipo:
+                tipo_limpo = alt_tipo
+
+        if "EMERG" in cat:
+            servico_str = f"Emergência: {tipo_limpo}" if tipo_limpo else "Emergência"
+        elif "COMER" in cat:
+            servico_str = f"Comercial : {tipo_limpo}" if tipo_limpo else "Comercial"
+        elif cat:
+            servico_str = f"{cat}: {tipo_limpo}" if tipo_limpo else cat
+        elif tipo_limpo:
+            servico_str = f"Serviço: {tipo_limpo}"
+
+        if proto_limpo:
+            protocolo_str = f"Protocolo: {proto_limpo}"
+
+    # 3. Origem
+    origem = data.get("origemAtualizacao") or data.get("deviceIdLastWriter") or data.get("reactivatedBy")
+    if origem in ("ROTALOG_AUTO_SYNC", "ROTALOG_MAIS_RECENTE"):
+        origem_str = "(Via Rotalog)"
+    elif origem == "DDS_MAIS_RECENTE":
+        origem_str = "(Via Tablet/App DDS)"
+    elif origem:
+        origem_str = f"(Via {origem})"
+    else:
+        origem_str = "(Via Rotalog)"
+
+    parts = [f"{equipe_code} - {empresa_str}", f"Atividade: {atividade_str}"]
+    if servico_str:
+        parts.append(servico_str)
+    if protocolo_str:
+        parts.append(protocolo_str)
+    parts.append(origem_str)
+
+    return " - ".join(parts) + "."
+
+
 class FirestoreListenerManager:
     def __init__(self):
         self.watches = []
@@ -2227,26 +2411,26 @@ class FirestoreListenerManager:
         self.initial_messages_done = False
 
     def start(self):
-        print("Starting Firestore background listeners...")
-        
+        print("Iniciando ouvintes em segundo plano do Firestore...")
+
         # 1. Listener para o Collection Group 'equipes' (turno/{empresa}/equipes)
         try:
             equipes_query = db.collection_group("equipes")
             watch_equipes = equipes_query.on_snapshot(self._on_equipes_snapshot)
             self.watches.append(watch_equipes)
         except Exception as e:
-            print(f"Error starting equipes listener: {e}")
+            print(f"Erro ao iniciar ouvinte de equipes: {e}")
 
         # 2. Listener para a coleção 'DDS' (Filtrado pelos últimos 7 dias para reduzir leituras)
         try:
             from datetime import datetime, timedelta
             limite_data = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-            print(f"Starting DDS listener filtered by headerDate >= {limite_data}")
+            print(f"Iniciando ouvinte de DDS filtrado por headerDate >= {limite_data}")
             dds_query = db.collection(DDS_COLLECTION).where(filter=FieldFilter("headerDate", ">=", limite_data))
             watch_dds = dds_query.on_snapshot(self._on_dds_snapshot)
             self.watches.append(watch_dds)
         except Exception as e:
-            print(f"Error starting DDS listener: {e}")
+            print(f"Erro ao iniciar ouvinte de DDS: {e}")
 
         # 3. Listener para a coleção 'mensagens_comunicacao'
         try:
@@ -2254,10 +2438,10 @@ class FirestoreListenerManager:
             watch_msg = msg_query.on_snapshot(self._on_messages_snapshot)
             self.watches.append(watch_msg)
         except Exception as e:
-            print(f"Error starting messages listener: {e}")
+            print(f"Erro ao iniciar ouvinte de mensagens: {e}")
 
     def stop(self):
-        print("Stopping Firestore background listeners...")
+        print("Parando ouvintes em segundo plano do Firestore...")
         for watch in self.watches:
             try:
                 watch.unsubscribe()
@@ -2268,10 +2452,11 @@ class FirestoreListenerManager:
     def _on_equipes_snapshot(self, col_snapshot, changes, read_time):
         if not self.initial_equipes_done:
             self.initial_equipes_done = True
-            print(f"Equipes initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            print(f"Snapshot inicial de equipes carregado: {len(changes)} documentos. Ignorando sincronização inicial.")
             return
 
-        print(f"Equipes change detected: {len(changes)} changes.")
+        print(f"Alteração em equipes detectada: {len(changes)} alterações.")
+        teams_to_sync: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
         for change in changes:
             if change.type.name in ('ADDED', 'MODIFIED'):
                 doc = change.document
@@ -2281,31 +2466,39 @@ class FirestoreListenerManager:
                     empresa = parts[1]
                     team_key = parts[3]
                     data = doc.to_dict() or {}
+                    is_rotalog_update = str(data.get("deviceIdLastWriter") or "").upper() == "ROTALOG_AUTO_SYNC"
                     event_dt = data.get("serverUpdatedAt") or data.get("updatedAt") or _utc_now()
                     _record_team_activity(
                         empresa=empresa,
                         team_key=team_key,
                         equipe=data.get("equipe") or team_key,
-                        source="turno",
+                        source="rotalog" if is_rotalog_update else "turno",
                         activity_at=event_dt,
                         event_ref=doc.reference.path,
                         active_after_event=True,
                         extra={"estado": data.get("estado"), "nocSs": data.get("nocSs")},
+                        persist_history=not is_rotalog_update,
+                        persist_team=not is_rotalog_update,
                     )
-                    print(f"Syncing team {team_key} for company {empresa} due to equipes update.")
-                    threading.Thread(
-                        target=consolidate_single_team,
-                        args=(empresa, team_key),
-                        daemon=True
-                    ).start()
+                    detail_line = _describe_team_change_details(data, team_key=team_key, empresa=empresa)
+                    teams_to_sync[(empresa, team_key)] = (detail_line, data)
+
+        for (empresa, team_key), (detail, turno_data) in teams_to_sync.items():
+            print(detail)
+            threading.Thread(
+                target=consolidate_single_team,
+                args=(empresa, team_key),
+                kwargs={"turno_data": turno_data},
+                daemon=True
+            ).start()
 
     def _on_dds_snapshot(self, col_snapshot, changes, read_time):
         if not self.initial_dds_done:
             self.initial_dds_done = True
-            print(f"DDS initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            print(f"Snapshot inicial de DDS carregado: {len(changes)} documentos. Ignorando sincronização inicial.")
             return
 
-        print(f"DDS change detected: {len(changes)} changes.")
+        print(f"Alteração em DDS detectada: {len(changes)} alterações.")
         for change in changes:
             if change.type.name in ('ADDED', 'MODIFIED'):
                 doc = change.document
@@ -2313,14 +2506,14 @@ class FirestoreListenerManager:
                 equipe_name = data.get("equipe")
                 header_date = data.get("headerDate")
                 day = _extract_dds_day(header_date)
-                
+
                 if day:
-                    print(f"Invalidating DDS cache for day {day}")
+                    print(f"Invalidando cache de presença de DDS para a data {day}")
                     invalidate_dds_day_cache(day)
-                
+
                 if equipe_name:
                     team_keys = get_team_keys_for_equipe_name(equipe_name)
-                    print(f"DDS activity trigger: equipe={equipe_name}, day={day}, matchedTeams={team_keys}")
+                    print(f"Gatilho de atividade DDS: equipe={equipe_name}, data={day}, equipesEncontradas={team_keys}")
                     for team_key in team_keys:
                         try:
                             event_data = {**data, "eventRef": doc.reference.path}
@@ -2330,8 +2523,8 @@ class FirestoreListenerManager:
                                 event_data["_doc_update_time"] = doc.update_time
                             _apply_dds_activity_trigger(team_key, event_data, day, empresa=DEFAULT_EMPRESA)
                         except Exception as exc:
-                            print(f"Error applying DDS activity trigger for {team_key}: {exc}")
-                        print(f"Syncing team {team_key} due to DDS update of equipe {equipe_name}.")
+                            print(f"Erro ao aplicar gatilho de atividade DDS para {team_key}: {exc}")
+                        print(f"Sincronizando a equipe {team_key} devido à atualização de DDS da equipe {equipe_name}.")
                         threading.Thread(
                             target=consolidate_team_across_all_companies,
                             args=(team_key,),
@@ -2341,10 +2534,13 @@ class FirestoreListenerManager:
     def _on_messages_snapshot(self, col_snapshot, changes, read_time):
         if not self.initial_messages_done:
             self.initial_messages_done = True
-            print(f"Messages initial snapshot loaded: {len(changes)} documents. Skipping initial sync.")
+            print(f"Snapshot inicial de mensagens carregado: {len(changes)} documentos. Ignorando sincronização inicial.")
             return
 
-        print(f"Messages change detected: {len(changes)} changes.")
+        print(f"Alteração em mensagens comunicação detectada: {len(changes)} alterações.")
+        from services.messaging_service import invalidate_messages_cache
+        invalidate_messages_cache()
+
         teams_to_sync = set()
         for change in changes:
             if change.type.name in ('ADDED', 'MODIFIED'):
@@ -2352,7 +2548,7 @@ class FirestoreListenerManager:
                 data = doc.to_dict() or {}
                 from_equipe = data.get("fromEquipe")
                 to_equipe = data.get("toEquipe")
-                
+
                 event_dt = data.get("sentAt") or data.get("timestamp") or data.get("serverUpdatedAt") or _utc_now()
                 for name in (from_equipe, to_equipe):
                     if name:
@@ -2368,9 +2564,9 @@ class FirestoreListenerManager:
                                 event_ref=doc.reference.path,
                                 active_after_event=True,
                             )
-        
+
         for team_key in teams_to_sync:
-            print(f"Syncing team {team_key} due to message update.")
+            print(f"Sincronizando a equipe {team_key} devido a nova mensagem.")
             threading.Thread(
                 target=consolidate_team_across_all_companies,
                 args=(team_key,),

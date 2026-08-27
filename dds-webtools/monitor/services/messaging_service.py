@@ -17,11 +17,33 @@ COLLECTION_MENSAGENS = "mensagens_comunicacao"
 # Setor padrão deste monitor (pode ser configurado via ENV)
 CURRENT_SETOR = os.getenv("DDS_MONITOR_SETOR", "OFICINA")
 
+import time
+import threading
+
+_cache_lock = threading.Lock()
+_unread_map_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
+_last_messages_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
+_unread_counts_cache: dict[str, dict[str, Any]] = {}
+_MESSAGES_CACHE_TTL_SECONDS = 30.0
+
+def invalidate_messages_cache():
+    """Invalida os caches de mensagens na memória RAM."""
+    with _cache_lock:
+        _unread_map_cache["timestamp"] = 0.0
+        _last_messages_cache["timestamp"] = 0.0
+        _unread_counts_cache.clear()
+
 def get_all_unread_counts_map() -> dict[str, dict[str, int]]:
     """
     Retorna um mapeamento global: { fromEquipe: { toSetor: quantidade } }
     Isso permite que o monitor mostre notificações dinâmicas ao trocar de setor.
+    Reutiliza cache RAM de 30s.
     """
+    now = time.monotonic()
+    with _cache_lock:
+        if _unread_map_cache["data"] is not None and (now - float(_unread_map_cache["timestamp"]) < _MESSAGES_CACHE_TTL_SECONDS):
+            return dict(_unread_map_cache["data"])
+
     query = (
         db.collection(COLLECTION_MENSAGENS)
         .where(filter=FieldFilter("status", "==", "NÃO LIDO"))
@@ -40,14 +62,23 @@ def get_all_unread_counts_map() -> dict[str, dict[str, int]]:
             
             global_counts[from_equipe][to_setor] = global_counts[from_equipe].get(to_setor, 0) + 1
             
-    return global_counts
+    with _cache_lock:
+        _unread_map_cache["data"] = global_counts
+        _unread_map_cache["timestamp"] = now
+
+    return dict(global_counts)
 
 
 def get_last_messages_map() -> dict[str, datetime]:
     """
     Retorna um mapa de equipe (nome ou key) -> timestamp da última mensagem enviada por ela.
-    Limitamos aos últimos 10 dias para performance.
+    Limitamos aos últimos 10 dias para performance. Reutiliza cache RAM de 30s.
     """
+    now = time.monotonic()
+    with _cache_lock:
+        if _last_messages_cache["data"] is not None and (now - float(_last_messages_cache["timestamp"]) < _MESSAGES_CACHE_TTL_SECONDS):
+            return dict(_last_messages_cache["data"])
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=10)
     query = (
         db.collection(COLLECTION_MENSAGENS)
@@ -64,15 +95,25 @@ def get_last_messages_map() -> dict[str, datetime]:
         if from_equipe and ts:
             if from_equipe not in last_msgs or ts > last_msgs[from_equipe]:
                 last_msgs[from_equipe] = ts
-                
-    return last_msgs
+
+    with _cache_lock:
+        _last_messages_cache["data"] = last_msgs
+        _last_messages_cache["timestamp"] = now
+
+    return dict(last_msgs)
 
 
 def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:
     """
     Retorna um mapeamento de equipe -> quantidade de mensagens NÃO LIDAS
-    destinadas ao setor atual vindas de cada equipe.
+    destinadas ao setor atual vindas de cada equipe. Reutiliza cache RAM de 30s.
     """
+    now = time.monotonic()
+    with _cache_lock:
+        cached = _unread_counts_cache.get(setor)
+        if cached and (now - float(cached.get("timestamp", 0)) < _MESSAGES_CACHE_TTL_SECONDS):
+            return dict(cached.get("data") or {})
+
     query = (
         db.collection(COLLECTION_MENSAGENS)
         .where(filter=FieldFilter("toSetor", "==", setor))
@@ -85,6 +126,10 @@ def get_unread_counts(setor: str = CURRENT_SETOR) -> dict[str, int]:
         from_equipe = data.get("fromEquipe")
         if from_equipe:
             counts[from_equipe] = counts.get(from_equipe, 0) + 1
+
+    with _cache_lock:
+        _unread_counts_cache[setor] = {"data": counts, "timestamp": now}
+
     return counts
 
 def get_open_threads(setor: str = CURRENT_SETOR) -> List[dict[str, Any]]:
@@ -179,6 +224,7 @@ def mark_thread_as_read(thread_id: str, setor: str = CURRENT_SETOR) -> int:
     
     if count > 0:
         batch.commit()
+        invalidate_messages_cache()
     return count
 
 def send_message(
@@ -205,6 +251,7 @@ def send_message(
     
     doc_ref = db.collection(COLLECTION_MENSAGENS).document()
     doc_ref.set(doc_data)
+    invalidate_messages_cache()
     return doc_ref.id
 
 def conclude_thread(thread_id: str) -> int:
@@ -221,6 +268,7 @@ def conclude_thread(thread_id: str) -> int:
     
     if count > 0:
         batch.commit()
+        invalidate_messages_cache()
     return count
 
 def _to_datetime(ts: Any) -> datetime:
