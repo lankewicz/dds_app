@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from datetime import timedelta
 from typing import Any, Mapping
 
@@ -74,7 +76,16 @@ def is_root_email(email: str) -> bool:
 
 def ensure_firebase_app() -> None:
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        project_id = (
+            os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCP_PROJECT")
+            or "dds-treinamentos"
+        )
+        options = {"projectId": project_id}
+        signing_sa = os.getenv("SIGNING_SERVICE_ACCOUNT")
+        if signing_sa:
+            options["serviceAccountId"] = signing_sa
+        firebase_admin.initialize_app(options=options)
 
 
 def create_session_cookie(id_token: str) -> str:
@@ -87,6 +98,7 @@ def create_session_cookie(id_token: str) -> str:
             expires_in=timedelta(seconds=SESSION_MAX_AGE_SECONDS),
         )
     except Exception as exc:
+        print(f"Erro ao criar session cookie no Firebase: {type(exc).__name__}: {exc}")
         raise InvalidSessionError("ID token inválido.") from exc
 
 
@@ -99,6 +111,40 @@ def verify_session_cookie(session_cookie: str) -> Mapping[str, Any]:
     except Exception as exc:
         raise InvalidSessionError("Sessão inválida ou expirada.") from exc
 
+
+def verify_firebase_id_token(id_token: str) -> Mapping[str, Any]:
+    if not id_token or not id_token.strip():
+        raise InvalidSessionError("ID token ausente.")
+    ensure_firebase_app()
+    try:
+        return firebase_auth.verify_id_token(id_token.strip(), check_revoked=False)
+    except Exception as exc:
+        raise InvalidSessionError("ID token inválido ou expirado.") from exc
+
+
+_MOBILE_TEAM_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
+_MOBILE_TEAM_CACHE_LOCK = threading.RLock()
+_MOBILE_TEAM_CACHE_TTL = 3600
+
+
+def authorize_mobile_team(claims: Mapping[str, Any], team_key: str, db: Any) -> bool:
+    uid = str(claims.get("uid") or claims.get("sub") or "").strip()
+    normalized = str(team_key or "").strip().upper()
+    if not uid or not normalized:
+        return False
+    cache_key = (uid, normalized)
+    now = time.monotonic()
+    with _MOBILE_TEAM_CACHE_LOCK:
+        cached = _MOBILE_TEAM_CACHE.get(cache_key)
+        if cached and now - cached[1] < _MOBILE_TEAM_CACHE_TTL:
+            return cached[0]
+    snapshot = db.collection("dds_teams").document(normalized).get()
+    data = snapshot.to_dict() if snapshot.exists else {}
+    authorized = {str(value) for value in (data.get("authorizedAppUids") or [])}
+    allowed = not authorized or uid in authorized or uid == str(data.get("updatedByUid") or "")
+    with _MOBILE_TEAM_CACHE_LOCK:
+        _MOBILE_TEAM_CACHE[cache_key] = (allowed, now)
+    return allowed
 
 def authorize_portal_user(claims: Mapping[str, Any], db: Any) -> dict[str, Any]:
     email = str(claims.get("email") or "").strip().lower()

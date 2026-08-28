@@ -34,7 +34,8 @@ fun ServicoItem(
     ordinalLabel: String,
     turnoTransitions: List<TurnoTransition>,
     nowMs: Long,
-    onAlterarEstado: (SsStatus) -> Unit
+    onAlterarEstado: (SsStatus) -> Unit,
+    readOnly: Boolean = false
 ) {
     val statusColor = when (ss.status) {
         SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
@@ -63,12 +64,14 @@ fun ServicoItem(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = ss.ssId,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    if (!readOnly) {
+                        Text(
+                            text = ss.ssId,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
                 
                 Surface(
@@ -87,8 +90,24 @@ fun ServicoItem(
 
             Spacer(Modifier.height(8.dp))
 
+            if (readOnly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Tipo do serviço", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(ss.serviceType ?: "Não informado", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Protocolo", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(ss.protocol ?: "Não informado", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+
             // State indicators / actions
-            if (ss.status == SsStatus.DESLOCAMENTO || ss.status == SsStatus.EXECUCAO) {
+            if (!readOnly && (ss.status == SsStatus.DESLOCAMENTO || ss.status == SsStatus.EXECUCAO)) {
                 val tDesl = ss.getTransitionTime(SsStatus.DESLOCAMENTO)
                 val tExec = ss.getTransitionTime(SsStatus.EXECUCAO)
                 
@@ -333,4 +352,73 @@ fun SemExecucaoItem(item: UnifiedHistoryItem.SemExecucao) {
             )
         }
     }
+}
+@Composable
+fun ServiceTableHeader() {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TableCell("#", 0.35f, true)
+            TableCell("Tipo", 0.7f, true)
+            TableCell("Categoria", 1.05f, true)
+            TableCell("Protocolo", 1.25f, true)
+            TableCell("Desloc.", 0.8f, true)
+            TableCell("Execução", 0.8f, true)
+            TableCell("Conclusão", 0.8f, true)
+            TableCell("Status", 1f, true)
+        }
+    }
+}
+
+@Composable
+fun ServiceTableRow(ss: BdoSs, position: Int) {
+    val statusColor = when (ss.status) {
+        SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
+        SsStatus.EXECUCAO -> Color(0xFFEF6C00)
+        SsStatus.CONCLUSAO -> Color(0xFF2E7D32)
+        SsStatus.CANCELADO -> Color(0xFFC62828)
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TableCell(position.toString(), 0.35f)
+            TableCell(ss.serviceType ?: "—", 0.7f)
+            TableCell(ss.category ?: "—", 1.05f)
+            TableCell(ss.protocol ?: "Não informado", 1.25f)
+            TableCell(ss.getTransitionTime(SsStatus.DESLOCAMENTO).ifEmpty { "—" }, 0.8f)
+            TableCell(ss.getTransitionTime(SsStatus.EXECUCAO).ifEmpty { "—" }, 0.8f)
+            TableCell(ss.getTransitionTime(SsStatus.CONCLUSAO).ifEmpty { "—" }, 0.8f)
+            TableCell(ss.status.name, 1f, color = statusColor)
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TableCell(
+    value: String,
+    weight: Float,
+    header: Boolean = false,
+    color: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Text(
+        text = value,
+        modifier = Modifier.weight(weight).padding(horizontal = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = if (header) FontWeight.Bold else FontWeight.Medium,
+        color = color,
+        maxLines = 1
+    )
 }

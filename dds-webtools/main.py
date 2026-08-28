@@ -198,12 +198,14 @@ from portal_auth import (
     InvalidSessionError,
     UnauthorizedUserError,
     authenticate_portal_request,
+    authorize_mobile_team,
     cookie_is_secure,
     create_session_cookie,
     has_permission,
     has_write_permission,
     is_root_email,
     required_permission_for_path,
+    verify_firebase_id_token,
 )
 
 class LoginPayload(BaseModel):
@@ -264,6 +266,25 @@ _SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api/rotalog/mobile/"):
+        authorization = request.headers.get("authorization", "")
+        token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        try:
+            claims = verify_firebase_id_token(token)
+        except InvalidSessionError:
+            return JSONResponse(status_code=401, content={"ok": False, "message": "Token Firebase inválido ou ausente."})
+        team_key = request.url.path.split("/api/rotalog/mobile/", 1)[1].split("/", 1)[0]
+        from monitor.services.firestore_client import db
+        try:
+            if not authorize_mobile_team(claims, team_key, db):
+                return JSONResponse(status_code=403, content={"ok": False, "message": "Este dispositivo não está vinculado à equipe solicitada."})
+        except Exception as auth_err:
+            print(f"Erro na verificação de autorização de equipe {team_key}: {auth_err}")
+        if request.method not in _SAFE_HTTP_METHODS:
+            return JSONResponse(status_code=405, content={"ok": False, "message": "Método não permitido."})
+        request.state.mobile_user = claims
+        return await call_next(request)
+
     portal_user = None
     required_permission = None
     if not _is_public_path(request.url.path):

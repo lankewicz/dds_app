@@ -1,4 +1,5 @@
 import datetime
+import datetime
 import json
 import os
 import tempfile
@@ -11,10 +12,12 @@ from boletim_x_ponto.services.rotalog_change_tracker import (
     compact_snapshot,
 )
 from boletim_x_ponto.services.rotalog_change_tracker import RotalogGcsSnapshotStore
+from boletim_x_ponto.services.rotalog_team_file_repository import LOCAL_TZ
 from boletim_x_ponto.services.rotalog_sync_task import (
     _build_team_base_payload,
     _deve_aplicar_estado_rotalog,
     _describe_rotalog_change,
+    _rotalog_change_activity_at,
     _executar_sincronizacao_rotalog,
     _service_id,
     _sync_execution_lock,
@@ -174,6 +177,30 @@ class RotalogChangeTrackerTests(unittest.TestCase):
             "E3X99 - 9925 - EXECUCAO",
         )
 
+    def test_feed_usa_horario_real_do_inicio_da_execucao(self):
+        previous = {
+            "estadoConsolidado": "ABERTO",
+            "atividadeAtual": {"tipo": "9908", "status": "DESLOCAMENTO", "inicioDeslocamento": "14:31"},
+        }
+        current = {
+            "estadoConsolidado": "ABERTO",
+            "atividadeAtual": {"tipo": "9908", "status": "EXECUCAO", "inicioExecucao": "14:47"},
+        }
+        self.assertEqual(
+            _rotalog_change_activity_at(previous, current, "2026-08-27T14:56:00-03:00"),
+            "2026-08-27T14:47:00-03:00",
+        )
+
+    def test_feed_usa_horario_real_do_fechamento(self):
+        previous = {"estadoConsolidado": "ABERTO", "turno": {"inicio_ms": 1_777_000_000_000}}
+        current = {"estadoConsolidado": "FECHADO", "turno": {"fim_ms": 1_777_001_800_000}}
+        expected = datetime.datetime.fromtimestamp(
+            1_777_001_800, datetime.timezone.utc
+        ).astimezone(LOCAL_TZ).isoformat()
+        self.assertEqual(
+            _rotalog_change_activity_at(previous, current, "2026-08-27T15:00:00-03:00"),
+            expected,
+        )
     def test_feed_descreve_abertura_e_fechamento(self):
         previous = {"teamKey": "E3X99", "estadoConsolidado": "ABERTO"}
         current = {"teamKey": "E3X99", "estadoConsolidado": "FECHADO"}

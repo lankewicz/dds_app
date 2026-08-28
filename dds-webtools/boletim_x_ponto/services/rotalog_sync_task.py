@@ -22,6 +22,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 from boletim_x_ponto.services.rotalog_tempo_real_service import extrair_dados_tempo_real
+from boletim_x_ponto.services.rotalog_team_file_repository import (
+    LOCAL_TZ,
+    RotalogTeamFileRepository,
+)
 from boletim_x_ponto.services.rotalog_change_tracker import (
     RotalogGcsSnapshotStore,
     RotalogLocalCache,
@@ -53,6 +57,7 @@ _durable_cache_state: dict[str, typing.Any] = {
     "equipment_firestore_reads": 0,
 }
 _durable_cache_lock = threading.RLock()
+_team_file_repository = RotalogTeamFileRepository(_durable_cache_store)
 _ROTALOG_PERSISTENCE_MODE = os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower()
 _json_activity_feed: list[dict[str, typing.Any]] = []
 
@@ -75,7 +80,11 @@ def get_rotalog_activity_feed(limit: int = 30) -> dict[str, typing.Any]:
     comerciais = sum(int(snapshot.get("ssPendentesComercialCount") or 0) for snapshot in snapshots.values())
     emergenciais = sum(int(snapshot.get("ssPendentesEmergenciaCount") or 0) for snapshot in snapshots.values())
     return {
-        "items": list(_json_activity_feed[: max(1, min(int(limit or 30), 100))]),
+        "items": [
+            item for item in _json_activity_feed
+            if " - FILA:" not in str(item.get("label") or "").upper()
+            and "DADOS OPERACIONAIS ATUALIZADOS" not in str(item.get("label") or "").upper()
+        ][: max(1, min(int(limit or 30), 100))],
         "summary": {"abertas": abertas, "comerciais": comerciais, "emergenciais": emergenciais},
         "source": "json",
     }
@@ -84,6 +93,26 @@ def get_rotalog_activity_feed(limit: int = 30) -> dict[str, typing.Any]:
 def get_rotalog_live_snapshot(team_key: str) -> dict[str, typing.Any] | None:
     _hydrate_durable_cache_once()
     return _local_cache.get(normalize_team_key(team_key))
+
+def get_rotalog_team_current(team_key: str) -> dict[str, typing.Any] | None:
+    normalized = normalize_team_key(team_key)
+    local = get_rotalog_live_snapshot(normalized)
+    if local:
+        return local
+    if not _durable_cache_store.enabled:
+        return None
+    return _team_file_repository.load_current(normalized) or None
+
+
+def get_rotalog_team_daily(team_key: str, day: str) -> dict[str, typing.Any] | None:
+    datetime.date.fromisoformat(day)
+    if not _durable_cache_store.enabled:
+        return None
+    return _team_file_repository.load_daily(normalize_team_key(team_key), day) or None
+
+def get_rotalog_team_daily_today(team_key: str) -> dict[str, typing.Any] | None:
+    day = datetime.datetime.now(LOCAL_TZ).date().isoformat()
+    return get_rotalog_team_daily(team_key, day)
 
 def _hydrate_durable_cache_once() -> None:
     """Hidrata snapshots e índice uma vez; falhas no GCS não interrompem a raspagem."""
@@ -318,7 +347,7 @@ def _service_id(team_key: str, service: dict[str, typing.Any]) -> str:
         "teamKey": team_key,
         "tipo": service.get("tipo"),
         "inicio": service.get("inicioIso"),
-        "fim": service.get("fimIso"),
+        "sequencia": service.get("sequencia"),
     }
     digest = hashlib.sha256(
         json.dumps(identity, sort_keys=True).encode("utf-8")
@@ -446,6 +475,7 @@ def _build_rotalog_document(
         "estadoConsolidado": eq["estado_consolidado"],
         "turno": eq["turno"],
         "intervalo": eq["intervalo"],
+        "intervalos": eq.get("intervalos") or [],
         "atividadeAtual": eq["atividade_atual"],
         "bdoList": eq["bdo_list"],
         "ssExecutadasCount": len(eq["ss_executadas"]),
@@ -460,11 +490,88 @@ def _build_rotalog_document(
     }
 
 
+def _event_datetime_iso(value: typing.Any, fallback_iso: str) -> str | None:
+    """Normaliza ms, ISO ou HH:mm usando o dia local da detecção como referência."""
+    if value in (None, ""):
+        return None
+    try:
+        fallback = datetime.datetime.fromisoformat(str(fallback_iso).replace("Z", "+00:00"))
+        if fallback.tzinfo is None:
+            fallback = fallback.replace(tzinfo=datetime.timezone.utc)
+        fallback_local = fallback.astimezone(LOCAL_TZ)
+        if isinstance(value, (int, float)) or str(value).strip().isdigit():
+            numeric = float(value)
+            seconds = numeric / 1000 if numeric > 100_000_000_000 else numeric
+            return datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).astimezone(LOCAL_TZ).isoformat()
+        raw = str(value).strip()
+        if re.fullmatch(r"\d{2}:\d{2}(?::\d{2})?", raw):
+            parts = [int(part) for part in raw.split(":")]
+            candidate = datetime.datetime.combine(
+                fallback_local.date(),
+                datetime.time(parts[0], parts[1], parts[2] if len(parts) > 2 else 0),
+                tzinfo=LOCAL_TZ,
+            )
+            # Uma hora noturna detectada logo após a meia-noite pertence ao dia anterior.
+            if candidate > fallback_local + datetime.timedelta(hours=2):
+                candidate -= datetime.timedelta(days=1)
+            return candidate.isoformat()
+        parsed = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=LOCAL_TZ)
+        return parsed.astimezone(LOCAL_TZ).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _rotalog_change_activity_at(
+    previous: dict[str, typing.Any],
+    current: dict[str, typing.Any],
+    fallback_iso: str,
+) -> str:
+    """Escolhe o horário real do evento; usa a detecção somente como fallback."""
+    old_state = str(previous.get("estadoConsolidado") or "").upper()
+    new_state = str(current.get("estadoConsolidado") or "").upper()
+    candidates: list[typing.Any] = []
+
+    if old_state != new_state:
+        turno = current.get("turno") or {}
+        intervalo = current.get("intervalo") or {}
+        if new_state == "FECHADO":
+            candidates.extend((turno.get("fim_iso"), turno.get("fimIso"), turno.get("fim_ms")))
+        elif new_state == "INTERVALO":
+            candidates.extend((intervalo.get("inicioIso"), intervalo.get("inicio_iso"), intervalo.get("inicio_ms")))
+        elif new_state == "ABERTO":
+            candidates.extend((turno.get("inicio_iso"), turno.get("inicioIso"), turno.get("inicio_ms")))
+
+    old_activity = previous.get("atividadeAtual") or {}
+    new_activity = current.get("atividadeAtual") or {}
+    if new_activity and old_activity != new_activity:
+        status = str(new_activity.get("status") or "").upper()
+        if status == "DESLOCAMENTO":
+            candidates.extend((new_activity.get("inicioDeslocamento"), new_activity.get("inicioIso")))
+        elif status == "EXECUCAO":
+            candidates.extend((new_activity.get("inicioExecucao"), new_activity.get("inicioIso")))
+        elif status == "CONCLUSAO":
+            candidates.extend((new_activity.get("termino"), new_activity.get("fimIso"), new_activity.get("retorno")))
+        else:
+            candidates.append(new_activity.get("inicioIso"))
+
+    if len(current.get("ssExecutadas") or []) != len(previous.get("ssExecutadas") or []):
+        completed = (current.get("ssExecutadas") or [])[-1:]
+        if completed:
+            candidates.extend((completed[0].get("termino"), completed[0].get("fimIso"), completed[0].get("retorno")))
+
+    for candidate in candidates:
+        resolved = _event_datetime_iso(candidate, fallback_iso)
+        if resolved:
+            return resolved
+    return fallback_iso
+
 def _describe_rotalog_change(
     previous: dict[str, typing.Any],
     current: dict[str, typing.Any],
     changes: dict[str, dict[str, typing.Any]],
-) -> str:
+) -> str | None:
     team_key = str(current.get("teamKey") or current.get("equipe") or "EQUIPE").upper()
     old_state = str(previous.get("estadoConsolidado") or "DESCONHECIDO").upper()
     new_state = str(current.get("estadoConsolidado") or "DESCONHECIDO").upper()
@@ -479,19 +586,19 @@ def _describe_rotalog_change(
     if new_activity and (old_activity != new_activity):
         return f"{team_key} - {service_type} - {new_status or 'ATUALIZADO'}"
 
-    old_pending = len(previous.get("ssPendentes") or [])
-    new_pending = len(current.get("ssPendentes") or [])
-    if old_pending != new_pending:
-        return f"{team_key} - Fila: {old_pending} → {new_pending}"
+    # Mudanças exclusivas na fila não entram no feed; seguimos avaliando
+    # alterações mais relevantes que possam ter ocorrido no mesmo ciclo.
     old_running = len(previous.get("ssEmAndamento") or [])
     new_running = len(current.get("ssEmAndamento") or [])
     if old_running != new_running:
+        if old_running > 0 and new_running == 0:
+            return f"{team_key} - SEM EXECUÇÃO"
         return f"{team_key} - Em andamento: {old_running} → {new_running}"
     old_done = len(previous.get("ssExecutadas") or [])
     new_done = len(current.get("ssExecutadas") or [])
     if old_done != new_done:
         return f"{team_key} - Executados: {old_done} → {new_done}"
-    return f"{team_key} - Dados operacionais atualizados"
+    return None
 
 def _persistir_somente_json(
     equipas: list[dict[str, typing.Any]],
@@ -524,22 +631,35 @@ def _persistir_somente_json(
         if not needs_full_upgrade and not changes:
             skipped += 1
             continue
+        current["version"] = int((previous or {}).get("version") or 0) + 1
         updates[team_key] = current
         if previous and changes:
-            activity_at = timestamp_iso
-            feed_items.append({
-                "eventId": f"{team_key}_{hashlib.md5((activity_at + _describe_rotalog_change(previous, current, changes)).encode('utf-8')).hexdigest()[:12]}",
-                "empresa": empresa,
-                "teamKey": team_key,
-                "equipe": eq_codigo,
-                "source": "rotalog_json",
-                "label": _describe_rotalog_change(previous, current, changes),
-                "time": "",
-                "activityAt": activity_at,
-            })
+            activity_at = _rotalog_change_activity_at(previous, current, timestamp_iso)
+            description = _describe_rotalog_change(previous, current, changes)
+            if description:
+                feed_items.append({
+                    "eventId": f"{team_key}_{hashlib.md5((activity_at + description).encode('utf-8')).hexdigest()[:12]}",
+                    "empresa": empresa,
+                    "teamKey": team_key,
+                    "equipe": eq_codigo,
+                    "source": "rotalog_json",
+                    "label": description,
+                    "time": "",
+                    "activityAt": activity_at,
+                })
 
+    daily_file_writes = 0
+    scheduled_file_writes = 0
     if updates:
         _local_cache.set_many(updates)
+        local_day = datetime.datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00")).astimezone(LOCAL_TZ).date().isoformat()
+        if _durable_cache_store.enabled:
+            for document in updates.values():
+                try:
+                    _team_file_repository.merge_and_save_daily(document, local_day)
+                    daily_file_writes += 1
+                except Exception as exc:
+                    logger.warning("Não foi possível persistir arquivos da equipe %s: %s", document.get("teamKey"), exc)
     if feed_items:
         combined = feed_items + _json_activity_feed
         seen = set()
@@ -553,6 +673,24 @@ def _persistir_somente_json(
         _json_activity_feed[:] = deduplicated[:30]
     should_persist = bool(updates) or bool(_durable_cache_state.get("equipment_loaded_from_firestore"))
     persisted = _persist_durable_cache() if should_persist else False
+    monthly_result = {"executed": False, "reason": "storage_disabled"}
+    turn_check_result = {"executed": False, "reason": "storage_disabled"}
+    if _durable_cache_store.enabled:
+        try:
+            turn_check_result = _team_file_repository.record_daily_turn_check(len(equipas))
+            if turn_check_result.get("executed"):
+                scheduled_file_writes += 1
+        except Exception as exc:
+            logger.warning("Falha ao registrar checagem diária dos turnos: %s", exc)
+            turn_check_result = {"executed": False, "reason": "error", "error": str(exc)}
+    if _durable_cache_store.enabled:
+        try:
+            monthly_result = _team_file_repository.consolidate_month_once_per_day()
+            if monthly_result.get("executed"):
+                scheduled_file_writes += 3
+        except Exception as exc:
+            logger.warning("Falha na consolidação mensal ROTALOG: %s", exc)
+            monthly_result = {"executed": False, "reason": "error", "error": str(exc)}
     fila_emergencia = sum(item["emergencia"] for item in fila_por_equipe.values())
     fila_comercial = sum(item["comercial"] for item in fila_por_equipe.values())
     return {
@@ -577,6 +715,16 @@ def _persistir_somente_json(
         "leiturasCloudStorage": int(_durable_cache_state.get("reads", 0)) - gcs_reads_before,
         "gravacoesCloudStorage": int(_durable_cache_state.get("writes", 0)) - gcs_writes_before,
         "cacheDuravelPersistidoNesteCiclo": persisted,
+        "gravacoesJsonDiario": daily_file_writes,
+        "gravacoesRotinasAgendadas": scheduled_file_writes,
+        "gravacoesArquivosEquipe": daily_file_writes + scheduled_file_writes,
+        "gravacoesCloudStorageTotal": (
+            int(_durable_cache_state.get("writes", 0)) - gcs_writes_before
+            + daily_file_writes
+            + scheduled_file_writes
+        ),
+        "consolidacaoMensal": monthly_result,
+        "checagemDiariaTurnos": turn_check_result,
     }
 
 def _executar_sincronizacao_rotalog(
@@ -689,6 +837,7 @@ def _executar_sincronizacao_rotalog(
             "estadoConsolidado": eq["estado_consolidado"],
             "turno": eq["turno"],
             "intervalo": eq["intervalo"],
+            "intervalos": eq.get("intervalos") or [],
             "atividadeAtual": eq["atividade_atual"],
             "bdoList": eq["bdo_list"],
             "ssExecutadasCount": len(eq["ss_executadas"]),
@@ -996,12 +1145,16 @@ class RotalogBackgroundScheduler:
                     if res.get("persistenceMode") == "json":
                         logger.info(
                             "Sincronização JSON concluída: %s equipe(s) atualizada(s), %s sem mudança; "
-                            "%s leituras e %s gravações Firestore; %s gravação(ões) no Cloud Storage.",
+                            "%s leituras e %s gravações Firestore; Cloud Storage: %s total "
+                            "(%s diário(s), %s snapshot global, %s rotina(s) agendada(s)).",
                             res.get("equipesAtualizadasJson", 0),
                             res.get("ignoradosSemMudanca", 0),
                             res.get("leiturasFirestore", 0),
                             res.get("gravacoesFirestore", 0),
+                            res.get("gravacoesCloudStorageTotal", 0),
+                            res.get("gravacoesJsonDiario", 0),
                             res.get("gravacoesCloudStorage", 0),
+                            res.get("gravacoesRotinasAgendadas", 0),
                         )
                     else:
                         logger.info(

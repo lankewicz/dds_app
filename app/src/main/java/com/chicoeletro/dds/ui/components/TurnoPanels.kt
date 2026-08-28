@@ -10,7 +10,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -33,6 +35,9 @@ fun MenuStep(
     onSelectTarget: (EstadoTurno) -> Unit,
     equipe: String,
     teamType: String? = null,
+    rotalogState: RotalogMobileTeam? = null,
+    rawDailyJson: String? = null,
+    servicesReadOnly: Boolean = false,
     onClickEquipe: () -> Unit = {},
     online: Boolean,
     bdoList: List<BdoSs>,
@@ -154,6 +159,31 @@ fun MenuStep(
             }
         }
         
+        rotalogState?.let { state ->
+            val service = state.service
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Sync, contentDescription = "ROTALOG", modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("ROTALOG · ${state.turnStatus ?: "SEM STATUS"}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(
+                            if (service != null) "${service.type ?: "SERVIÇO"} · ${service.status ?: "ATUALIZADO"}" else "Nenhum serviço em execução",
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
         // Painel de Ações do Turno (Expansível)
         AnimatedVisibility(
             visible = showControls && nextStates.isNotEmpty(),
@@ -261,6 +291,9 @@ fun MenuStep(
                     bdoList = bdoList,
                     onDefinirSs = onDefinirSs,
                     onAlterarEstado = onAlterarEstado,
+                    rotalogState = rotalogState,
+                    rawDailyJson = rawDailyJson,
+                    readOnly = servicesReadOnly,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -520,6 +553,9 @@ fun BdoSection(
     bdoList: List<BdoSs>,
     onDefinirSs: (String) -> Unit,
     onAlterarEstado: (String, SsStatus) -> Unit,
+    rotalogState: RotalogMobileTeam? = null,
+    rawDailyJson: String? = null,
+    readOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var newSsText by remember { mutableStateOf("") }
@@ -536,12 +572,13 @@ fun BdoSection(
     }
 
     val totalServices = bdoList.size
+    val calculationTurnoTransitions = if (readOnly) emptyList() else snapshot.transicoes
     var sumDisplacementMs = 0L
     var sumExecutionMs = 0L
     var sumTotalMs = 0L
     
     bdoList.forEach { ss ->
-        val (desl, exec, tot) = obterTemposServico(ss, snapshot.transicoes, nowMs)
+        val (desl, exec, tot) = obterTemposServico(ss, calculationTurnoTransitions, nowMs)
         sumDisplacementMs += desl
         sumExecutionMs += exec
         sumTotalMs += tot
@@ -568,14 +605,55 @@ fun BdoSection(
         val serviceItems = bdoList.map { UnifiedHistoryItem.Servico(it) }
         val transItems = snapshot.transicoes.map { UnifiedHistoryItem.Transicao(it) }
         val gapItems = gaps
-        (serviceItems + transItems + gapItems).sortedByDescending { it.timestampMs }
+        val allItems = if (readOnly) serviceItems else serviceItems + transItems + gapItems
+        allItems.sortedByDescending { it.timestampMs }
     }
 
     Column(
         modifier = modifier.fillMaxSize()
     ) {
         // SS definition form
-        Row(
+        if (readOnly) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.CloudDone, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "Histórico automático · dados recebidos do Rotalog",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.forLanguageTag("pt-BR"))
+                        fun formatRemoteTime(value: String?): String {
+                            if (value.isNullOrBlank()) return "Em andamento"
+                            val millis = parseIsoToMs(value)
+                            return if (millis > 0L) timeFormat.format(java.util.Date(millis)) else "—"
+                        }
+                        Text("Início do turno: " + formatRemoteTime(rotalogState?.turnoInicio), style = MaterialTheme.typography.bodySmall)
+                        if (rotalogState?.intervals.isNullOrEmpty()) {
+                            Text("Intervalos: nenhum registrado", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            rotalogState?.intervals?.forEachIndexed { index, interval ->
+                                Text(
+                                    "Intervalo " + (index + 1) + ": " + formatRemoteTime(interval.startAt) + " às " + formatRemoteTime(interval.endAt),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                        Text("Fim do turno: " + formatRemoteTime(rotalogState?.turnoFim), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        } else         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
@@ -679,6 +757,10 @@ fun BdoSection(
                 }
             }
         }
+        if (readOnly) {
+            ServiceTableHeader()
+            Spacer(Modifier.height(4.dp))
+        }
 
         // Scrollable timeline list
         LazyColumn(
@@ -691,18 +773,22 @@ fun BdoSection(
                 when (item) {
                     is UnifiedHistoryItem.Servico -> {
                         val sortedServices = remember(bdoList) {
-                            bdoList.sortedBy { it.transitions.firstOrNull()?.timestampMs ?: 0L }
+                            bdoList.sortedByDescending { it.transitions.maxOfOrNull { transition -> transition.timestampMs } ?: 0L }
                         }
                         val index = sortedServices.indexOf(item.ss)
                         val label = "${index + 1}º Serviço"
                         
-                        ServicoItem(
-                            ss = item.ss,
-                            ordinalLabel = label,
-                            turnoTransitions = snapshot.transicoes,
-                            nowMs = nowMs,
-                            onAlterarEstado = { onAlterarEstado(item.ss.ssId, it) }
-                        )
+                        if (readOnly) {
+                            ServiceTableRow(ss = item.ss, position = index + 1)
+                        } else {
+                            ServicoItem(
+                                ss = item.ss,
+                                ordinalLabel = label,
+                                turnoTransitions = calculationTurnoTransitions,
+                                nowMs = nowMs,
+                                onAlterarEstado = { onAlterarEstado(item.ss.ssId, it) }
+                            )
+                        }
                     }
                     is UnifiedHistoryItem.Transicao -> {
                         TransicaoItem(
@@ -712,6 +798,102 @@ fun BdoSection(
                     }
                     is UnifiedHistoryItem.SemExecucao -> {
                         SemExecucaoItem(item = item)
+                    }
+                }
+            }
+        }
+
+        val displayJson: String = remember(rawDailyJson, rotalogState, equipe) {
+            rawDailyJson
+                ?: rotalogState?.let { com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(it) }
+                ?: "{\n  \"status\": \"Consultando Rotalog no backend...\",\n  \"equipe\": \"$equipe\"\n}"
+        }
+
+        var isJsonMinimized by remember { mutableStateOf(false) }
+        var isJsonFullExpanded by remember { mutableStateOf(false) }
+        Spacer(Modifier.height(8.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (isJsonMinimized) Modifier.wrapContentHeight()
+                    else Modifier.heightIn(min = 100.dp, max = if (isJsonFullExpanded) 420.dp else 180.dp)
+                )
+        ) {
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isJsonMinimized = !isJsonMinimized },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isJsonMinimized) Icons.Filled.Code else Icons.Filled.Terminal,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB74D),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "JSON ROTALOG (DEBUG)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFB74D)
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (rawDailyJson != null) "DIÁRIO COMPLETO" else if (rotalogState != null) "STATUS ATUAL" else "CONECTANDO",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        if (!isJsonMinimized) {
+                            IconButton(
+                                onClick = { isJsonFullExpanded = !isJsonFullExpanded },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isJsonFullExpanded) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore,
+                                    contentDescription = if (isJsonFullExpanded) "Reduzir" else "Expandir",
+                                    tint = Color(0xFFFFB74D),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { isJsonMinimized = !isJsonMinimized },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isJsonMinimized) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+                                contentDescription = if (isJsonMinimized) "Mostrar" else "Minimizar",
+                                tint = Color(0xFFFFB74D),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (!isJsonMinimized) {
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = displayJson,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color(0xFF80CBC4)
+                        )
                     }
                 }
             }

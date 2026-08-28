@@ -16,6 +16,7 @@ package com.chicoeletro.dds.features.team
 import android.os.Build
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
@@ -93,6 +94,7 @@ class TeamFormationRepository(
             "coringas" to coringas,
             "updatedAt" to now,
             "updatedByUid" to uid,
+            "authorizedAppUids" to FieldValue.arrayUnion(uid),
             "updatedByName" to whoName,
             "updatedByEmail" to whoEmail,
             "deviceModel" to Build.MODEL

@@ -338,6 +338,23 @@ function normalizeOperationalProtocol(...candidates) {
   return '';
 }
 
+function latestOperationalCommunicationAt(item) {
+  const snapshot = item?.rotalogSnapshot || {};
+  const candidates = [item?.lastContact, item?.updatedAt, snapshot.updatedAtIso, snapshot.eventTimestampMs];
+  let latestMs = null;
+  for (const value of candidates) {
+    if (value === null || value === undefined || value === '') continue;
+    let parsedMs;
+    if (typeof value === 'number' || /^\d+$/.test(String(value).trim())) {
+      const numeric = Number(value);
+      parsedMs = numeric > 100000000000 ? numeric : numeric * 1000;
+    } else {
+      parsedMs = new Date(value).getTime();
+    }
+    if (Number.isFinite(parsedMs) && (latestMs === null || parsedMs > latestMs)) latestMs = parsedMs;
+  }
+  return latestMs === null ? null : new Date(latestMs).toISOString();
+}
 function getOperationalRotalogData(item) {
   const snapshot = item?.rotalogSnapshot || {};
   const inProgress = Array.isArray(snapshot.ssEmAndamento) ? snapshot.ssEmAndamento : [];
@@ -360,7 +377,7 @@ function getOperationalRotalogData(item) {
     service?.ssId,
     hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '',
   );
-  const updatedAt = snapshot.updatedAtIso || item?.updatedAt || null;
+  const updatedAt = latestOperationalCommunicationAt(item);
   const updatedMs = updatedAt ? Date.parse(updatedAt) : NaN;
   const ageMinutes = Number.isFinite(updatedMs)
     ? Math.max(0, Math.floor((Date.now() - updatedMs) / 60000))
@@ -379,10 +396,17 @@ function getOperationalRotalogData(item) {
   };
 }
 
+function operationalActivityLabel(value) {
+  const raw = String(value || '-').trim().toUpperCase();
+  if (raw === 'DESLOCAMENTO') return 'DESLOCAMENTO';
+  if (raw === 'EXECUCAO') return 'EXECUÇÃO';
+  if (raw === 'CONCLUSAO') return 'CONCLUSÃO';
+  return stateLabel(raw);
+}
 function updateLiveSummary(item) {
   const operational = getOperationalRotalogData(item);
   teamLiveStatus.textContent = stateLabel(operational.status);
-  if (teamLiveActivity) teamLiveActivity.textContent = stateLabel(operational.activity);
+  if (teamLiveActivity) teamLiveActivity.textContent = operationalActivityLabel(operational.activity);
   if (teamLiveService) teamLiveService.textContent = operational.serviceLabel;
   if (teamLiveProtocol) teamLiveProtocol.textContent = operational.protocol;
   if (teamLiveSource) {

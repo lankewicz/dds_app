@@ -194,6 +194,13 @@ def normalize_estado(value: str | None) -> str:
     return aliases.get(raw, raw)
 
 
+def normalize_rotalog_turn_state(value: str | None) -> str:
+    """ROTALOG DESLOCAMENTO é etapa do serviço, nunca deslocamento especial."""
+    raw = (value or "DESCONHECIDO").strip().upper()
+    if raw == "DESLOCAMENTO":
+        return "ABERTO"
+    return normalize_estado(raw)
+
 def string_list(value) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -1433,7 +1440,7 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
         or rotalog_ms >= current_ms
         or previous_writer in {"ROTALOG_AUTO_SYNC", "ROTALOG_JSON", "ADMIN_FECHAR_TODOS"}
     )
-    estado_rotalog = normalize_estado(snapshot.get("estadoConsolidado") or "DESCONHECIDO")
+    estado_rotalog = normalize_rotalog_turn_state(snapshot.get("estadoConsolidado") or "DESCONHECIDO")
     if can_apply_state and estado_rotalog != "DESCONHECIDO":
         merged["estado"] = estado_rotalog
         merged["estadoOriginal"] = estado_rotalog
@@ -1459,6 +1466,10 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
                 today_day = _utc_now_iso().split('T')[0]
                 if cached_day != today_day:
                     cached = None # For\u00e7a rec\u00e1lculo
+
+        if cached and any("tablet" not in item for item in (cached.get("items") or [])):
+            # Cache anterior à inclusão do equipamento no card: recompõe uma única vez.
+            cached = None
 
         if cached:
             rotalog_snapshots = _rotalog_json_snapshots()
@@ -2093,6 +2104,27 @@ def _process_single_team(
     unread_map = unread_map_global.get(team_key) or unread_map_global.get(equipe) or {}
     last_was_descanso_semanal = bool(data.get("lastWasDescansoSemanal", False))
 
+    equipment = team_data.get("equipment") if isinstance(team_data.get("equipment"), dict) else {}
+    tablet_data = equipment.get("tablet") if isinstance(equipment.get("tablet"), dict) else {}
+    rotalog_snapshot = data.get("rotalogSnapshot") or team_data.get("rotalogSnapshot") or {}
+    if not isinstance(rotalog_snapshot, dict):
+        rotalog_snapshot = {}
+    tablet_identifier = next(
+        (
+            str(value).strip().upper()
+            for value in (
+                team_data.get("currentTablet"),
+                team_data.get("rotalogTablet"),
+                team_data.get("tablet"),
+                tablet_data.get("identifier"),
+                rotalog_snapshot.get("identificadorEquipamento"),
+                data.get("identificadorEquipamento"),
+            )
+            if isinstance(value, (str, int)) and str(value).strip()
+        ),
+        None,
+    )
+
     return {
         "teamKey": team_key,
         "equipe": equipe,
@@ -2102,9 +2134,13 @@ def _process_single_team(
         "origemAtualizacao": data.get("origemAtualizacao") or team_data.get("origemAtualizacao"),
         "deviceIdLastWriter": data.get("deviceIdLastWriter") or team_data.get("deviceIdLastWriter"),
         "rotalogSnapshot": data.get("rotalogSnapshot") or team_data.get("rotalogSnapshot"),
+        "tablet": tablet_identifier,
         "ss": ss or "-",
         "motivo": motivo or "-",
         "updatedAt": dt.isoformat() if dt else None,
+        "openedAtClientMs": data.get("openedAtClientMs"),
+        "closedAtClientMs": data.get("closedAtClientMs"),
+        "ssExecutadasCount": len(rotalog_snapshot.get("ssExecutadas") or []),
         "minutosDesdeAtualizacao": minutos,
         "critico": critico,
         "alerta": alerta,
@@ -2421,11 +2457,11 @@ class FirestoreListenerManager:
         except Exception as e:
             print(f"Erro ao iniciar ouvinte de equipes: {e}")
 
-        # 2. Listener para a coleção 'DDS' (Filtrado pelos últimos 7 dias para reduzir leituras)
+        # 2. Somente DDS de hoje em diante; histórico é carregado sob demanda e mantido em cache.
         try:
-            from datetime import datetime, timedelta
-            limite_data = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-            print(f"Iniciando ouvinte de DDS filtrado por headerDate >= {limite_data}")
+            from datetime import datetime
+            limite_data = datetime.now().strftime("%Y-%m-%d")
+            print(f"Iniciando ouvinte de DDS a partir de hoje: headerDate >= {limite_data}")
             dds_query = db.collection(DDS_COLLECTION).where(filter=FieldFilter("headerDate", ">=", limite_data))
             watch_dds = dds_query.on_snapshot(self._on_dds_snapshot)
             self.watches.append(watch_dds)
@@ -2434,7 +2470,9 @@ class FirestoreListenerManager:
 
         # 3. Listener para a coleção 'mensagens_comunicacao'
         try:
-            msg_query = db.collection("mensagens_comunicacao")
+            msg_query = db.collection("mensagens_comunicacao").where(
+                filter=FieldFilter("status", "!=", "CONCLUIDA")
+            )
             watch_msg = msg_query.on_snapshot(self._on_messages_snapshot)
             self.watches.append(watch_msg)
         except Exception as e:

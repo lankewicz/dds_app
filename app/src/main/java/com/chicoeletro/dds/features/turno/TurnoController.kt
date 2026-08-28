@@ -258,4 +258,20 @@ class TurnoController(
         TurnoLocalStore.save(context, equipe, updated)
         return updated
     }
+
+    fun syncRemoteEstado(to: EstadoTurno, remoteIso: String?): TurnoSnapshot {
+        val snap = current()
+        if (snap.estado == to) return snap
+        val remoteMs = remoteIso?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: System.currentTimeMillis()
+        val isOpen = to != EstadoTurno.FECHADO
+        val updated = snap.copy(
+            isOpen = isOpen,
+            estado = to,
+            lastChangedAtIso = remoteIso ?: Instant.ofEpochMilli(remoteMs).toString(),
+            lastEventAtClientMs = maxOf(snap.lastEventAtClientMs, remoteMs),
+            clientUpdatedAtMs = maxOf(snap.clientUpdatedAtMs, remoteMs)
+        )
+        TurnoLocalStore.save(context, equipe, updated)
+        return updated
+    }
 }

@@ -29,7 +29,11 @@ data class BdoSs(
     val ssId: String = "",
     val status: SsStatus = SsStatus.DESLOCAMENTO,
     val transitions: List<SsTransition> = emptyList(),
-    val cancelReason: String? = null
+    val cancelReason: String? = null,
+    val remoteServiceId: String? = null,
+    val serviceType: String? = null,
+    val protocol: String? = null,
+    val category: String? = null
 ) {
     fun getTransitionTime(st: SsStatus): String {
         val trans = transitions.find { it.status == st } ?: return ""
@@ -37,6 +41,83 @@ data class BdoSs(
     }
 }
 
+fun parseIsoToMs(isoStr: String?): Long {
+    if (isoStr.isNullOrBlank()) return 0L
+    return runCatching {
+        val normalized = isoStr.trim().let {
+            if (it.contains("+") || it.endsWith("Z")) it else "${it}Z"
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            try {
+                java.time.OffsetDateTime.parse(normalized).toInstant().toEpochMilli()
+            } catch (e: Exception) {
+                java.time.Instant.parse(normalized.replace(Regex("\\+\\d{2}:\\d{2}$"), "Z")).toEpochMilli()
+            }
+        } else {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(normalized)?.time ?: 0L
+        }
+    }.getOrElse { 0L }
+}
+
+fun RotalogMobileTeam.toBdoSsList(): List<BdoSs> {
+    val allServices = if (services.isNotEmpty()) services else if (service != null) listOf(service) else emptyList()
+    return allServices.mapNotNull { s ->
+        val identifier = s.protocol?.takeIf { it.isNotBlank() }
+            ?: s.type?.takeIf { it.isNotBlank() }
+            ?: s.serviceId?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+
+        val transitions = mutableListOf<SsTransition>()
+        val travelMs = parseIsoToMs(s.startTravel)
+        if (travelMs > 0) transitions.add(SsTransition(SsStatus.DESLOCAMENTO, travelMs))
+
+        val execMs = parseIsoToMs(s.startExecution)
+        if (execMs > 0) transitions.add(SsTransition(SsStatus.EXECUCAO, execMs))
+
+        val endMs = parseIsoToMs(s.endExecution).takeIf { it > 0 } ?: parseIsoToMs(s.returnAt)
+        if (endMs > 0) transitions.add(SsTransition(SsStatus.CONCLUSAO, endMs))
+
+        val statusEnum = when (s.status?.uppercase()) {
+            "CONCLUSAO", "CONCLUÍDO", "FINALIZADO" -> SsStatus.CONCLUSAO
+            "EXECUCAO", "EXECUÇÃO", "EM EXECUÇÃO" -> SsStatus.EXECUCAO
+            "DESLOCAMENTO", "EM DESLOCAMENTO" -> SsStatus.DESLOCAMENTO
+            "CANCELADO" -> SsStatus.CANCELADO
+            else -> if (endMs > 0) SsStatus.CONCLUSAO else if (execMs > 0) SsStatus.EXECUCAO else SsStatus.DESLOCAMENTO
+        }
+
+        BdoSs(
+            ssId = identifier,
+            status = statusEnum,
+            transitions = transitions,
+            remoteServiceId = s.serviceId?.takeIf { it.isNotBlank() },
+            serviceType = s.type?.takeIf { it.isNotBlank() },
+            protocol = s.protocol?.takeIf { it.isNotBlank() },
+            category = s.category?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
+fun mergeBdoServices(local: List<BdoSs>, remote: List<BdoSs>): List<BdoSs> {
+    if (remote.isEmpty()) return local
+    val merged = local.toMutableList()
+    remote.forEach { incoming ->
+        val index = merged.indexOfFirst { existing ->
+            (!incoming.remoteServiceId.isNullOrBlank() &&
+                existing.remoteServiceId.equals(incoming.remoteServiceId, ignoreCase = true)) ||
+                existing.ssId.equals(incoming.ssId, ignoreCase = true)
+        }
+        if (index < 0) {
+            merged += incoming
+        } else {
+            val existing = merged[index]
+            merged[index] = incoming.copy(
+                cancelReason = existing.cancelReason ?: incoming.cancelReason,
+                remoteServiceId = incoming.remoteServiceId ?: existing.remoteServiceId
+            )
+        }
+    }
+    return merged.sortedBy { it.transitions.firstOrNull()?.timestampMs ?: Long.MAX_VALUE }
+}
 object BdoLocalStore {
     private const val PREFS = "dds_bdo"
     
@@ -65,6 +146,9 @@ object BdoLocalStore {
             val o = JSONObject()
             o.put("ssId", ss.ssId)
             o.put("status", ss.status.name)
+            if (ss.remoteServiceId != null) o.put("remoteServiceId", ss.remoteServiceId)
+            if (ss.serviceType != null) o.put("serviceType", ss.serviceType)
+            if (ss.protocol != null) o.put("protocol", ss.protocol)
             if (ss.cancelReason != null) {
                 o.put("cancelReason", ss.cancelReason)
             }
@@ -93,6 +177,9 @@ object BdoLocalStore {
                 val ssId = o.getString("ssId")
                 val status = SsStatus.valueOf(o.getString("status"))
                 val cancelReason = if (o.has("cancelReason")) o.getString("cancelReason") else null
+                val remoteServiceId = o.optString("remoteServiceId").takeIf { it.isNotBlank() }
+                val serviceType = o.optString("serviceType").takeIf { it.isNotBlank() }
+                val protocol = o.optString("protocol").takeIf { it.isNotBlank() }
                 
                 val transArr = o.optJSONArray("transitions") ?: JSONArray()
                 val trans = buildList {
@@ -108,7 +195,7 @@ object BdoLocalStore {
                         )
                     }
                 }
-                add(BdoSs(ssId, status, trans, cancelReason))
+                add(BdoSs(ssId, status, trans, cancelReason, remoteServiceId, serviceType, protocol))
             }
         }
     }

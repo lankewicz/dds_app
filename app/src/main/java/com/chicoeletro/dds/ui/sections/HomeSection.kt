@@ -40,6 +40,7 @@ fun HomeSection(
     }
 
     val turnoSnap by turnoViewModel.turnoSnapshot.collectAsState()
+    val rotalogState by turnoViewModel.rotalogState.collectAsState()
 
     HomeScreen(
         equipe = equipe,
@@ -48,6 +49,7 @@ fun HomeSection(
         coringas = coringas,
         monthParticipationDays = homeParticipationDays,
         turnoEstado = turnoSnap.estado,
+        rotalogTeam = rotalogState,
         teamType = teamType,
         onClickEquipe = onClickEquipe,
         onDdsClick = onDdsClick,

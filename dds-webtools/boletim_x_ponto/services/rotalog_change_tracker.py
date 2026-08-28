@@ -21,10 +21,17 @@ def _json_cache_default(value: typing.Any) -> typing.Any:
         return value.isoformat()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
+def _decode_json_object(payload: bytes) -> dict[str, typing.Any]:
+    """Aceita tanto o JSON legado puro quanto o formato atual JSON+GZIP."""
+    raw = gzip.decompress(payload) if payload.startswith(b"\x1f\x8b") else payload
+    loaded = json.loads(raw.decode("utf-8-sig"))
+    return loaded if isinstance(loaded, dict) else {}
+
 TRACKED_FIELDS = (
     "estadoConsolidado",
     "turno",
     "intervalo",
+    "intervalos",
     "atividadeAtual",
     "ssExecutadas",
     "ssEmAndamento",
@@ -113,6 +120,13 @@ class RotalogLocalCache:
             except OSError:
                 pass
             raise
+def _safe_download_bytes(blob: typing.Any) -> bytes:
+    try:
+        return blob.download_as_bytes(raw_download=True)
+    except TypeError:
+        return blob.download_as_bytes()
+
+
 class RotalogGcsSnapshotStore:
     """Snapshot JSON gzip durável; não realiza nenhuma operação no Firestore."""
 
@@ -133,7 +147,7 @@ class RotalogGcsSnapshotStore:
     def enabled(self) -> bool:
         return bool(self.bucket_name and self.blob_name)
 
-    def _blob(self):
+    def _blob_named(self, blob_name: str):
         if not self.enabled:
             raise RuntimeError("Cache GCS do ROTALOG não configurado.")
         if self._client is None:
@@ -143,32 +157,58 @@ class RotalogGcsSnapshotStore:
                 from google.cloud import storage
 
                 self._client = storage.Client()
-        return self._client.bucket(self.bucket_name).blob(self.blob_name)
+        return self._client.bucket(self.bucket_name).blob(blob_name.strip().lstrip("/"))
+
+    def _blob(self):
+        return self._blob_named(self.blob_name)
 
     def load(self) -> dict[str, typing.Any]:
         with self._lock:
             try:
-                compressed = self._blob().download_as_bytes()
+                compressed = _safe_download_bytes(self._blob())
             except Exception as exc:
                 # 404 é tratado pelo chamador como cache ainda não criado.
                 if getattr(exc, "code", None) == 404:
                     return {}
                 raise
-            loaded = json.loads(gzip.decompress(compressed).decode("utf-8"))
-            return loaded if isinstance(loaded, dict) else {}
+            return _decode_json_object(compressed)
 
     def save(self, snapshots: dict[str, typing.Any]) -> None:
+        self.save_blob(self.blob_name, snapshots)
+
+    def load_blob(self, blob_name: str) -> dict[str, typing.Any]:
+        with self._lock:
+            try:
+                compressed = _safe_download_bytes(self._blob_named(blob_name))
+            except Exception as exc:
+                if getattr(exc, "code", None) == 404:
+                    return {}
+                raise
+            return _decode_json_object(compressed)
+
+    def save_blob(self, blob_name: str, payload: dict[str, typing.Any]) -> None:
         with self._lock:
             raw = json.dumps(
-                snapshots,
+                payload,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
                 default=_json_cache_default,
             ).encode("utf-8")
-            blob = self._blob()
+            blob = self._blob_named(blob_name)
             blob.content_encoding = "gzip"
             blob.upload_from_string(
                 gzip.compress(raw, compresslevel=6),
                 content_type="application/json",
             )
+
+    def list_blob_names(self, prefix: str) -> list[str]:
+        if not self.enabled:
+            return []
+        if self._client is None:
+            self._blob()
+        return [blob.name for blob in self._client.list_blobs(self.bucket_name, prefix=prefix.strip().lstrip("/"))]
+
+    def upload_bytes(self, blob_name: str, payload: bytes, content_type: str) -> None:
+        with self._lock:
+            self._blob_named(blob_name).upload_from_string(payload, content_type=content_type)

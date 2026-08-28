@@ -109,6 +109,24 @@ class PortalAuthTests(unittest.TestCase):
                 {"email": "unknown@empresa.com"}, FakeDb({})
             )
 
+    def test_mobile_uid_can_access_only_linked_team(self):
+        class TeamDb:
+            def collection(self, name):
+                self.name = name
+                return self
+            def document(self, key):
+                return FakeDocument({"authorizedAppUids": ["tablet-1"]} if key == "E3389" else {})
+        portal_auth._MOBILE_TEAM_CACHE.clear()
+        db = TeamDb()
+        self.assertTrue(portal_auth.authorize_mobile_team({"uid": "tablet-1"}, "e3389", db))
+        self.assertFalse(portal_auth.authorize_mobile_team({"uid": "tablet-1"}, "E3390", db))
+
+    def test_legacy_updated_uid_is_accepted(self):
+        class TeamDb:
+            def collection(self, name): return self
+            def document(self, key): return FakeDocument({"updatedByUid": "legacy-tablet"})
+        portal_auth._MOBILE_TEAM_CACHE.clear()
+        self.assertTrue(portal_auth.authorize_mobile_team({"uid": "legacy-tablet"}, "E3389", TeamDb()))
     @patch("portal_auth.firebase_auth.verify_session_cookie")
     @patch("portal_auth.ensure_firebase_app")
     def test_forged_cookie_is_rejected(self, _ensure_app, verify_cookie):

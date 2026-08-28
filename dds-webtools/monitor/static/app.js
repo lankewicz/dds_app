@@ -49,6 +49,7 @@ const activityFeedSummary = document.getElementById("activityFeedSummary");
 
 let cfg = null;
 let pollingSeconds = 600;
+const WEB_CARD_REFRESH_SECONDS = 60;
 let pollingTimer = null;
 let countdownTimer = null;
 let nextTickAtMs = null;
@@ -104,6 +105,28 @@ function fmtLastContact(iso, source) {
   return `${day}/${month} - ${time}${srcSuffix}`;
 }
 
+function latestCommunicationAt(item) {
+  const snapshot = item?.rotalogSnapshot || {};
+  const candidates = [
+    item?.lastContact,
+    item?.updatedAt,
+    snapshot.updatedAtIso,
+    snapshot.eventTimestampMs,
+  ];
+  let latestMs = null;
+  for (const value of candidates) {
+    if (value === null || value === undefined || value === '') continue;
+    let parsedMs;
+    if (typeof value === 'number' || /^\d+$/.test(String(value).trim())) {
+      const numeric = Number(value);
+      parsedMs = numeric > 100000000000 ? numeric : numeric * 1000;
+    } else {
+      parsedMs = new Date(value).getTime();
+    }
+    if (Number.isFinite(parsedMs) && (latestMs === null || parsedMs > latestMs)) latestMs = parsedMs;
+  }
+  return latestMs === null ? null : new Date(latestMs).toISOString();
+}
 function isIsoNewer(candidateIso, currentIso) {
   if (!candidateIso) return false;
   const candidate = new Date(candidateIso);
@@ -134,6 +157,13 @@ function saveLocalFeedCache(empresa, items) {
   }
 }
 
+function isUsefulActivityFeedItem(item) {
+  const label = String(item?.label || '').trim().toUpperCase();
+  if (!label || label === 'ROTALOG') return false;
+  if (label.includes(' - FILA:')) return false;
+  if (label.includes('DADOS OPERACIONAIS ATUALIZADOS')) return false;
+  return true;
+}
 function mergeActivityFeedItems(localItems, newItems) {
   const mergedMap = new Map();
   const getUniqueKey = (item) => {
@@ -144,12 +174,12 @@ function mergeActivityFeedItems(localItems, newItems) {
     return `${timeKey}_${team}_${label}`;
   };
 
-  (localItems || []).forEach(item => {
+  (localItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
     const key = getUniqueKey(item);
     if (key) mergedMap.set(key, item);
   });
 
-  (newItems || []).forEach(item => {
+  (newItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
     const key = getUniqueKey(item);
     if (key) mergedMap.set(key, item);
   });
@@ -176,7 +206,7 @@ function renderActivityFeed(items = [], summary = null) {
     activityFeedSummary.textContent = `${abertas} Abertas · ${comerciais} Comerciais · ${emergenciais} Emergenciais`;
   }
   const visible = items
-    .filter((item) => String(item?.label || '').trim().toLowerCase() !== 'rotalog')
+    .filter(isUsefulActivityFeedItem)
     .slice(0, 30);
   if (!visible.length) {
     activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem mudanças recentes</div>';
@@ -186,8 +216,9 @@ function renderActivityFeed(items = [], summary = null) {
     const time = escapeHtml(item.time || fmtHourMinute(item.activityAt));
     const team = String(item.teamKey || item.equipe || '-').trim().toUpperCase();
     const rawLabel = String(item.label || 'Mudança operacional').trim();
-    const alreadyIdentified = team !== '-' && rawLabel.toUpperCase().startsWith(`${team} -`);
-    const label = escapeHtml(alreadyIdentified ? rawLabel : `${team} - ${rawLabel}`);
+    const normalizedLabel = rawLabel.replace(/Em andamento:\s*[1-9]\d*\s*→\s*0/i, 'SEM EXECUÇÃO');
+    const alreadyIdentified = team !== '-' && normalizedLabel.toUpperCase().startsWith(`${team} -`);
+    const label = escapeHtml(alreadyIdentified ? normalizedLabel : `${team} - ${normalizedLabel}`);
     const source = escapeHtml(item.source || '');
     return `<div class="activityFeedItem" data-source="${source}"><span class="activityFeedTime">${time}</span><span class="activityFeedLabel">${label}</span></div>`;
   }).join('');
@@ -641,6 +672,21 @@ function getOrigemTitle(item) {
   return "Atualizado pelo Sistema DDS";
 }
 
+function serviceEventTimestampMs(value, referenceIso) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    const reference = new Date(referenceIso || Date.now());
+    const base = Number.isNaN(reference.getTime()) ? new Date() : reference;
+    const [hours, minutes, seconds = '0'] = raw.split(':');
+    base.setHours(Number(hours), Number(minutes), Number(seconds), 0);
+    return base.getTime();
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
 function getRotalogService(item) {
   const snapshot = item?.rotalogSnapshot || {};
   const current = snapshot.atividadeAtual || item?.atividadeAtual || null;
@@ -665,7 +711,71 @@ function getRotalogService(item) {
   const identifier = portalSs || realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
   const identifierLabel = (portalSs || realProtocol || hasDistinctServiceId) ? 'SS' : 'Tipo';
   if (!identifier) return null;
-  return { identifier: String(identifier), identifierLabel, statusChar, rawStatus };
+  const category = safeUpper(service.categoria || service.category || '');
+  const protocol = realProtocol && String(realProtocol) !== String(serviceType)
+    ? String(realProtocol)
+    : '';
+  const conclusionAtMs = rawStatus === 'CONCLUSAO'
+    ? serviceEventTimestampMs(
+        service.retornoIso || service.fimIso || service.terminoIso || service.retorno || service.termino,
+        snapshot.updatedAtIso || item?.lastContact || item?.updatedAt
+      )
+    : null;
+  const conclusionOlderThanTenMinutes = Boolean(
+    conclusionAtMs && Date.now() - conclusionAtMs > 10 * 60 * 1000
+  );  const statusLabel = rawStatus === 'DESLOCAMENTO'
+    ? 'Deslocamento'
+    : rawStatus === 'EXECUCAO'
+      ? 'Execução'
+      : rawStatus === 'CONCLUSAO'
+        ? 'Conclusão'
+        : rawStatus;
+  return {
+    identifier: String(identifier), identifierLabel, statusChar, statusLabel, rawStatus,
+    category,
+    serviceType: String(serviceType || identifier),
+    protocol,
+    conclusionOlderThanTenMinutes,
+  };
+}
+function operationalTimestamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number(raw);
+    return numeric > 100000000000 ? numeric : numeric * 1000;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function operationalTimeLabel(value) {
+  const timestamp = operationalTimestamp(value);
+  if (!timestamp) return '-';
+  return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getTurnSummary(item, shown) {
+  if (shown !== 'FECHADO' && shown !== 'INTERVALO') return null;
+  const snapshot = item?.rotalogSnapshot || {};
+  const turno = snapshot.turno || {};
+  const intervals = Array.isArray(snapshot.intervalos) ? snapshot.intervalos : [];
+  const latestInterval = intervals.length ? intervals[intervals.length - 1] : (snapshot.intervalo || {});
+  const openedAt = turno.inicio_iso || turno.inicioIso || turno.inicio_ms || turno.inicio || item?.openedAtClientMs;
+  const closedAt = turno.fim_iso || turno.fimIso || turno.fim_ms || turno.fim || item?.closedAtClientMs || item?.updatedAt;
+  const intervalAt = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio_ms || latestInterval.inicio || item?.updatedAt;
+  const executedServices = Array.isArray(snapshot.ssExecutadas)
+    ? snapshot.ssExecutadas.length
+    : Number(snapshot.ssExecutadasCount || item?.ssExecutadasCount || 0);
+  return {
+    title: shown === 'FECHADO' ? 'ÚLTIMO TURNO' : 'TURNO ATUAL',
+    openedAt: operationalTimeLabel(openedAt),
+    endLabel: shown === 'FECHADO' ? 'Fechamento' : 'Intervalo',
+    endAt: operationalTimeLabel(shown === 'FECHADO' ? closedAt : intervalAt),
+    executedServices,
+  };
 }
 function vehicleFrameClass(state) { switch (normalizedState(state)) { case "ABERTO": return "vfGreen"; case "INTERVALO": return "vfYellow"; case "DESLOCAMENTO_ESPECIAL": return "vfBlue"; case "FECHADO": return "vfRed"; case "DESATUALIZADO": return "vfGray"; default: return "vfGray"; } }
 function stateCardClass(state) {
@@ -760,7 +870,7 @@ function syncKpiSelection() {
 
 function hoverRows(item) {
   const rows = [];
-  rows.push(`<div class="hoverRow"><span>Atualizado</span><strong>${escapeHtml(fmtDateTime(item.updatedAt))}</strong></div>`);
+  rows.push(`<div class="hoverRow"><span>Atualizado</span><strong>${escapeHtml(fmtDateTime(item.lastContact))}</strong></div>`);
   if (hasMeaningfulValue(item.ss)) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(detailValue(item.ss))}</strong></div>`);
   if (normalizedState(item.estado) === 'DESLOCAMENTO_ESPECIAL' && hasMeaningfulValue(item.motivo)) rows.push(`<div class="hoverRow"><span>Motivo</span><strong>${escapeHtml(detailValue(item.motivo))}</strong></div>`);
   return rows.join('');
@@ -994,16 +1104,33 @@ function tile(item) {
 
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
 
-  const lastContactLabel = fmtLastContact(item.lastContact);
+  const lastContactLabel = fmtLastContact(latestCommunicationAt(item));
+  const tabletLabel = detailValue(item.tablet || item?.rotalogSnapshot?.identificadorEquipamento);
   const origemChar = getOrigemChar(item);
   const origemTitle = getOrigemTitle(item);
   const rotalogService = getRotalogService(item);
-  const serviceLineHtml = rotalogService ? `
-    <div class="serviceLine" title="Status do serviço: ${escapeHtml(rotalogService.rawStatus)}">
-      <span class="serviceIdentifier">${escapeHtml(rotalogService.identifierLabel)} ${escapeHtml(rotalogService.identifier)}</span>
-      ${rotalogService.statusChar ? `<span class="serviceStatus serviceStatus--${rotalogService.statusChar}">${rotalogService.statusChar}</span>` : ''}
-    </div>` : '';
-  const isTrash = getViewMode() === 'trash';
+  const turnSummary = getTurnSummary(item, shown);
+  const serviceStageHtml = rotalogService?.statusChar
+    ? `<span class="contactServiceStage contactServiceStage--${rotalogService.statusChar}" title="${escapeHtml(rotalogService.statusLabel)}">${rotalogService.statusChar}</span>`
+    : '';
+  const serviceContactHtml = rotalogService ? `
+    <div class="contactServiceDetails">
+      <span class="contactServiceCategory">Tipo: ${escapeHtml(rotalogService.category === 'EMERGENCIA' ? 'Emergência' : rotalogService.category === 'COMERCIAL' ? 'Comercial' : rotalogService.category || '-')}</span>
+      <span class="contactServiceType">${escapeHtml(rotalogService.serviceType)} ${serviceStageHtml}</span>
+      <span class="contactServiceProtocol">${rotalogService.conclusionOlderThanTenMinutes ? 'SEM EXECUÇÃO' : rotalogService.protocol ? escapeHtml(rotalogService.protocol) : '&nbsp;'}</span>
+    </div>` : `
+    <div class="contactServiceDetails contactServiceDetails--empty">
+      <span class="contactServiceCategory">&nbsp;</span>
+      <span class="contactServiceType">&nbsp;</span>
+      <span class="contactServiceProtocol">&nbsp;</span>
+    </div>`;
+  const turnSummaryHtml = turnSummary ? `
+    <div class="turnSummary">
+      <span class="turnSummaryTitle">${escapeHtml(turnSummary.title)}</span>
+      <span class="turnSummaryLine"><span>Abertura</span><strong>${escapeHtml(turnSummary.openedAt)}</strong></span>
+      <span class="turnSummaryLine"><span>${escapeHtml(turnSummary.endLabel)}</span><strong>${escapeHtml(turnSummary.endAt)}</strong></span>
+      <span class="turnSummaryServices">${turnSummary.executedServices} ${turnSummary.executedServices === 1 ? 'serviço executado' : 'serviços executados'}</span>
+    </div>` : '';  const isTrash = getViewMode() === 'trash';
   const trashActions = isTrash ? `
     <div class="tileTrashActions">
       <button class="btnRestore" type="button" title="Restaurar Equipe" onclick="event.stopPropagation(); window.restoreTeam('${escapeHtml(teamKey)}')">Restaurar</button>
@@ -1048,16 +1175,15 @@ function tile(item) {
               <div class="timeLine ${hideTimeLine ? "timeLineHidden" : ""}">
                 ${escapeHtml(timeLabel)}
               </div>
-              ${serviceLineHtml}
             </div>
             `}
           </div>
         </div>
       </div>
       ${isTrash ? trashActions : `
-        <div class="tileContactRow">
-           <span class="contactLabel">Último Contato: <span class="origemBadge origemBadge--${origemChar}" title="${escapeHtml(origemTitle)}">${origemChar}</span></span>
-           <span class="contactValue">${escapeHtml(lastContactLabel)}</span>
+        <div class="tileContactRow" title="${escapeHtml(origemTitle)}">
+           ${turnSummaryHtml || serviceContactHtml}
+           ${turnSummary ? '' : `<span class="contactValue">${escapeHtml(lastContactLabel)}</span>`}
          </div>
         ${ddsRow}
       `}
@@ -1068,7 +1194,10 @@ function tile(item) {
         <div class="tileHoverTitles">
           <div class="teamIdentityBadge teamIdentityBadgeHover" title="${escapeHtml(equipe)}">
             ${teamTypeIconHtml}
-            <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
+            <div class="teamIdentityTextHover">
+              <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
+              <div class="tabletCompactHover">${escapeHtml(tabletLabel)}</div>
+            </div>
           </div>
           <div class="badge badgeCompact">
             ${escapeHtml(stateLabel(shown))}
@@ -1298,9 +1427,9 @@ function startPolling() {
   if (useHttpPolling) {
     // JSON/GCS: atualização via API, sem listeners Firestore
     nextRefresh.textContent = "Polling Ativo ⏳";
-    const safeSeconds = Math.max(15, pollingSeconds);
+    const safeSeconds = WEB_CARD_REFRESH_SECONDS;
     pollingTimer = setInterval(() => {
-      load();
+      load({ silent: true });
     }, safeSeconds * 1000);
 
     countdownTimer = setInterval(() => {
@@ -1442,6 +1571,7 @@ async function loadDdsBackground(forceRefresh = false) {
       if (idx !== -1) {
         const current = allRealtimeItems[idx];
         const ddsContactIsNewer = isIsoNewer(ddsItem.lastContact, current.lastContact);
+        const ddsTurnIsNewer = isIsoNewer(ddsItem.updatedAt, current.updatedAt);
         allRealtimeItems[idx] = {
           ...current,
           ddsHistory: ddsItem.ddsHistory,
@@ -1453,8 +1583,8 @@ async function loadDdsBackground(forceRefresh = false) {
             lastContactSource: ddsItem.lastContactSource || 'D',
           } : {}),
           ...(typeof ddsItem.active === 'boolean' ? { active: ddsItem.active } : {}),
-          ...(ddsItem.estado ? { estado: ddsItem.estado } : {}),
-          ...(ddsItem.updatedAt ? { updatedAt: ddsItem.updatedAt } : {}),
+          ...(ddsTurnIsNewer && ddsItem.estado ? { estado: ddsItem.estado } : {}),
+          ...(ddsTurnIsNewer ? { updatedAt: ddsItem.updatedAt } : {}),
         };
         merged = true;
       }
@@ -1469,6 +1599,7 @@ async function loadDdsBackground(forceRefresh = false) {
 
 async function load(options = {}) {
   const forceRefresh = options.forceRefresh || false;
+  const silent = options.silent === true;
   const refreshSpinner = document.getElementById('refreshSpinner');
 
   if (forceRefresh) {
@@ -1493,7 +1624,7 @@ async function load(options = {}) {
     url = `/api/teams/trash`;
   }
 
-  if (!forceRefresh) {
+  if (!forceRefresh && !silent && !allRealtimeItems.length) {
     showSkeleton();
   }
 
@@ -1524,32 +1655,47 @@ async function load(options = {}) {
   } catch (e) {
     console.error('Erro ao carregar monitor:', e);
     lastSync.textContent = 'Atualizado: ERRO';
-    grid.innerHTML = '<div class="emptyState">Não foi possível carregar o monitor.</div>';
-    if (kpis) kpis.innerHTML = `<div class="kpi">⚠ erro ao carregar</div>`;
-    renderTeamCount([]);
+    if (!silent || !allRealtimeItems.length) {
+      grid.innerHTML = '<div class="emptyState">Não foi possível carregar o monitor.</div>';
+      if (kpis) kpis.innerHTML = `<div class="kpi">⚠ erro ao carregar</div>`;
+      renderTeamCount([]);
+    }
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
     if (refreshSpinner) refreshSpinner.hidden = true;
 
-    const safeSeconds = Math.max(15, pollingSeconds);
+    const safeSeconds = String(lastData?.persistenceMode || 'json').toLowerCase() === 'firestore'
+      ? Math.max(15, pollingSeconds)
+      : WEB_CARD_REFRESH_SECONDS;
     nextTickAtMs = Date.now() + safeSeconds * 1000;
     setRefreshInfo();
   }
 }
 
 function getTeamUpdateSignature(item) {
-  const snapshot = item?.rotalogSnapshot || {};
-  const activity = snapshot.atividadeAtual || {};
   return JSON.stringify({
-    state: item?.estado || null,
+    teamKey: item?.teamKey || item?.equipe || null,
+    equipe: item?.equipe || null,
+    teamType: item?.teamType || null,
+    tablet: item?.tablet || null,
+    estado: item?.estado || null,
+    alerta: item?.alerta || null,
+    critico: item?.critico || false,
     updatedAt: item?.updatedAt || null,
-    service: item?.ss || null,
-    rotalogVersion: snapshot.updatedAtIso || snapshot.eventTimestampMs || null,
-    activityStatus: activity.status || null,
-    activityType: activity.tipo || null,
-    activityProtocol: activity.protocolo || activity.protocoloBruto || activity.ssId || null,
-    messages: item?.unreadMap || {},
-    dds: (item?.ddsHistory || []).slice(-1)[0] || null,
+    lastContact: item?.lastContact || null,
+    lastContactSource: item?.lastContactSource || null,
+    ss: item?.ss || null,
+    motivo: item?.motivo || null,
+    participantes: item?.participantes || [],
+    motorista: item?.motorista || null,
+    coringas: item?.coringas || [],
+    rotalogSnapshot: item?.rotalogSnapshot || null,
+    unreadMap: item?.unreadMap || {},
+    ddsHistory: item?.ddsHistory || [],
+    ddsDays: item?.ddsDays || [],
+    ddsTimes: item?.ddsTimes || {},
+    ddsPhotos: item?.ddsPhotos || {},
+    showDds: Boolean(document.getElementById("ddsToggle")?.checked),
   });
 }
 
@@ -1566,16 +1712,17 @@ function updateSingleTeamCard(item) {
   const hasChanged = oldCore !== coreData;
   if (!hasChanged) return;
 
-  const html = tile(item);
-  const flashClass = ' flash-update';
-  const order = card.style.order || '0';
-
-  card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${order}" data-core='${coreData}' class="tile${flashClass}`);
-
-  const newCard = document.getElementById(cardId);
-  if (newCard) {
-    newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
-  }
+  const temp = document.createElement('div');
+  temp.innerHTML = tile(item);
+  const newCard = temp.firstElementChild;
+  if (!newCard) return;
+  newCard.id = cardId;
+  newCard.dataset.core = coreData;
+  newCard.style.order = card.style.order || '0';
+  newCard.classList.add('flash-update');
+  newCard.addEventListener('animationend', () => newCard.classList.remove('flash-update'), { once: true });
+  newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+  card.replaceWith(newCard);
 }
 
 function renderData(items, meta, kpiSourceItems) {
@@ -1657,16 +1804,23 @@ function renderData(items, meta, kpiSourceItems) {
       card.addEventListener('mouseenter', () => syncHoverPlacement(card));
       container.appendChild(card);
     } else {
-      const oldCore = card.dataset.core;
-      const hasChanged = oldCore !== coreData;
-
-      // Sempre atualiza o HTML para manter o relógio fresco, 
-      // mas só aplica o 'flash-update' se o dado vital mudou
-      const flashClass = hasChanged ? ' flash-update' : '';
-      card.outerHTML = html.replace('class="tile', `id="${cardId}" style="order: ${index}" data-core='${coreData}' class="tile${flashClass}`);
-
-      const newCard = document.getElementById(cardId);
-      if (newCard) newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+      const hasChanged = card.dataset.core !== coreData;
+      if (hasChanged) {
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const newCard = temp.firstElementChild;
+        if (newCard) {
+          newCard.id = cardId;
+          newCard.dataset.core = coreData;
+          newCard.style.order = index;
+          newCard.classList.add('flash-update');
+          newCard.addEventListener('animationend', () => newCard.classList.remove('flash-update'), { once: true });
+          newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+          card.replaceWith(newCard);
+        }
+      } else {
+        card.style.order = index;
+      }
     }
   });
 
@@ -1818,11 +1972,10 @@ if (ddsToggle) {
   ddsToggle.checked = savedDdsState;
   ddsToggle.addEventListener('change', () => {
     localStorage.setItem('monitor_show_dds', ddsToggle.checked);
-    // Se ligou o DDS e os dados ainda não foram carregados, carrega agora
+    // O estado do botão altera a composição visual e precisa refletir imediatamente.
+    syncRealtimeData();
     if (ddsToggle.checked && !ddsDataLoaded) {
       loadDdsBackground();
-    } else {
-      syncRealtimeData();
     }
   });
 }

@@ -69,6 +69,7 @@ fun HomeScreen(
     onProducaoClick: () -> Unit,
     onMensagensClick: () -> Unit,
     onAbastecimentoClick: () -> Unit,
+    rotalogTeam: com.chicoeletro.dds.features.turno.RotalogMobileTeam? = null,
     teamType: String? = null,
     motorista: String? = null,
     coringas: List<String> = emptyList(),
@@ -84,6 +85,19 @@ fun HomeScreen(
         else -> Triple(Icons.Default.People, null, Color(0xFF00ACC1))
     }
 
+    val serviceStatusStr = rotalogTeam?.service?.status?.trim()
+    val turnoSubtitleText = buildString {
+        append(when (turnoEstado) {
+            EstadoTurno.FECHADO -> "FECHADO"
+            EstadoTurno.ABERTO -> "ABERTO"
+            EstadoTurno.INTERVALO -> "INTERVALO"
+            EstadoTurno.DESLOCAMENTO_ESPECIAL -> "DESLOCAMENTO ESPECIAL"
+        })
+        if (!serviceStatusStr.isNullOrBlank() && turnoEstado != EstadoTurno.FECHADO) {
+            append(" · $serviceStatusStr")
+        }
+    }
+
     val options = listOf(
         HomeOption("DDS", iconResId = R.drawable.dds, color = Color(0xFF2E7D32), onClick = onDdsClick),
         HomeOption(
@@ -91,12 +105,7 @@ fun HomeScreen(
             icon = Icons.Default.AccessTime,
             color = Color(0xFF1976D2),
             onClick = onTurnoClick,
-            subtitle = when (turnoEstado) {
-                EstadoTurno.FECHADO -> "FECHADO"
-                EstadoTurno.ABERTO -> "ABERTO"
-                EstadoTurno.INTERVALO -> "INTERVALO"
-                EstadoTurno.DESLOCAMENTO_ESPECIAL -> "DESLOCAMENTO"
-            },
+            subtitle = turnoSubtitleText,
             subtitleColor = when (turnoEstado) {
                 EstadoTurno.FECHADO -> Color(0xFFC62828)
                 EstadoTurno.ABERTO -> Color(0xFF2E7D32)

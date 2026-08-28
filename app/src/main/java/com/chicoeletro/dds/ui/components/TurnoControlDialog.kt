@@ -26,7 +26,7 @@ sealed class UnifiedHistoryItem {
     
     data class Servico(val ss: BdoSs) : UnifiedHistoryItem() {
         override val timestampMs: Long
-            get() = ss.transitions.firstOrNull()?.timestampMs ?: 0L
+            get() = ss.transitions.maxOfOrNull { it.timestampMs } ?: 0L
     }
     
     data class Transicao(val trans: TurnoTransition) : UnifiedHistoryItem() {
@@ -55,6 +55,8 @@ fun TurnoControlScreen(
     prefillMotivoOutro: String? = null,
     online: Boolean = false,
     teamType: String? = null,
+    rotalogState: RotalogMobileTeam? = null,
+    rawDailyJson: String? = null,
     onClickEquipe: () -> Unit = {}
 ) {
     var step by remember(startAtKmTarget) {
@@ -93,8 +95,24 @@ fun TurnoControlScreen(
     }
 
     val context = LocalContext.current
-    var bdoList by remember(equipe) {
-        mutableStateOf(BdoLocalStore.loadToday(context, equipe))
+    val isStcTeam = teamType == "STC" || teamType == "STC_CESTO"
+    var bdoList by remember(equipe, teamType, rotalogState) {
+        val loaded = BdoLocalStore.loadToday(context, equipe)
+        val initialList: List<BdoSs> = if (isStcTeam) {
+            rotalogState?.toBdoSsList() ?: emptyList()
+        } else {
+            if (loaded.isNotEmpty()) loaded else (rotalogState?.toBdoSsList() ?: emptyList())
+        }
+        mutableStateOf(initialList)
+    }
+
+    LaunchedEffect(equipe, teamType, rotalogState) {
+        val loaded = BdoLocalStore.loadToday(context, equipe)
+        bdoList = if (isStcTeam) {
+            rotalogState?.toBdoSsList() ?: emptyList()
+        } else {
+            if (loaded.isNotEmpty()) loaded else (rotalogState?.toBdoSsList() ?: emptyList())
+        }
     }
 
     LaunchedEffect(prefillKmTotal) {
@@ -528,6 +546,9 @@ fun TurnoControlScreen(
                         onSelectTarget = { handleSelectTarget(it) },
                         equipe = equipe,
                         teamType = teamType,
+                        rotalogState = rotalogState,
+                        rawDailyJson = rawDailyJson,
+                        servicesReadOnly = isStcTeam,
                         onClickEquipe = onClickEquipe,
                         online = online,
                         bdoList = bdoList,

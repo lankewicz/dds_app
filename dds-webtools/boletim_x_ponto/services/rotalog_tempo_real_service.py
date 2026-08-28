@@ -470,6 +470,12 @@ def consolidar_equipes_duplicadas(equipes: list[dict[str, typing.Any]]) -> list[
             atual.setdefault(field, []).extend(equipe.get(field) or [])
         for field in ("bdo_list", "ss_executadas", "ss_em_andamento", "ss_pendentes"):
             _merge_service_lists(atual.setdefault(field, []), equipe.get(field) or [])
+        intervalos = {item.get("inicio_ms"): dict(item) for item in atual.get("intervalos", []) if item.get("inicio_ms")}
+        for item in equipe.get("intervalos") or []:
+            key = item.get("inicio_ms")
+            if key:
+                intervalos[key] = {**intervalos.get(key, {}), **{k: v for k, v in item.items() if v is not None}}
+        atual["intervalos"] = sorted(intervalos.values(), key=lambda item: item.get("inicio_ms") or 0)
 
         inicio_atual = atual.get("intervalo", {}).get("inicio_ms") or 0
         inicio_novo = equipe.get("intervalo", {}).get("inicio_ms") or 0
@@ -483,7 +489,11 @@ def consolidar_equipes_duplicadas(equipes: list[dict[str, typing.Any]]) -> list[
             )
 
     if duplicadas:
-        logger.info("Equipes ROTALOG consolidadas por código: %s", duplicadas)
+        linhas_duplicadas = "\n".join(
+            f"  {equipe}: {quantidade} registros consolidados"
+            for equipe, quantidade in sorted(duplicadas.items())
+        )
+        logger.info("Equipes ROTALOG consolidadas por código:\n%s", linhas_duplicadas)
     return list(consolidadas.values())
 
 def extrair_dados_tempo_real(
@@ -580,6 +590,7 @@ def extrair_dados_tempo_real(
                     "inicio_ms": None,
                     "fim_ms": None
                 },
+                "intervalos": [],
                 "atividade_atual": None,
                 "bdo_list": [],
                 "ss_executadas": [],
@@ -612,11 +623,20 @@ def extrair_dados_tempo_real(
 
         # 2. Marcador de Intervalo
         elif cnt == "INTERVALO" or "intervalo" in cls.lower():
+            interval_record = {
+                "inicio_ms": item["start"],
+                "inicioIso": _convert_ms_to_iso(item["start"]),
+                "fim_ms": item["end"] if isinstance(item["end"], int) else None,
+                "fimIso": _convert_ms_to_iso(item["end"]) if isinstance(item["end"], int) else None,
+            }
+            existing_interval = next((value for value in eq_dict["intervalos"] if value.get("inicio_ms") == item["start"]), None)
+            if existing_interval:
+                existing_interval.update({key: value for key, value in interval_record.items() if value is not None})
+            else:
+                eq_dict["intervalos"].append(interval_record)
             inicio_atual = eq_dict["intervalo"].get("inicio_ms")
             if not isinstance(inicio_atual, int) or item["start"] >= inicio_atual:
-                eq_dict["intervalo"]["em_intervalo"] = True
-                eq_dict["intervalo"]["inicio_ms"] = item["start"]
-                eq_dict["intervalo"]["fim_ms"] = item["end"] if isinstance(item["end"], int) else None
+                eq_dict["intervalo"].update({"em_intervalo": True, **interval_record})
 
         # 3. SSs Executadas (BDO)
         elif "Executado" in cls:
@@ -705,10 +725,17 @@ def extrair_dados_tempo_real(
                     "status": service.get("status"),
                 })
     if protocolos_ausentes:
+        linhas_protocolos = "\n".join(
+            f"  {str(item.get('equipe') or ''):<6} | "
+            f"equipamento={str(item.get('equipamento') or ''):<6} | "
+            f"tipo={str(item.get('tipo') or ''):<5} | "
+            f"status={str(item.get('status') or ''):<12}"
+            for item in protocolos_ausentes
+        )
         logger.warning(
-            "ROTALOG: %s serviço(s) em andamento sem protocolo no conteúdo recebido: %s",
+            "ROTALOG: %s serviço(s) em andamento sem protocolo no conteúdo recebido:\n%s",
             len(protocolos_ausentes),
-            protocolos_ausentes,
+            linhas_protocolos,
         )
     for eq in resultado:
         eventos_servico_ms = eq.pop("eventos_servico_ms", [])

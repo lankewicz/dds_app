@@ -13,21 +13,24 @@ fun TurnoSection(
     eletricistas: List<String>,
     isOnline: Boolean,
     teamType: String?,
-    empresa: String = "ChicoEletro", // Default por enquanto
+    empresa: String = "ChicoEletro",
     onDismiss: () -> Unit,
     onClickEquipe: () -> Unit,
     onSaveTeamType: (String) -> Unit
 ) {
     val turnoSnap by turnoViewModel.turnoSnapshot.collectAsState()
     val errorMessage by turnoViewModel.errorMessage.collectAsState()
+    val rotalogState by turnoViewModel.rotalogState.collectAsState()
+    val rawDailyJson by turnoViewModel.rawDailyJson.collectAsState()
 
-    // No logic here, just bridge to the existing screen
     TurnoControlScreen(
         equipe = equipe,
         snapshot = turnoSnap,
         onDismiss = onDismiss,
         online = isOnline,
         teamType = teamType,
+        rotalogState = rotalogState,
+        rawDailyJson = rawDailyJson,
         onClickEquipe = onClickEquipe,
         onSaveNocSs = { noc ->
             turnoViewModel.atualizarNocSs(noc, empresa)
@@ -36,6 +39,4 @@ fun TurnoSection(
             turnoViewModel.requestTransition(req, empresa, eletricistas, isOnline)
         }
     )
-
-    // TODO: Handle errorMessage (Show a snackbar or dialog)
 }
