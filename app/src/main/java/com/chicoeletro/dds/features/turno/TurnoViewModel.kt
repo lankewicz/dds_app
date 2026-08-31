@@ -82,14 +82,7 @@ class TurnoViewModel @Inject constructor(
         rotalogPollingJob?.cancel()
         rotalogPollingJob = viewModelScope.launch {
             while (true) {
-                runCatching {
-                    val debugJson = RotalogMobileRepository.fetchDailyDebugJson(equipe)
-                    _rawDailyJson.value = debugJson
-                }.onFailure { e ->
-                    android.util.Log.w("TurnoViewModel", "fetchDailyDebugJson indisponível: ${e.message}")
-                }
-
-                runCatching {
+runCatching {
                     val remote = RotalogMobileRepository.current(equipe)
                     if (remote != null) {
                         reconcileTurnoState(remote)
@@ -108,7 +101,7 @@ class TurnoViewModel @Inject constructor(
         if (isoStr.isNullOrBlank()) return 0L
         return runCatching {
             val normalized = isoStr.trim().let {
-                if (it.contains("+") || it.endsWith("Z")) it else "${it}Z"
+                if (it.endsWith("Z") || Regex("[+-]\\d{2}:\\d{2}$").containsMatchIn(it)) it else "${it}Z"
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {

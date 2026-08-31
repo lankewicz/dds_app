@@ -6,6 +6,7 @@
 package com.chicoeletro.dds.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +39,10 @@ fun MenuStep(
     rotalogState: RotalogMobileTeam? = null,
     rawDailyJson: String? = null,
     servicesReadOnly: Boolean = false,
+    historyDate: java.time.LocalDate = java.time.LocalDate.now(),
+    canNavigateNext: Boolean = false,
+    onPreviousDay: () -> Unit = {},
+    onNextDay: () -> Unit = {},
     onClickEquipe: () -> Unit = {},
     online: Boolean,
     bdoList: List<BdoSs>,
@@ -158,32 +163,6 @@ fun MenuStep(
                 }
             }
         }
-        
-        rotalogState?.let { state ->
-            val service = state.service
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Filled.Sync, contentDescription = "ROTALOG", modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("ROTALOG · ${state.turnStatus ?: "SEM STATUS"}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text(
-                            if (service != null) "${service.type ?: "SERVIÇO"} · ${service.status ?: "ATUALIZADO"}" else "Nenhum serviço em execução",
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
         // Painel de Ações do Turno (Expansível)
         AnimatedVisibility(
             visible = showControls && nextStates.isNotEmpty(),
@@ -294,6 +273,10 @@ fun MenuStep(
                     rotalogState = rotalogState,
                     rawDailyJson = rawDailyJson,
                     readOnly = servicesReadOnly,
+                    historyDate = historyDate,
+                    canNavigateNext = canNavigateNext,
+                    onPreviousDay = onPreviousDay,
+                    onNextDay = onNextDay,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -556,6 +539,10 @@ fun BdoSection(
     rotalogState: RotalogMobileTeam? = null,
     rawDailyJson: String? = null,
     readOnly: Boolean = false,
+    historyDate: java.time.LocalDate = java.time.LocalDate.now(),
+    canNavigateNext: Boolean = false,
+    onPreviousDay: () -> Unit = {},
+    onNextDay: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var newSsText by remember { mutableStateOf("") }
@@ -613,47 +600,7 @@ fun BdoSection(
         modifier = modifier.fillMaxSize()
     ) {
         // SS definition form
-        if (readOnly) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Filled.CloudDone, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            "Histórico automático · dados recebidos do Rotalog",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.forLanguageTag("pt-BR"))
-                        fun formatRemoteTime(value: String?): String {
-                            if (value.isNullOrBlank()) return "Em andamento"
-                            val millis = parseIsoToMs(value)
-                            return if (millis > 0L) timeFormat.format(java.util.Date(millis)) else "—"
-                        }
-                        Text("Início do turno: " + formatRemoteTime(rotalogState?.turnoInicio), style = MaterialTheme.typography.bodySmall)
-                        if (rotalogState?.intervals.isNullOrEmpty()) {
-                            Text("Intervalos: nenhum registrado", style = MaterialTheme.typography.bodySmall)
-                        } else {
-                            rotalogState?.intervals?.forEachIndexed { index, interval ->
-                                Text(
-                                    "Intervalo " + (index + 1) + ": " + formatRemoteTime(interval.startAt) + " às " + formatRemoteTime(interval.endAt),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                        Text("Fim do turno: " + formatRemoteTime(rotalogState?.turnoFim), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        } else         Row(
+        if (!readOnly) Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
@@ -714,50 +661,85 @@ fun BdoSection(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
-
-        // Summary Card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp)
+        // Barra compacta do histórico
+        Surface(
+            color = Color(0xFFE4F4E7),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, Color(0xFF2E7D32).copy(alpha = 0.18f)),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
         ) {
-            Column(Modifier.padding(12.dp)) {
-                Text(
-                    text = "Histórico de Serviços do Dia (Total: $totalServices)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(8.dp))
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Serviços", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("$totalServices", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPreviousDay, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.ChevronLeft, contentDescription = "Dia anterior", tint = Color(0xFF2E7D32))
+                        }
+                        val displayDate = historyDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                        Text(
+                            "Histórico de Serviços · " + displayDate,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1B5E20),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        IconButton(onClick = onNextDay, enabled = canNavigateNext, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Próximo dia", tint = Color(0xFF2E7D32))
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Deslocamento", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatDuration(sumDisplacementMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Text(totalServices.toString() + " serviços", fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                }
+
+                if (readOnly) {
+                    val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.forLanguageTag("pt-BR"))
+                    fun remoteTime(value: String?): String {
+                        if (value.isNullOrBlank()) return "—"
+                        val millis = parseIsoToMs(value)
+                        return if (millis > 0L) timeFormat.format(java.util.Date(millis)) else "—"
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Execução", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatDuration(sumExecutionMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Sem Execução", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatDuration(sumSemExecucaoMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = Color(0xFFF57F17))
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("Tempo Total", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatDuration(sumTotalMs), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                    }
+                    val intervalsLabel = rotalogState?.intervals
+                        ?.mapIndexed { index, interval ->
+                            (index + 1).toString() + ": " + remoteTime(interval.startAt) + "–" + remoteTime(interval.endAt)
+                        }
+                        ?.joinToString("  ")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Nenhum"
+                    Text(
+                        "Turno: " + remoteTime(rotalogState?.turnoInicio) +
+                            "  ·  Intervalos: " + intervalsLabel +
+                            "  ·  Fim: " + (rotalogState?.turnoFim?.let { remoteTime(it) } ?: "Em andamento"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF2E7D32)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    Text("Desl. " + formatDuration(sumDisplacementMs), style = MaterialTheme.typography.labelSmall)
+                    Text("Exec. " + formatDuration(sumExecutionMs), style = MaterialTheme.typography.labelSmall)
+                    Text("Total " + formatDuration(sumTotalMs), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
-        if (readOnly) {
+        if (readOnly && bdoList.isEmpty()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Text(
+                    "Nenhum dado de produção encontrado para " +
+                        historyDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (readOnly) {
             ServiceTableHeader()
             Spacer(Modifier.height(4.dp))
         }
@@ -798,102 +780,6 @@ fun BdoSection(
                     }
                     is UnifiedHistoryItem.SemExecucao -> {
                         SemExecucaoItem(item = item)
-                    }
-                }
-            }
-        }
-
-        val displayJson: String = remember(rawDailyJson, rotalogState, equipe) {
-            rawDailyJson
-                ?: rotalogState?.let { com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(it) }
-                ?: "{\n  \"status\": \"Consultando Rotalog no backend...\",\n  \"equipe\": \"$equipe\"\n}"
-        }
-
-        var isJsonMinimized by remember { mutableStateOf(false) }
-        var isJsonFullExpanded by remember { mutableStateOf(false) }
-        Spacer(Modifier.height(8.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (isJsonMinimized) Modifier.wrapContentHeight()
-                    else Modifier.heightIn(min = 100.dp, max = if (isJsonFullExpanded) 420.dp else 180.dp)
-                )
-        ) {
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { isJsonMinimized = !isJsonMinimized },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isJsonMinimized) Icons.Filled.Code else Icons.Filled.Terminal,
-                            contentDescription = null,
-                            tint = Color(0xFFFFB74D),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "JSON ROTALOG (DEBUG)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFB74D)
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (rawDailyJson != null) "DIÁRIO COMPLETO" else if (rotalogState != null) "STATUS ATUAL" else "CONECTANDO",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        if (!isJsonMinimized) {
-                            IconButton(
-                                onClick = { isJsonFullExpanded = !isJsonFullExpanded },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isJsonFullExpanded) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore,
-                                    contentDescription = if (isJsonFullExpanded) "Reduzir" else "Expandir",
-                                    tint = Color(0xFFFFB74D),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = { isJsonMinimized = !isJsonMinimized },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isJsonMinimized) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                                contentDescription = if (isJsonMinimized) "Mostrar" else "Minimizar",
-                                tint = Color(0xFFFFB74D),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (!isJsonMinimized) {
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        Text(
-                            text = displayJson,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            color = Color(0xFF80CBC4)
-                        )
                     }
                 }
             }

@@ -39,6 +39,7 @@ data class RotalogMobileInterval(
 )
 data class RotalogMobileTeam(
     val teamKey: String? = null,
+    val date: String? = null,
     val version: Long? = null,
     val updatedAt: String? = null,
     val turnStatus: String? = null,
@@ -104,7 +105,7 @@ object RotalogMobileRepository {
         if (normalizedKey.isBlank()) return null
 
         // 1. Tenta baixar o arquivo JSON diretamente do Firebase Storage
-        val directStorageTeam = fetchTeamFromStorage(normalizedKey)
+        val directStorageTeam = fetchTeamFromStorage(normalizedKey, allowCurrentFallback = true)
         if (directStorageTeam != null) {
             return directStorageTeam
         }
@@ -135,14 +136,15 @@ object RotalogMobileRepository {
         }
     }
 
-    private suspend fun fetchTeamFromStorage(teamKey: String): RotalogMobileTeam? {
+    private suspend fun fetchTeamFromStorage(teamKey: String, dateIso: String? = null, allowCurrentFallback: Boolean = false): RotalogMobileTeam? {
         return runCatching {
-            val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val requestedDate = dateIso ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
+            val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$requestedDate/$teamKey.json.gz")
             val bytes = runCatching {
-                val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$todayIso/$teamKey.json.gz")
                 dailyRef.getBytes(5 * 1024 * 1024).await()
-            }.getOrElse {
+            }.getOrElse { error ->
+                if (!allowCurrentFallback) throw error
                 val currentRef = storage.reference.child("_cache/rotalog/teams/current/$teamKey.json.gz")
                 currentRef.getBytes(5 * 1024 * 1024).await()
             }
@@ -217,17 +219,25 @@ object RotalogMobileRepository {
 
             RotalogMobileTeam(
                 teamKey = teamKey,
+                date = parsedObj.textOrNull("date") ?: requestedDate,
                 version = version,
                 updatedAt = updatedAt,
                 turnStatus = turnStatus,
                 turnoInicio = turnoInicio,
                 turnoFim = turnoFim,
+                intervals = intervalsList,
                 service = service,
                 services = servicesList
             )
         }.getOrNull()
     }
 
+
+    suspend fun daily(teamKey: String, dateIso: String): RotalogMobileTeam? {
+        val normalizedKey = teamKey.trim().uppercase()
+        if (normalizedKey.isBlank() || !dateIso.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) return null
+        return fetchTeamFromStorage(normalizedKey, dateIso = dateIso, allowCurrentFallback = false)
+    }
     suspend fun fetchDailyDebugJson(teamKey: String): String {
         val normalizedKey = teamKey.trim().uppercase()
         if (normalizedKey.isBlank()) return "{\n  \"erro\": \"Equipe em branco\"\n}"

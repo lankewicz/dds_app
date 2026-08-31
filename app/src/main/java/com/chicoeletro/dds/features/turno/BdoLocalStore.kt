@@ -45,7 +45,7 @@ fun parseIsoToMs(isoStr: String?): Long {
     if (isoStr.isNullOrBlank()) return 0L
     return runCatching {
         val normalized = isoStr.trim().let {
-            if (it.contains("+") || it.endsWith("Z")) it else "${it}Z"
+            if (it.endsWith("Z") || Regex("[+-]\\d{2}:\\d{2}$").containsMatchIn(it)) it else "${it}Z"
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             try {

@@ -96,25 +96,38 @@ fun TurnoControlScreen(
 
     val context = LocalContext.current
     val isStcTeam = teamType == "STC" || teamType == "STC_CESTO"
-    var bdoList by remember(equipe, teamType, rotalogState) {
+    val today = remember { java.time.LocalDate.now() }
+    var selectedHistoryDate by remember(equipe) { mutableStateOf(today) }
+    var historicalRotalogState by remember(equipe) { mutableStateOf<RotalogMobileTeam?>(rotalogState) }
+
+    LaunchedEffect(equipe, selectedHistoryDate, rotalogState) {
+        if (selectedHistoryDate == today) {
+            historicalRotalogState = rotalogState
+        } else {
+            historicalRotalogState = null
+            historicalRotalogState = RotalogMobileRepository.daily(equipe, selectedHistoryDate.toString())
+        }
+    }
+
+    val displayedRotalogState = if (isStcTeam) historicalRotalogState else rotalogState
+    var bdoList by remember(equipe, teamType, displayedRotalogState) {
         val loaded = BdoLocalStore.loadToday(context, equipe)
         val initialList: List<BdoSs> = if (isStcTeam) {
-            rotalogState?.toBdoSsList() ?: emptyList()
+            displayedRotalogState?.toBdoSsList() ?: emptyList()
         } else {
-            if (loaded.isNotEmpty()) loaded else (rotalogState?.toBdoSsList() ?: emptyList())
+            if (loaded.isNotEmpty()) loaded else (displayedRotalogState?.toBdoSsList() ?: emptyList())
         }
         mutableStateOf(initialList)
     }
 
-    LaunchedEffect(equipe, teamType, rotalogState) {
+    LaunchedEffect(equipe, teamType, displayedRotalogState) {
         val loaded = BdoLocalStore.loadToday(context, equipe)
         bdoList = if (isStcTeam) {
-            rotalogState?.toBdoSsList() ?: emptyList()
+            displayedRotalogState?.toBdoSsList() ?: emptyList()
         } else {
-            if (loaded.isNotEmpty()) loaded else (rotalogState?.toBdoSsList() ?: emptyList())
+            if (loaded.isNotEmpty()) loaded else (displayedRotalogState?.toBdoSsList() ?: emptyList())
         }
     }
-
     LaunchedEffect(prefillKmTotal) {
         val total = prefillKmTotal?.filter { it.isDigit() }?.take(9)?.toLongOrNull()
         if (total != null) {
@@ -546,9 +559,13 @@ fun TurnoControlScreen(
                         onSelectTarget = { handleSelectTarget(it) },
                         equipe = equipe,
                         teamType = teamType,
-                        rotalogState = rotalogState,
+                        rotalogState = displayedRotalogState,
                         rawDailyJson = rawDailyJson,
                         servicesReadOnly = isStcTeam,
+                        historyDate = selectedHistoryDate,
+                        canNavigateNext = selectedHistoryDate < today,
+                        onPreviousDay = { selectedHistoryDate = selectedHistoryDate.minusDays(1) },
+                        onNextDay = { if (selectedHistoryDate < today) selectedHistoryDate = selectedHistoryDate.plusDays(1) },
                         onClickEquipe = onClickEquipe,
                         online = online,
                         bdoList = bdoList,
