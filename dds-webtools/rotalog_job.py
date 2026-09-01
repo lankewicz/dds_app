@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 
-from boletim_x_ponto.services.rotalog_sync_task import executar_sincronizacao_rotalog
+from bdo.services.rotalog_sync_task import executar_sincronizacao_rotalog
 
 
 def main() -> int:

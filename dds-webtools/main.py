@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(base_dir, "monitor"))
 sys.path.insert(0, os.path.join(base_dir, "admin"))
 sys.path.insert(0, os.path.join(base_dir, "vexpenses"))
 sys.path.insert(0, os.path.join(base_dir, "token_server"))
-sys.path.insert(0, os.path.join(base_dir, "boletim_x_ponto"))
+sys.path.insert(0, os.path.join(base_dir, "bdo"))
 sys.path.insert(0, os.path.join(base_dir, "controle_projetos"))
 
 # Configuração de Credenciais: Local (arquivo) vs Cloud Run (ADC)
@@ -99,8 +99,8 @@ from token_server.routes import router as token_router
 from produtividade.routes.prod_routes import router as produtividade_router
 
 # Boletim x Ponto import
-from boletim_x_ponto.routes.boletim_routes import router as boletim_router
-from boletim_x_ponto.routes.rotalog_routes import router as rotalog_router
+from bdo.routes.boletim_routes import router as boletim_router
+from bdo.routes.rotalog_routes import router as rotalog_router
 
 # Controle de Projetos import
 from controle_projetos.routes.projeto_routes import router as projeto_router
@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI):
     )
     if rotalog_enabled:
         try:
-            from boletim_x_ponto.services.rotalog_sync_task import RotalogBackgroundScheduler
+            from bdo.services.rotalog_sync_task import RotalogBackgroundScheduler
             interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "590")))
             rotalog_scheduler = RotalogBackgroundScheduler(interval_seconds=interval_seconds)
             rotalog_scheduler.start()

@@ -15,7 +15,7 @@ sys.path.insert(0, root_dir)
 sys.path.insert(0, os.path.join(root_dir, "monitor"))
 load_dotenv(os.path.join(root_dir, ".env"))
 
-from boletim_x_ponto.services.rotalog_sync_task import _executar_sincronizacao_rotalog
+from bdo.services.rotalog_sync_task import _executar_sincronizacao_rotalog
 
 
 def rodar_sync_agora():

@@ -1,12 +1,12 @@
 import pandas as pd
 
-from boletim_x_ponto.services.comparacao import (
+from bdo.services.comparacao import (
     _limpa_boletim,
     dfs_sem_ponto,
     montar_tres_grids,
 )
-from boletim_x_ponto.services.constantes import HEADERS_VIZ
-from boletim_x_ponto.services.rotalog_service import mapear_presenca_funcionario_por_data
+from bdo.services.constantes import HEADERS_VIZ
+from bdo.services.rotalog_service import mapear_presenca_funcionario_por_data
 
 
 def test_numero_boletim_remove_zeros_iniciais():

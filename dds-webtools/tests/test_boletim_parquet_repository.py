@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from boletim_x_ponto.services.parquet_repository import (
+from bdo.services.parquet_repository import (
     LocalObjectStore,
     ParquetStorageRepository,
 )
@@ -11,7 +11,7 @@ from boletim_x_ponto.services.parquet_repository import (
 def make_repository(tmp_path):
     return ParquetStorageRepository(
         LocalObjectStore(tmp_path),
-        prefix="tests/boletim_x_ponto",
+        prefix="tests/bdo",
         manifest_ttl_seconds=0,
     )
 

@@ -787,7 +787,7 @@ def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
 def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 30) -> dict[str, Any]:
     if os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower() != "firestore":
         try:
-            from boletim_x_ponto.services.rotalog_sync_task import get_rotalog_activity_feed
+            from bdo.services.rotalog_sync_task import get_rotalog_activity_feed
             result = get_rotalog_activity_feed(limit=limit)
             return {"empresa": empresa, **result}
         except Exception as exc:
@@ -1411,7 +1411,7 @@ def _persist_team_inactive_checkpoint(
 
 def _rotalog_json_snapshots() -> dict[str, dict[str, Any]]:
     try:
-        from boletim_x_ponto.services.rotalog_sync_task import get_rotalog_live_snapshots
+        from bdo.services.rotalog_sync_task import get_rotalog_live_snapshots
         return get_rotalog_live_snapshots()
     except Exception as exc:
         logger.warning("Não foi possível carregar a visão ROTALOG do JSON: %s", exc)
@@ -2332,7 +2332,7 @@ def invalidate_dds_day_cache(day: str):
         pass
 
 
-from boletim_x_ponto.services.rotalog_tempo_real_service import formatar_protocolo_copel
+from bdo.services.rotalog_tempo_real_service import formatar_protocolo_copel
 
 
 def _describe_team_change_details(data: dict[str, Any], team_key: str = "", empresa: str = "") -> str:

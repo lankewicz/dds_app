@@ -20,7 +20,7 @@ PORTAL_AREAS = {
     "monitor": "Monitor de Turnos",
     "vexpenses": "VExpenses",
     "produtividade": "Monitor de Produtividade",
-    "boletim_x_ponto": "Boletim x Ponto",
+    "bdo": "Boletim x Ponto",
     "controle_projetos": "Controle de Projetos",
 }
 
@@ -35,8 +35,8 @@ _PATH_PERMISSIONS = (
     ("/admin", "admin"),
     ("/vexpenses", "vexpenses"),
     ("/produtividade", "produtividade"),
-    ("/boletim-x-ponto", "boletim_x_ponto"),
-    ("/api/rotalog", "boletim_x_ponto"),
+    ("/boletim-x-ponto", "bdo"),
+    ("/api/rotalog", "bdo"),
     ("/controle-projetos", "controle_projetos"),
     ("/monitor", "monitor"),
     ("/api/config", "monitor"),
@@ -139,9 +139,11 @@ def authorize_mobile_team(claims: Mapping[str, Any], team_key: str, db: Any) -> 
         if cached and now - cached[1] < _MOBILE_TEAM_CACHE_TTL:
             return cached[0]
     snapshot = db.collection("dds_teams").document(normalized).get()
+    if not snapshot.exists:
+        return False
     data = snapshot.to_dict() if snapshot.exists else {}
     authorized = {str(value) for value in (data.get("authorizedAppUids") or [])}
-    allowed = not authorized or uid in authorized or uid == str(data.get("updatedByUid") or "")
+    allowed = (uid in authorized) or (bool(data.get("updatedByUid")) and uid == str(data.get("updatedByUid") or ""))
     with _MOBILE_TEAM_CACHE_LOCK:
         _MOBILE_TEAM_CACHE[cache_key] = (allowed, now)
     return allowed
