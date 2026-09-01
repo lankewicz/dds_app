@@ -360,8 +360,7 @@ def _service_id(team_key: str, service: dict[str, typing.Any]) -> str:
     """ID estável da ocorrência; enriquecer o protocolo não recria o histórico."""
     identity = {
         "teamKey": team_key,
-        "tipo": service.get("tipo"),
-        "inicio": service.get("inicioIso"),
+        "inicio": service.get("inicioIso") or service.get("inicioDeslocamento"),
         "sequencia": service.get("sequencia"),
     }
     digest = hashlib.sha256(

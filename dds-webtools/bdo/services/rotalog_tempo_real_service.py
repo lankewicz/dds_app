@@ -554,9 +554,10 @@ def extrair_dados_tempo_real(
     pattern = r'\{"start":\s*(\d+)\s*,\s*"end":\s*(\d+|\w+)\s*,\s*"editable":\s*(true|false)\s*,\s*"group":\s*"(.*?)"\s*,\s*"className":\s*"(.*?)"\s*,\s*"content":\s*"(.*?)"\}'
 
     raw_items = []
-    for match in re.finditer(pattern, js_clean):
+    for idx, match in enumerate(re.finditer(pattern, js_clean)):
         start_ms, end_ms, editable, group, class_name, content = match.groups()
         raw_items.append({
+            "idx": idx,
             "start": int(start_ms) if start_ms.isdigit() else 0,
             "end": int(end_ms) if end_ms.isdigit() else None,
             "group": group.strip(),
@@ -659,6 +660,7 @@ def extrair_dados_tempo_real(
             hora_fim = popup_info.get("termino") or (_convert_ms_to_hora(item["end"]) if isinstance(item["end"], int) else "")
 
             ss_item = {
+                "eventIdx": item.get("idx"),
                 "ssId": prot_real,
                 "protocolo": prot_real,
                 "protocoloBruto": popup_info.get("protocoloBruto") or prot_real,
@@ -672,7 +674,8 @@ def extrair_dados_tempo_real(
                 "sequencia": popup_info.get("sequencia") or "",
                 "latitude": popup_info.get("latitude"),
                 "longitude": popup_info.get("longitude"),
-                "geolocalizacao": popup_info.get("geolocalizacao"),                "inicioIso": _convert_ms_to_iso(item["start"]),
+                "geolocalizacao": popup_info.get("geolocalizacao"),
+                "inicioIso": _convert_ms_to_iso(item["start"]),
                 "fimIso": _convert_ms_to_iso(item["end"]) if isinstance(item["end"], int) else None,
                 "transitions": [
                     {"status": "EXECUCAO", "timestampMs": item["start"], "hora": hora_inicio},
@@ -693,6 +696,7 @@ def extrair_dados_tempo_real(
             hora_inicio = _convert_ms_to_hora(item["start"])
 
             ss_andamento = {
+                "eventIdx": item.get("idx"),
                 "ssId": prot_real,
                 "protocolo": prot_real,
                 "protocoloBruto": popup_info.get("protocoloBruto") or prot_real,
@@ -706,7 +710,8 @@ def extrair_dados_tempo_real(
                 "sequencia": popup_info.get("sequencia") or "",
                 "latitude": popup_info.get("latitude"),
                 "longitude": popup_info.get("longitude"),
-                "geolocalizacao": popup_info.get("geolocalizacao"),                "inicioIso": _convert_ms_to_iso(item["start"]),
+                "geolocalizacao": popup_info.get("geolocalizacao"),
+                "inicioIso": _convert_ms_to_iso(item["start"]),
                 "inicioHora": hora_inicio,
                 "transitions": [
                     {"status": status_str, "timestampMs": item["start"], "hora": hora_inicio}
@@ -725,29 +730,7 @@ def extrair_dados_tempo_real(
             })
 
     resultado = consolidar_equipes_duplicadas(list(equipas_map.values()))
-    protocolos_ausentes = []
-    for eq in resultado:
-        for service in eq.get("ss_em_andamento", []):
-            if not service.get("protocolo"):
-                protocolos_ausentes.append({
-                    "equipe": eq.get("equipe_codigo"),
-                    "equipamento": eq.get("identificador_equipamento"),
-                    "tipo": service.get("tipo"),
-                    "status": service.get("status"),
-                })
-    if protocolos_ausentes:
-        linhas_protocolos = "\n".join(
-            f"  {str(item.get('equipe') or ''):<6} | "
-            f"equipamento={str(item.get('equipamento') or ''):<6} | "
-            f"tipo={str(item.get('tipo') or ''):<5} | "
-            f"status={str(item.get('status') or ''):<12}"
-            for item in protocolos_ausentes
-        )
-        logger.warning(
-            "ROTALOG: %s serviço(s) em andamento sem protocolo no conteúdo recebido:\n%s",
-            len(protocolos_ausentes),
-            linhas_protocolos,
-        )
+    # Conclui consolidação de equipes
     for eq in resultado:
         eventos_servico_ms = eq.pop("eventos_servico_ms", [])
         tem_andamento = bool(eq.get("ss_em_andamento") or eq.get("atividade_atual"))
@@ -774,10 +757,48 @@ def extrair_dados_tempo_real(
                 eq["estado_consolidado"] = "ABERTO"
         elif turno_contextual["classificacao"] == "FECHADO":
             eq["estado_consolidado"] = "FECHADO"
-        else:
-            eq["estado_consolidado"] = "DESCONHECIDO"
+    # 1. Enriquecimento prioritário via cliques forçados em cada quadrado da timeline do Tempo Real (mapeamento exato 1-a-1)
+    try:
+        vs_input = soup.find("input", {"name": "javax.faces.ViewState"})
+        view_state = vs_input["value"] if vs_input and vs_input.get("value") else None
+        if 'session' in locals() and session and view_state and raw_items:
+            cliques_by_idx = _forcar_cliques_timeline_tempo_real(session, view_state, raw_items)
+            if cliques_by_idx:
+                for eq in resultado:
+                    for srv in (eq.get("ss_executadas", []) + eq.get("ss_em_andamento", [])):
+                        ev_idx = srv.get("eventIdx")
+                        if ev_idx is not None and ev_idx in cliques_by_idx:
+                            popup_data = cliques_by_idx[ev_idx]
+                            if popup_data.get("protocolo"):
+                                srv["protocolo"] = popup_data["protocolo"]
+                                srv["protocoloBruto"] = popup_data["protocoloBruto"]
+                                srv["ssId"] = popup_data["protocolo"]
+                            if popup_data.get("categoria"):
+                                srv["categoria"] = popup_data["categoria"]
+                            if popup_data.get("tipo"):
+                                srv["tipo"] = popup_data["tipo"]
+                            if popup_data.get("sequencia"):
+                                srv["sequencia"] = popup_data["sequencia"]
+                            if popup_data.get("latitude") is not None:
+                                srv["latitude"] = popup_data["latitude"]
+                                srv["longitude"] = popup_data["longitude"]
+                                srv["geolocalizacao"] = {
+                                    "latitude": popup_data["latitude"],
+                                    "longitude": popup_data["longitude"],
+                                }
+                            if popup_data.get("inicioDeslocamento"):
+                                srv["inicioDeslocamento"] = popup_data["inicioDeslocamento"]
+                            if popup_data.get("inicioExecucao"):
+                                srv["inicioExecucao"] = popup_data["inicioExecucao"]
+                            if popup_data.get("termino"):
+                                srv["termino"] = popup_data["termino"]
+                            if popup_data.get("retorno"):
+                                srv["retorno"] = popup_data["retorno"]
+                logger.info("Enriquecimento via cliques forçados na timeline: %s eventos vinculados 1-a-1 com sucesso.", len(cliques_by_idx))
+    except Exception as exc:
+        logger.warning("Falha ao executar cliques forçados na timeline do Tempo Real: %s", exc)
 
-    # Enriquecimento com timelines detalhadas individuais de cada equipe (Protocolos e Coordenadas GPS)
+    # 2. Enriquecimento secundário com timelines individuais (/paginas/timeline?id=...) apenas para os que ainda faltam
     try:
         if 'session' in locals() and session:
             timelines_map = _obter_dados_timeline_equipes(session)
@@ -786,7 +807,7 @@ def extrair_dados_tempo_real(
     except Exception as exc:
         logger.warning("Falha ao enriquecer serviços com timelines individuais: %s", exc)
 
-    # Enriquecimento adicional com tbListagemEventos (D-1 / consolidado)
+    # 3. Enriquecimento adicional com tbListagemEventos (D-1 / consolidado) apenas para os que ainda faltam
     try:
         if 'session' in locals() and session:
             eventos_tabela = _obter_eventos_tabela_dia(session)
@@ -794,6 +815,30 @@ def extrair_dados_tempo_real(
                 _enriquecer_servicos_com_tabela_eventos(resultado, eventos_tabela)
     except Exception as exc:
         logger.warning("Falha ao enriquecer serviços com tbListagemEventos: %s", exc)
+    # 4. Verificação final de serviços que ainda não possuem protocolo após todas as fontes de enriquecimento
+    protocolos_ausentes = []
+    for eq in resultado:
+        for service in eq.get("ss_em_andamento", []):
+            if not _eh_protocolo_valido(service.get("protocolo")):
+                protocolos_ausentes.append({
+                    "equipe": eq.get("equipe_codigo"),
+                    "equipamento": eq.get("identificador_equipamento"),
+                    "tipo": service.get("tipo"),
+                    "status": service.get("status"),
+                })
+    if protocolos_ausentes:
+        linhas_protocolos = "\n".join(
+            f"  {str(item.get('equipe') or ''):<6} | "
+            f"equipamento={str(item.get('equipamento') or ''):<6} | "
+            f"tipo={str(item.get('tipo') or ''):<5} | "
+            f"status={str(item.get('status') or ''):<12}"
+            for item in protocolos_ausentes
+        )
+        logger.info(
+            "ROTALOG: %s serviço(s) em andamento ainda sem protocolo no final:\n%s",
+            len(protocolos_ausentes),
+            linhas_protocolos,
+        )
 
     return resultado
 
@@ -942,7 +987,7 @@ def _enriquecer_servicos_com_tabela_eventos(
 
         todos_servicos = (eq.get("ss_executadas") or []) + (eq.get("ss_em_andamento") or [])
         for srv in todos_servicos:
-            if srv.get("protocolo") and srv.get("protocolo") != srv.get("tipo"):
+            if _eh_protocolo_valido(srv.get("protocolo")):
                 continue
 
             tipo_srv = str(srv.get("tipo") or "").strip().upper()
@@ -1058,6 +1103,16 @@ def _obter_dados_timeline_equipes(session: requests.Session) -> dict[str, list[d
     return results
 
 
+def _eh_protocolo_valido(prot: typing.Any) -> bool:
+    """Verifica se uma string representa um protocolo real e não um tipo/placeholder de serviço."""
+    if not prot:
+        return False
+    prot_str = str(prot).strip().upper()
+    if prot_str in ["UC", "CHAVE", "TRAFO", "ALIM", "ALIMENTADOR", "RISCO", "9901", "196", "NONE", "NULL", ""]:
+        return False
+    return bool(re.search(r"\d{6,}", prot_str))
+
+
 def _enriquecer_servicos_com_timelines_equipes(
     equipes: list[dict[str, typing.Any]],
     timelines_map: dict[str, list[dict[str, typing.Any]]],
@@ -1074,6 +1129,9 @@ def _enriquecer_servicos_com_timelines_equipes(
 
         todos_servicos = (eq.get("ss_executadas") or []) + (eq.get("ss_em_andamento") or [])
         for idx, srv in enumerate(todos_servicos):
+            if _eh_protocolo_valido(srv.get("protocolo")):
+                continue
+
             matched = None
             seq_srv = str(srv.get("sequencia") or "").strip()
             hora_ini = str(srv.get("inicioExecucao") or srv.get("inicioDeslocamento") or "").strip()[:5]
@@ -1122,5 +1180,96 @@ def _enriquecer_servicos_com_timelines_equipes(
                     srv["inicioExecucao"] = matched["inicioExecucao"]
                 if matched.get("fimExecucao") and not srv.get("termino"):
                     srv["termino"] = matched["fimExecucao"]
+
+
+def _forcar_cliques_timeline_tempo_real(
+    session: requests.Session,
+    view_state: str,
+    raw_items: list[dict[str, typing.Any]],
+) -> dict[int, dict[str, typing.Any]]:
+    """
+    Simula sequencialmente o clique em cada quadrado/evento da timeline na página /paginas/tempoReal,
+    disparando o evento AJAX 'select' com 'form:cm-patientregistry-facesheet-timeline_eventIdx'.
+    Isso força o PrimeFaces a retornar o popup do marcador Leaflet com o protocolo, horários e GPS
+    sem concorrência de sessão JSF no servidor.
+    """
+    service_items = [
+        item for item in raw_items
+        if "tempoRealExecutado" in item.get("className", "")
+        or "tempoRealEmExecucao" in item.get("className", "")
+        or "tempoRealPendente" in item.get("className", "")
+    ]
+
+    if not service_items or not view_state:
+        return {}
+
+    url_tempo_real = f"{URL_BASE}/paginas/tempoReal"
+    headers = {
+        "Faces-Request": "partial/ajax",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
+    cliques_by_idx: dict[int, dict[str, typing.Any]] = {}
+
+    for item in service_items:
+        idx = item["idx"]
+        payload = {
+            "javax.faces.partial.ajax": "true",
+            "javax.faces.source": "form:cm-patientregistry-facesheet-timeline",
+            "javax.faces.partial.execute": "form:cm-patientregistry-facesheet-timeline",
+            "javax.faces.partial.render": "form:panelAtualizacaoMapa",
+            "javax.faces.behavior.event": "select",
+            "javax.faces.partial.event": "select",
+            "form:cm-patientregistry-facesheet-timeline_eventIdx": str(idx),
+            "form": "form",
+            "javax.faces.ViewState": view_state,
+        }
+        try:
+            r = session.post(url_tempo_real, data=payload, headers=headers, verify=False, timeout=8)
+            if r.status_code == 200:
+                popups = re.findall(
+                    r"voarParaCoordenadaZoom\(\s*\[(-?\d+\.\d+),\s*(-?\d+\.\d+)\],\s*\d+,\s*['\"](.*?)['\"]\s*\)",
+                    r.text,
+                    re.DOTALL,
+                )
+                for lat, lng, popup in popups:
+                    p_clean = popup.replace(r"\'", "'").replace(r"\n", " ").replace("<BR />", "\n").replace("<br />", "\n")
+                    m_prot = re.search(r"Protocolo[\s:-]*([0-9\.]+)", p_clean, re.IGNORECASE)
+                    m_seq = re.search(r"Sequ[eê]ncia[\s:-]*([^\n]+)", p_clean, re.IGNORECASE)
+                    m_status = re.search(r"Status[\s:-]*([^\n]+)", p_clean, re.IGNORECASE)
+                    m_tipo = re.search(r"Tipo[\s:-]*([^\n]+)", p_clean, re.IGNORECASE)
+                    m_cat = re.search(r"Categoria[\s:-]*([^\n]+)", p_clean, re.IGNORECASE)
+                    m_desl = re.search(r"In[ií]cio\s+Deslocamento[\s:-]*(\d{2}:\d{2})", p_clean, re.IGNORECASE)
+                    m_exec = re.search(r"In[ií]cio\s+Execu[çc][ãa]o[\s:-]*(\d{2}:\d{2})", p_clean, re.IGNORECASE)
+                    m_term = re.search(r"T[eé]rmino[\s:-]*(\d{2}:\d{2})", p_clean, re.IGNORECASE)
+                    m_ret = re.search(r"Retorno[\s:-]*(\d{2}:\d{2})", p_clean, re.IGNORECASE)
+
+                    prot_raw = m_prot.group(1).strip() if m_prot else None
+                    clean_prot = formatar_protocolo_copel(prot_raw) if prot_raw else None
+
+                    cliques_by_idx[idx] = {
+                        "eventIdx": idx,
+                        "protocolo": clean_prot or prot_raw,
+                        "protocoloBruto": prot_raw,
+                        "sequencia": m_seq.group(1).strip() if m_seq else None,
+                        "status": m_status.group(1).strip() if m_status else None,
+                        "tipo": m_tipo.group(1).strip() if m_tipo else item.get("content", ""),
+                        "categoria": m_cat.group(1).strip() if m_cat else None,
+                        "latitude": float(lat),
+                        "longitude": float(lng),
+                        "inicioDeslocamento": m_desl.group(1) if m_desl else None,
+                        "inicioExecucao": m_exec.group(1) if m_exec else None,
+                        "termino": m_term.group(1) if m_term else None,
+                        "retorno": m_ret.group(1) if m_ret else None,
+                        "start_ms": item.get("start"),
+                        "end_ms": item.get("end"),
+                    }
+                    break
+        except Exception:
+            pass
+
+    return cliques_by_idx
+
 
 

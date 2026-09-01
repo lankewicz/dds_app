@@ -43,6 +43,15 @@ def _iso_local(value: typing.Any, day: str | None = None) -> str | None:
         return None
 
 
+import re
+
+def _eh_protocolo_valido(prot: typing.Any) -> bool:
+    if not prot:
+        return False
+    s = str(prot).strip()
+    return bool(re.match(r"^\d{7,15}(\.\d+)*$", s))
+
+
 def _service_id(team_key: str, service: dict[str, typing.Any]) -> str:
     existing = str(service.get("serviceId") or "").strip()
     if existing:
@@ -51,8 +60,7 @@ def _service_id(team_key: str, service: dict[str, typing.Any]) -> str:
         str(value or "")
         for value in (
             team_key,
-            service.get("tipo"),
-            service.get("inicioIso"),
+            service.get("inicioIso") or service.get("inicioDeslocamento") or service.get("inicioExecucao"),
             service.get("sequencia"),
         )
     )
@@ -124,6 +132,13 @@ def merge_daily_document(
         if isinstance(item, dict) and item.get("serviceId")
     }
 
+    # Mapeamento por protocolo para suportar relocação (UC -> TRAFO -> CHAVE -> TRECHO)
+    protocol_to_id = {}
+    for sid, srv in list(service_map.items()):
+        prot = srv.get("protocolo")
+        if prot and _eh_protocolo_valido(prot):
+            protocol_to_id[str(prot)] = sid
+
     fila_atual = {
         "emergencia": int(current.get("ssPendentesEmergenciaCount") or sum(1 for s in current.get("ssPendentes", []) if s.get("tipo") == "EMERGENCIA")),
         "comercial": int(current.get("ssPendentesComercialCount") or sum(1 for s in current.get("ssPendentes", []) if s.get("tipo") == "COMERCIAL")),
@@ -134,28 +149,40 @@ def merge_daily_document(
         raw_services.extend(current.get(field) or [])
     for raw in raw_services:
         compact = compact_service(team_key, day, raw)
-        existing = service_map.get(compact["serviceId"], {})
+        target_id = compact["serviceId"]
+        prot = compact.get("protocolo")
+        if prot and _eh_protocolo_valido(prot) and str(prot) in protocol_to_id:
+            target_id = protocol_to_id[str(prot)]
+
+        existing = service_map.get(target_id, {})
         service_data = dict(existing)
         for k, v in compact.items():
             if v is not None or k not in service_data:
                 service_data[k] = v
+
+        # Relocação: Preserva os horários de início de deslocamento e execução originais
+        inicio_desloc = existing.get("inicioDeslocamento") or compact.get("inicioDeslocamento")
+        inicio_exec = existing.get("inicioExecucao") or compact.get("inicioExecucao")
+
         ordered_service = {
             "categoria": service_data.get("categoria"),
-            "tipo": service_data.get("tipo"),
+            "tipo": compact.get("tipo") or service_data.get("tipo"),  # assume o elemento mais recente/relocado
             "protocolo": service_data.get("protocolo"),
-            "inicioDeslocamento": service_data.get("inicioDeslocamento"),
-            "inicioExecucao": service_data.get("inicioExecucao"),
+            "inicioDeslocamento": inicio_desloc,
+            "inicioExecucao": inicio_exec,
             "fimExecucao": service_data.get("fimExecucao"),
             "retorno": service_data.get("retorno"),
             "latitude": service_data.get("latitude"),
             "longitude": service_data.get("longitude"),
-            "serviceId": service_data.get("serviceId"),
+            "serviceId": target_id,
             "statusAtual": service_data.get("statusAtual"),
             "sequencia": service_data.get("sequencia"),
         }
         if service_data.get("statusAtual") == "CONCLUSAO":
             ordered_service["filaNaConclusao"] = service_data.get("filaNaConclusao") or fila_atual
-        service_map[compact["serviceId"]] = ordered_service
+        service_map[target_id] = ordered_service
+        if prot and _eh_protocolo_valido(prot):
+            protocol_to_id[str(prot)] = target_id
 
     interval_map = {
         str(item.get("inicio")): dict(item)

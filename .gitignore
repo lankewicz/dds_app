@@ -73,3 +73,6 @@ app/release/
 BackEnd/*.pdf
 *.log
 *.zip
+saida_equipes/
+dds-webtools/saida_equipes/
+dds-webtools/RaspadorRotalog/
