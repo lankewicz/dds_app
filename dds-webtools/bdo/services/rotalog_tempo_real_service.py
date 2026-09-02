@@ -1340,19 +1340,16 @@ def _forcar_cliques_timeline_tempo_real(
             pass
         return idx, None, None, False
 
-    max_workers = min(6, len(items_to_fetch))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_fetch_event_popup, item) for item in items_to_fetch]
-        for f in concurrent.futures.as_completed(futures):
-            try:
-                idx, data, cache_key, is_executado = f.result()
-                if data:
-                    cliques_by_idx[idx] = data
-                    if is_executado and cache_key and data.get("protocolo"):
-                        with _CLIQUE_CACHE_LOCK:
-                            _CLIQUE_EVENTOS_CACHE[cache_key] = data
-            except Exception:
-                pass
+    for item in items_to_fetch:
+        try:
+            idx, data, cache_key, is_executado = _fetch_event_popup(item)
+            if data:
+                cliques_by_idx[idx] = data
+                if is_executado and cache_key and data.get("protocolo"):
+                    with _CLIQUE_CACHE_LOCK:
+                        _CLIQUE_EVENTOS_CACHE[cache_key] = data
+        except Exception:
+            pass
 
     return cliques_by_idx
 

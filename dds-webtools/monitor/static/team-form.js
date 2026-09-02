@@ -439,9 +439,9 @@ function getDiffMinutes(startIso, endIso) {
   const d1 = parseToDate(startIso);
   const d2 = parseToDate(endIso);
   if (!d1 || !d2) return null;
-  let diffMs = d2.getTime() - d1.getTime();
-  if (diffMs < 0) {
-    diffMs += 24 * 60 * 60 * 1000;
+  const diffMs = d2.getTime() - d1.getTime();
+  if (diffMs <= 0) {
+    return 0;
   }
   return Math.max(0, Math.round(diffMs / 60000));
 }
@@ -561,7 +561,7 @@ function extractTeamServices(item) {
 
     if (fimCurrent && inicioNext) {
       const gapMins = getDiffMinutes(fimCurrent, inicioNext);
-      if (gapMins >= GAP_THRESHOLD_MINUTES) {
+      if (gapMins >= GAP_THRESHOLD_MINUTES && gapMins <= 480) {
         // Verificar se esse gap já está coberto por algum intervalo de refeição
         const isCoveredByInterval = intervalEvents.some(it => {
           const itIni = it.inicioExecucao;
@@ -604,7 +604,7 @@ function extractTeamServices(item) {
     const inicioPrimeiro = primeiroEvento.inicioDeslocamento || primeiroEvento.inicioExecucao;
     if (inicioPrimeiro) {
       const gapInicialMins = getDiffMinutes(turnoInicio, inicioPrimeiro);
-      if (gapInicialMins >= GAP_THRESHOLD_MINUTES) {
+      if (gapInicialMins >= GAP_THRESHOLD_MINUTES && gapInicialMins <= 480) {
         gapEvents.push({
           isInterval: false,
           isGap: true,

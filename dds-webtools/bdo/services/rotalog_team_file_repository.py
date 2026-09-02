@@ -109,7 +109,8 @@ def _formatar_horarios_servico(
         if len(raw_str) == 5 and raw_str[2] == ":":
             try:
                 candidate = datetime.datetime.fromisoformat(f"{cur_day.isoformat()}T{raw_str}:00").replace(tzinfo=LOCAL_TZ)
-                if prev_dt and candidate < prev_dt:
+                # Virada de meia-noite REAL: só avança de dia se o anterior era noite (>= 21h) e o atual é madrugada (< 06h)
+                if prev_dt and prev_dt.hour >= 21 and int(raw_str[:2]) < 6:
                     cur_day = cur_day + datetime.timedelta(days=1)
                     candidate = datetime.datetime.fromisoformat(f"{cur_day.isoformat()}T{raw_str}:00").replace(tzinfo=LOCAL_TZ)
                 dt_val = candidate
@@ -297,11 +298,14 @@ def merge_daily_document(
         status = srv.get("statusAtual")
         sid = srv.get("serviceId")
 
+        # Se não tem protocolo e já existe um serviço com protocolo cobrindo o mesmo início, descarta o placeholder
+        if not _eh_protocolo_valido(prot) and ini_desloc and any(k.startswith(f"INI_PROT:{ini_desloc}") for k in seen_keys):
+            continue
+
         # Se for um serviço que estava em EXECUCAO/DESLOCAMENTO e não está mais ativo no momento
         if status in ("EXECUCAO", "DESLOCAMENTO") and sid not in active_service_ids:
             # Caso 1: Se tem protocolo válido e não foi concluído normalmente (foi trocado/relocado para outro protocolo)
             if prot and _eh_protocolo_valido(prot) and str(prot) not in seen_keys:
-                # Procura o próximo serviço da equipe para fechar o horário de redirecionamento
                 proximo_ini = None
                 for other in all_raw_list:
                     other_ini = other.get("inicioDeslocamento") or other.get("inicioExecucao") or ""
@@ -316,12 +320,13 @@ def merge_daily_document(
                 status = "REDIRECIONADO"
                 fim_exec = srv["fimExecucao"]
             elif (prot and _eh_protocolo_valido(prot) and str(prot) in seen_keys) or (ini_desloc and fim_exec and (ini_desloc, fim_exec) in seen_keys) or (ini_desloc and any(k.startswith(f"INI:{ini_desloc}") for k in seen_keys)):
-                # Caso 2: Era apenas um placeholder sem protocolo duplicando um serviço já concluído
                 continue
 
         dedup_keys = []
         if prot and _eh_protocolo_valido(prot):
             dedup_keys.append(str(prot))
+            if ini_desloc:
+                dedup_keys.append(f"INI_PROT:{ini_desloc}")
         if ini_desloc and fim_exec:
             dedup_keys.append(f"INIFIM:{ini_desloc}|{fim_exec}")
         elif ini_desloc and status in ("EXECUCAO", "DESLOCAMENTO"):
