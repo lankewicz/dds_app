@@ -207,12 +207,14 @@ def consolidar_turno_por_contexto(
 ) -> dict[str, typing.Any]:
     """Classifica o turno da equipe no Rotalog.
 
-    Abre automaticamente se a equipe possui serviço em andamento (à esquerda da linha vermelha)
-    ou se executou qualquer serviço no dia operacional.
-    Caso o turno feche sem marcador T explícito, prioriza o horário de RETORNO da equipe no último serviço.
-    Se não houver RETORNO, assume o horário de TÉRMINO do último serviço.
+    - Se a equipe dá deslocamento/execução para um serviço -> ABERTO automaticamente (mesmo sem T).
+    - Se a equipe ficou mais de 2 horas com o último serviço fechado/retornado sem novo deslocamento -> FECHADO.
+    - O encerramento do turno fechado assume o horário de RETORNO (ou término) do último serviço.
+    - Se a equipe estiver dentro da janela de 2 horas desde o último retorno e sem T de encerramento -> ABERTO aguardando despacho.
     """
     inicio_dia_ms = _obter_inicio_dia_operacional_ms()
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+
     markers = sorted(
         (item for item in marcadores_t if item.get("start")),
         key=lambda item: int(item["start"]),
@@ -232,9 +234,14 @@ def consolidar_turno_por_contexto(
     if not markers and not all_services:
         return result
 
-    # 1. Se possui atividade em andamento no momento (à esquerda da linha vermelha) -> ABERTO
+    # 1. Se possui atividade em andamento no momento (deslocamento ou execução) -> ABERTO AUTOMATICAMENTE
     if tem_atividade_andamento:
-        inicio_t = services_today[0] if services_today else (all_services[-1] if all_services else None)
+        inicio_t = None
+        if markers:
+            inicio_t = int(markers[-1]["start"])
+        if not inicio_t:
+            inicio_t = services_today[0] if services_today else (all_services[-1] if all_services else None)
+
         result.update({
             "aberto": True,
             "inicio_ms": inicio_t,
@@ -243,63 +250,78 @@ def consolidar_turno_por_contexto(
         })
         return result
 
-    # 2. Se possui marcadores T de encerramento/abertura
-    if markers:
-        last_t = int(markers[-1]["start"])
-        has_service_after = any(value > last_t for value in all_services)
-        has_service_before = any(value < last_t for value in all_services)
+    # 2. Se NÃO possui atividade em andamento no momento:
+    fim_turno_ms = retorno_ultimo_servico_ms if retorno_ultimo_servico_ms else (all_services[-1] if all_services else None)
 
-        if has_service_after:
+    # Verifica se há marcador T novo de reabertura recente DEPOIS do último serviço
+    if markers and fim_turno_ms:
+        last_t = int(markers[-1]["start"])
+        if last_t > fim_turno_ms:
+            # Se for uma abertura recente nas últimas 2 horas
+            if (now_ms - last_t) < 2 * 3600 * 1000:
+                result.update({
+                    "aberto": True,
+                    "inicio_ms": last_t,
+                    "inicio_iso": _convert_ms_to_iso(last_t),
+                    "fim_ms": None,
+                    "fim_iso": None,
+                    "classificacao": "ABERTO",
+                })
+                return result
+
+    if all_services and fim_turno_ms:
+        tempo_sem_servico_ms = now_ms - fim_turno_ms
+        duas_horas_ms = 2 * 3600 * 1000
+
+        # Início correspondente ao turno deste lote de serviços
+        inicio_ms = None
+        if markers:
+            for m in reversed(markers):
+                t_val = int(m["start"])
+                if t_val <= all_services[-1]:
+                    inicio_ms = t_val
+                    break
+        if not inicio_ms:
+            inicio_ms = services_today[0] if services_today else all_services[0]
+
+        # REGRA DE FECHAMENTO AUTOMÁTICO POR INATIVIDADE:
+        # 1. Antes das 20:00 (horário local), NUNCA fecha o turno automaticamente por inatividade (aguarda despacho/comunicação).
+        # 2. A partir das 20:00, se ficou mais de 2 horas sem novo serviço ou se possui marcador T de fim explícito -> FECHADO.
+        hora_atual_local = datetime.datetime.now(LOCAL_TZ).hour
+        tem_marcador_fim = bool(markers and int(markers[-1]["start"]) >= fim_turno_ms)
+
+        deve_fechar = tem_marcador_fim or (hora_atual_local >= 20 and tempo_sem_servico_ms >= duas_horas_ms)
+
+        if deve_fechar:
+            result.update({
+                "aberto": False,
+                "inicio_ms": inicio_ms,
+                "inicio_iso": _convert_ms_to_iso(inicio_ms),
+                "fim_ms": fim_turno_ms,
+                "fim_iso": _convert_ms_to_iso(fim_turno_ms),
+                "classificacao": "FECHADO",
+            })
+            return result
+        else:
+            # Antes das 20h ou dentro da tolerância aguardando próximo despacho
             result.update({
                 "aberto": True,
-                "inicio_ms": last_t,
-                "inicio_iso": _convert_ms_to_iso(last_t),
+                "inicio_ms": inicio_ms,
+                "inicio_iso": _convert_ms_to_iso(inicio_ms),
+                "fim_ms": None,
+                "fim_iso": None,
                 "classificacao": "ABERTO",
             })
             return result
 
-        if has_service_before:
-            opening_ms = None
-            for marker in reversed(markers[:-1]):
-                candidate = int(marker["start"])
-                if any(candidate < value < last_t for value in all_services):
-                    opening_ms = candidate
-                    break
-            if opening_ms is None and all_services:
-                opening_ms = all_services[0]
-
-            result.update({
-                "inicio_ms": opening_ms,
-                "inicio_iso": _convert_ms_to_iso(opening_ms) if opening_ms else None,
-                "fim_ms": last_t,
-                "fim_iso": _convert_ms_to_iso(last_t),
-                "classificacao": "FECHADO",
-            })
-            return result
-
-    # 3. Sem marcador T, mas com serviços executados no dia atual (após 00:00) -> ABERTO
-    if services_today:
-        result.update({
-            "aberto": True,
-            "inicio_ms": services_today[0],
-            "inicio_iso": _convert_ms_to_iso(services_today[0]),
-            "classificacao": "ABERTO",
-        })
-        return result
-
-    # 4. Sem indicação CLARA de fim de turno (sem T) e sem serviço em andamento:
-    # Prioridade 1: Horário de Retorno da equipe (se houver)
-    # Prioridade 2: Horário de Término do último serviço
-    if all_services:
-        primeiro_servico_ms = all_services[0]
-        fim_turno_ms = retorno_ultimo_servico_ms if retorno_ultimo_servico_ms else all_services[-1]
-
+    if markers:
+        last_t = int(markers[-1]["start"])
         result.update({
             "aberto": False,
-            "inicio_ms": primeiro_servico_ms,
-            "inicio_iso": _convert_ms_to_iso(primeiro_servico_ms),
-            "fim_ms": fim_turno_ms,
-            "fim_iso": _convert_ms_to_iso(fim_turno_ms),
+            "inicio_ms": last_t,
+            "inicio_iso": _convert_ms_to_iso(last_t),
+            "fim_ms": last_t,
+            "fim_iso": _convert_ms_to_iso(last_t),
             "classificacao": "FECHADO",
         })
         return result
@@ -732,35 +754,7 @@ def extrair_dados_tempo_real(
             })
 
     resultado = consolidar_equipes_duplicadas(list(equipas_map.values()))
-    # Conclui consolidação de equipes
-    for eq in resultado:
-        eventos_servico_ms = eq.pop("eventos_servico_ms", [])
-        tem_andamento = bool(eq.get("ss_em_andamento") or eq.get("atividade_atual"))
-        retorno_ultimo_ms = None
-        if eq.get("ss_executadas"):
-            last_exec = eq["ss_executadas"][-1]
-            retorno_ultimo_ms = last_exec.get("retornoMs")
 
-        turno_contextual = consolidar_turno_por_contexto(
-            eq["turno_marcadores_t"],
-            eventos_servico_ms,
-            tem_atividade_andamento=tem_andamento,
-            retorno_ultimo_servico_ms=retorno_ultimo_ms,
-        )
-        eq["turno"] = {key: value for key, value in turno_contextual.items() if key != "classificacao"}
-        eq["intervalo"]["em_intervalo"] = intervalo_ativo_por_contexto(
-            eq["intervalo"], eventos_servico_ms
-        )
-
-        if turno_contextual["classificacao"] == "ABERTO":
-            if eq["intervalo"]["em_intervalo"]:
-                eq["estado_consolidado"] = "INTERVALO"
-            else:
-                eq["estado_consolidado"] = "ABERTO"
-        elif turno_contextual["classificacao"] == "FECHADO":
-            eq["estado_consolidado"] = "FECHADO"
-        else:
-            eq["estado_consolidado"] = "DESCONHECIDO"
     # 1. Enriquecimento prioritário via cliques forçados em cada quadrado da timeline do Tempo Real (mapeamento exato 1-a-1)
     try:
         vs_input = soup.find("input", {"name": "javax.faces.ViewState"})
@@ -802,9 +796,57 @@ def extrair_dados_tempo_real(
     except Exception as exc:
         logger.warning("Falha ao executar cliques forçados na timeline do Tempo Real: %s", exc)
 
-    # 2. Busca oficial e completa realizada 100% via cliques na Timeline do Tempo Real (Leaflet + PrimeFaces)
-    # A timeline do Tempo Real já traz todos os protocolos, tipos, sequências, GPS e horários de 100% dos serviços.
-    logger.info("Enriquecimento de servicos concluido diretamente via cliques na Timeline do Tempo Real.")
+    # 2. Conclui consolidação de equipes e status de turno (após enriquecimento de horários e retornos)
+    for eq in resultado:
+        eventos_servico_ms = eq.pop("eventos_servico_ms", [])
+        tem_andamento = bool(eq.get("ss_em_andamento") or eq.get("atividade_atual"))
+        retorno_ultimo_ms = None
+        if eq.get("ss_executadas"):
+            last_exec = eq["ss_executadas"][-1]
+            retorno_str = last_exec.get("retorno") or last_exec.get("termino")
+            if retorno_str and len(str(retorno_str).strip()) == 5:
+                base_day = None
+                for k in ("fimIso", "inicioIso"):
+                    v = str(last_exec.get(k) or "")
+                    if len(v) >= 10 and v[4] == "-" and v[7] == "-":
+                        base_day = v[:10]
+                        break
+                if not base_day:
+                    base_day = datetime.datetime.now(LOCAL_TZ).date().isoformat()
+                try:
+                    dt = datetime.datetime.fromisoformat(f"{base_day}T{retorno_str}:00").replace(tzinfo=LOCAL_TZ)
+                    retorno_ultimo_ms = int(dt.timestamp() * 1000)
+                except Exception:
+                    pass
+            if not retorno_ultimo_ms:
+                for k in ("fim_ms", "end", "end_ms"):
+                    v = last_exec.get(k)
+                    if isinstance(v, (int, float)) and v > 1000000000000:
+                        retorno_ultimo_ms = int(v)
+                        break
+
+        turno_contextual = consolidar_turno_por_contexto(
+            eq.get("turno_marcadores_t") or [],
+            eventos_servico_ms,
+            tem_atividade_andamento=tem_andamento,
+            retorno_ultimo_servico_ms=retorno_ultimo_ms,
+        )
+        eq["turno"] = {key: value for key, value in turno_contextual.items() if key != "classificacao"}
+        eq["intervalo"]["em_intervalo"] = intervalo_ativo_por_contexto(
+            eq["intervalo"], eventos_servico_ms
+        )
+
+        if turno_contextual["classificacao"] == "ABERTO":
+            if eq["intervalo"]["em_intervalo"]:
+                eq["estado_consolidado"] = "INTERVALO"
+            else:
+                eq["estado_consolidado"] = "ABERTO"
+        elif turno_contextual["classificacao"] == "FECHADO":
+            eq["estado_consolidado"] = "FECHADO"
+        else:
+            eq["estado_consolidado"] = "DESCONHECIDO"
+
+    logger.info("Enriquecimento de servicos e consolidacao de turnos concluidos.")
     # 4. Verificação final de serviços que ainda não possuem protocolo após todas as fontes de enriquecimento
     protocolos_ausentes = []
     for eq in resultado:

@@ -265,9 +265,11 @@ function addHours(dateLike, hours) {
 }
 
 function getArt66EndAt(item, shown) {
-  if (normalizedState(shown) !== "FECHADO" || !item?.updatedAt) return null;
+  if (normalizedState(shown) !== "FECHADO") return null;
+  const closedTime = item?.turnoFim || item?.turno?.fim || item?.fimIso || item?.updatedAt;
+  if (!closedTime) return null;
   const hours = item.lastWasDescansoSemanal ? 24 : 11;
-  return addHours(item.updatedAt, hours);
+  return addHours(closedTime, hours);
 }
 
 function isArt66Active(item, shown) {

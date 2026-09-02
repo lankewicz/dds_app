@@ -297,9 +297,26 @@ def merge_daily_document(
         status = srv.get("statusAtual")
         sid = srv.get("serviceId")
 
-        # Se for um serviço provisório em EXECUCAO que não está mais ativo no momento
+        # Se for um serviço que estava em EXECUCAO/DESLOCAMENTO e não está mais ativo no momento
         if status in ("EXECUCAO", "DESLOCAMENTO") and sid not in active_service_ids:
-            if (prot and _eh_protocolo_valido(prot) and str(prot) in seen_keys) or (ini_desloc and fim_exec and (ini_desloc, fim_exec) in seen_keys) or (ini_desloc and any(k.startswith(f"INI:{ini_desloc}") for k in seen_keys)):
+            # Caso 1: Se tem protocolo válido e não foi concluído normalmente (foi trocado/relocado para outro protocolo)
+            if prot and _eh_protocolo_valido(prot) and str(prot) not in seen_keys:
+                # Procura o próximo serviço da equipe para fechar o horário de redirecionamento
+                proximo_ini = None
+                for other in all_raw_list:
+                    other_ini = other.get("inicioDeslocamento") or other.get("inicioExecucao") or ""
+                    if other_ini and other_ini > ini_desloc:
+                        if proximo_ini is None or other_ini < proximo_ini:
+                            proximo_ini = other_ini
+
+                srv["statusAtual"] = "REDIRECIONADO"
+                srv["fimExecucao"] = proximo_ini or fim_exec or ini_desloc
+                srv["retorno"] = proximo_ini or fim_exec or ini_desloc
+                srv["semExecucaoType"] = "REDIRECIONADO"
+                status = "REDIRECIONADO"
+                fim_exec = srv["fimExecucao"]
+            elif (prot and _eh_protocolo_valido(prot) and str(prot) in seen_keys) or (ini_desloc and fim_exec and (ini_desloc, fim_exec) in seen_keys) or (ini_desloc and any(k.startswith(f"INI:{ini_desloc}") for k in seen_keys)):
+                # Caso 2: Era apenas um placeholder sem protocolo duplicando um serviço já concluído
                 continue
 
         dedup_keys = []
@@ -347,6 +364,25 @@ def merge_daily_document(
     ]
     activity_raw = current.get("atividadeAtual") or {}
     current_service = compact_service(team_key, day, activity_raw) if activity_raw else None
+
+    # GARANTIA ESTRITA: No máximo 1 único serviço pode estar em EXECUCAO/DESLOCAMENTO por equipe
+    active_in_list = [srv for srv in services if srv.get("statusAtual") in ("EXECUCAO", "DESLOCAMENTO")]
+    if active_in_list:
+        if current_service is None:
+            for srv in active_in_list:
+                srv["statusAtual"] = "REDIRECIONADO"
+                srv["semExecucaoType"] = "REDIRECIONADO"
+                srv["fimExecucao"] = srv.get("fimExecucao") or srv.get("inicioExecucao") or srv.get("inicioDeslocamento")
+                srv["retorno"] = srv["fimExecucao"]
+        elif len(active_in_list) > 1:
+            active_most_recent = max(active_in_list, key=lambda item: str(item.get("inicioDeslocamento") or item.get("inicioExecucao") or ""))
+            for srv in active_in_list:
+                if srv != active_most_recent:
+                    proximo_ini = active_most_recent.get("inicioDeslocamento") or active_most_recent.get("inicioExecucao")
+                    srv["statusAtual"] = "REDIRECIONADO"
+                    srv["semExecucaoType"] = "REDIRECIONADO"
+                    srv["fimExecucao"] = proximo_ini or srv.get("inicioExecucao") or srv.get("inicioDeslocamento")
+                    srv["retorno"] = srv["fimExecucao"]
 
     prev_version = int((previous.get("current") or {}).get("version") or 0)
     prev_date = str(previous.get("date") or "")

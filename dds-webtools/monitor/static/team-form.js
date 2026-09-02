@@ -494,7 +494,7 @@ function extractTeamServices(item) {
       ? getDiffMinutes(s.inicioExecucao, s.fimExecucao || s.termino)
       : null;
     
-    const isRedirected = !isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null);
+    const isRedirected = String(s.statusAtual || s.status || '').toUpperCase() === 'REDIRECIONADO' || (!isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null));
 
     return {
       ...s,
