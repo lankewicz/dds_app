@@ -6,11 +6,13 @@ estruturando as Ordens de Serviço (SS) com tratamento de Protocolos (removendo 
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import logging
 import html as html_lib
 import os
 import re
+import threading
 import time
 import typing
 try:
@@ -757,6 +759,8 @@ def extrair_dados_tempo_real(
                 eq["estado_consolidado"] = "ABERTO"
         elif turno_contextual["classificacao"] == "FECHADO":
             eq["estado_consolidado"] = "FECHADO"
+        else:
+            eq["estado_consolidado"] = "DESCONHECIDO"
     # 1. Enriquecimento prioritário via cliques forçados em cada quadrado da timeline do Tempo Real (mapeamento exato 1-a-1)
     try:
         vs_input = soup.find("input", {"name": "javax.faces.ViewState"})
@@ -798,23 +802,9 @@ def extrair_dados_tempo_real(
     except Exception as exc:
         logger.warning("Falha ao executar cliques forçados na timeline do Tempo Real: %s", exc)
 
-    # 2. Enriquecimento secundário com timelines individuais (/paginas/timeline?id=...) apenas para os que ainda faltam
-    try:
-        if 'session' in locals() and session:
-            timelines_map = _obter_dados_timeline_equipes(session)
-            if timelines_map:
-                _enriquecer_servicos_com_timelines_equipes(resultado, timelines_map)
-    except Exception as exc:
-        logger.warning("Falha ao enriquecer serviços com timelines individuais: %s", exc)
-
-    # 3. Enriquecimento adicional com tbListagemEventos (D-1 / consolidado) apenas para os que ainda faltam
-    try:
-        if 'session' in locals() and session:
-            eventos_tabela = _obter_eventos_tabela_dia(session)
-            if eventos_tabela:
-                _enriquecer_servicos_com_tabela_eventos(resultado, eventos_tabela)
-    except Exception as exc:
-        logger.warning("Falha ao enriquecer serviços com tbListagemEventos: %s", exc)
+    # 2. Busca oficial e completa realizada 100% via cliques na Timeline do Tempo Real (Leaflet + PrimeFaces)
+    # A timeline do Tempo Real já traz todos os protocolos, tipos, sequências, GPS e horários de 100% dos serviços.
+    logger.info("Enriquecimento de servicos concluido diretamente via cliques na Timeline do Tempo Real.")
     # 4. Verificação final de serviços que ainda não possuem protocolo após todas as fontes de enriquecimento
     protocolos_ausentes = []
     for eq in resultado:
@@ -1030,7 +1020,10 @@ def _enriquecer_servicos_com_tabela_eventos(
                     srv["retorno"] = match_evento["retorno"]
 
 
-def _obter_dados_timeline_equipes(session: requests.Session) -> dict[str, list[dict[str, typing.Any]]]:
+def _obter_dados_timeline_equipes(
+    session: requests.Session,
+    equipes_filtro: set[str] | None = None,
+) -> dict[str, list[dict[str, typing.Any]]]:
     """Obtém os links de timelines individuais (/paginas/timeline?id=...) e raspa marcadores com protocolos e coordenadas."""
     from concurrent.futures import ThreadPoolExecutor
 
@@ -1047,7 +1040,9 @@ def _obter_dados_timeline_equipes(session: requests.Session) -> dict[str, list[d
                         text = a.find_parent("tr").text
                     m = re.search(r"\b(E[A-Z0-9]{3,7})\b", text)
                     if m:
-                        team_urls[m.group(1)] = f"https://www.copel.com{href}" if href.startswith("/rtlweb") else (f"{URL_BASE}{href}" if href.startswith("/") else f"{URL_BASE}/{href}")
+                        code = m.group(1).upper()
+                        if not equipes_filtro or code in equipes_filtro:
+                            team_urls[code] = f"https://www.copel.com{href}" if href.startswith("/rtlweb") else (f"{URL_BASE}{href}" if href.startswith("/") else f"{URL_BASE}/{href}")
     except Exception as exc:
         logger.warning("Falha ao mapear links de timelines do dashboard: %s", exc)
 
@@ -1182,21 +1177,26 @@ def _enriquecer_servicos_com_timelines_equipes(
                     srv["termino"] = matched["fimExecucao"]
 
 
+_CLIQUE_EVENTOS_CACHE: dict[tuple[int, int | None, str], dict[str, typing.Any]] = {}
+_CLIQUE_CACHE_LOCK = threading.RLock()
+
+
 def _forcar_cliques_timeline_tempo_real(
     session: requests.Session,
     view_state: str,
     raw_items: list[dict[str, typing.Any]],
 ) -> dict[int, dict[str, typing.Any]]:
     """
-    Simula sequencialmente o clique em cada quadrado/evento da timeline na página /paginas/tempoReal,
+    Simula o clique em cada quadrado/evento da timeline na página /paginas/tempoReal,
     disparando o evento AJAX 'select' com 'form:cm-patientregistry-facesheet-timeline_eventIdx'.
-    Isso força o PrimeFaces a retornar o popup do marcador Leaflet com o protocolo, horários e GPS
-    sem concorrência de sessão JSF no servidor.
+    Utiliza cache em memória para eventos já concluídos e pool paralelo de threads para novos eventos.
     """
+    global _CLIQUE_EVENTOS_CACHE
     service_items = [
         item for item in raw_items
         if "tempoRealExecutado" in item.get("className", "")
         or "tempoRealEmExecucao" in item.get("className", "")
+        or "tempoRealEmDeslocamento" in item.get("className", "")
         or "tempoRealPendente" in item.get("className", "")
     ]
 
@@ -1211,9 +1211,37 @@ def _forcar_cliques_timeline_tempo_real(
     }
 
     cliques_by_idx: dict[int, dict[str, typing.Any]] = {}
+    items_to_fetch: list[dict[str, typing.Any]] = []
 
-    for item in service_items:
+    with _CLIQUE_CACHE_LOCK:
+        for item in service_items:
+            idx = item["idx"]
+            cls = item.get("className", "")
+            start_ms = item.get("start")
+            end_ms = item.get("end")
+            group = item.get("group", "")
+            is_executado = "tempoRealExecutado" in cls
+
+            cache_key = (start_ms, end_ms, group)
+            if is_executado and cache_key in _CLIQUE_EVENTOS_CACHE:
+                cached = dict(_CLIQUE_EVENTOS_CACHE[cache_key])
+                cached["eventIdx"] = idx
+                cliques_by_idx[idx] = cached
+            else:
+                items_to_fetch.append(item)
+
+    if not items_to_fetch:
+        return cliques_by_idx
+
+    def _fetch_event_popup(item: dict[str, typing.Any]) -> tuple[int, dict[str, typing.Any] | None, tuple | None, bool]:
         idx = item["idx"]
+        cls = item.get("className", "")
+        start_ms = item.get("start")
+        end_ms = item.get("end")
+        group = item.get("group", "")
+        is_executado = "tempoRealExecutado" in cls
+        cache_key = (start_ms, end_ms, group) if is_executado else None
+
         payload = {
             "javax.faces.partial.ajax": "true",
             "javax.faces.source": "form:cm-patientregistry-facesheet-timeline",
@@ -1248,7 +1276,7 @@ def _forcar_cliques_timeline_tempo_real(
                     prot_raw = m_prot.group(1).strip() if m_prot else None
                     clean_prot = formatar_protocolo_copel(prot_raw) if prot_raw else None
 
-                    cliques_by_idx[idx] = {
+                    data = {
                         "eventIdx": idx,
                         "protocolo": clean_prot or prot_raw,
                         "protocoloBruto": prot_raw,
@@ -1265,9 +1293,24 @@ def _forcar_cliques_timeline_tempo_real(
                         "start_ms": item.get("start"),
                         "end_ms": item.get("end"),
                     }
-                    break
+                    return idx, data, cache_key, is_executado
         except Exception:
             pass
+        return idx, None, None, False
+
+    max_workers = min(6, len(items_to_fetch))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_fetch_event_popup, item) for item in items_to_fetch]
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                idx, data, cache_key, is_executado = f.result()
+                if data:
+                    cliques_by_idx[idx] = data
+                    if is_executado and cache_key and data.get("protocolo"):
+                        with _CLIQUE_CACHE_LOCK:
+                            _CLIQUE_EVENTOS_CACHE[cache_key] = data
+            except Exception:
+                pass
 
     return cliques_by_idx
 

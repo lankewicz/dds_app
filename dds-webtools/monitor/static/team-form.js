@@ -43,9 +43,19 @@ const teamFormCommBtn = document.getElementById('teamFormCommBtn');
 const equipmentCardTablet = document.getElementById('equipmentCardTablet');
 const equipmentCardCameraCopel = document.getElementById('equipmentCardCameraCopel');
 const equipmentCardCameraVeicular = document.getElementById('equipmentCardCameraVeicular');
+const equipmentCardDds = document.getElementById('equipmentCardDds');
 const equipmentSummaryTablet = document.getElementById('equipmentSummaryTablet');
 const equipmentSummaryCameraCopel = document.getElementById('equipmentSummaryCameraCopel');
 const equipmentSummaryCameraVeicular = document.getElementById('equipmentSummaryCameraVeicular');
+const equipmentSummaryDds = document.getElementById('equipmentSummaryDds');
+
+const ddsHistoryModal = document.getElementById('ddsHistoryModal');
+const ddsHistoryModalBackdrop = document.getElementById('ddsHistoryModalBackdrop');
+const ddsHistoryModalClose = document.getElementById('ddsHistoryModalClose');
+const ddsHistoryModalCloseBtn = document.getElementById('ddsHistoryModalCloseBtn');
+const ddsHistoryModalContent = document.getElementById('ddsHistoryModalContent');
+const ddsHistoryModalTitle = document.getElementById('ddsHistoryModalTitle');
+const ddsHistoryModalSubtitle = document.getElementById('ddsHistoryModalSubtitle');
 
 const equipmentModal = document.getElementById('equipmentModal');
 const equipmentModalBackdrop = document.getElementById('equipmentModalBackdrop');
@@ -403,6 +413,594 @@ function operationalActivityLabel(value) {
   if (raw === 'CONCLUSAO') return 'CONCLUSÃO';
   return stateLabel(raw);
 }
+function fmtTimeStr(value) {
+  if (!value) return '';
+  const s = String(value).trim();
+  const m = s.match(/(\d{2}:\d{2})/);
+  return m ? m[1] : '';
+}
+
+function parseToDate(isoOrTime) {
+  if (!isoOrTime) return null;
+  const s = String(isoOrTime).trim();
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (m) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(m[1], 10), parseInt(m[2], 10), 0);
+  }
+  return null;
+}
+
+function getDiffMinutes(startIso, endIso) {
+  const d1 = parseToDate(startIso);
+  const d2 = parseToDate(endIso);
+  if (!d1 || !d2) return null;
+  let diffMs = d2.getTime() - d1.getTime();
+  if (diffMs < 0) {
+    diffMs += 24 * 60 * 60 * 1000;
+  }
+  return Math.max(0, Math.round(diffMs / 60000));
+}
+
+function fmtRelMinutes(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return '';
+  if (mins < 0) return '0m';
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function fmtHMS(totalMinutes) {
+  if (!Number.isFinite(totalMinutes) || totalMinutes < 0) totalMinutes = 0;
+  const totalSeconds = Math.round(totalMinutes * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function fmtHM(totalMinutes) {
+  if (!Number.isFinite(totalMinutes) || totalMinutes < 0) totalMinutes = 0;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function extractTeamServices(item) {
+  if (!item) return [];
+  const snapshot = item.rotalogSnapshot || item;
+  
+  // 1. Serviços regulares
+  let rawServices = [];
+  if (Array.isArray(snapshot.services) && snapshot.services.length > 0) {
+    rawServices = snapshot.services.map(s => ({ ...s }));
+  } else {
+    const executadas = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
+    const emAndamento = Array.isArray(snapshot.ssEmAndamento)
+      ? snapshot.ssEmAndamento
+      : (snapshot.atividadeAtual && snapshot.atividadeAtual.tipo ? [snapshot.atividadeAtual] : []);
+    rawServices = [...executadas, ...emAndamento].filter(Boolean).map(s => ({ ...s }));
+  }
+
+  // Identificar serviços regulares vs Redirecionados (sem execução concluída)
+  const services = rawServices.map(s => {
+    const isRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(s.statusAtual || s.status || '').toUpperCase());
+    const durExec = (s.inicioExecucao && (s.fimExecucao || s.termino))
+      ? getDiffMinutes(s.inicioExecucao, s.fimExecucao || s.termino)
+      : null;
+    
+    const isRedirected = !isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null);
+
+    return {
+      ...s,
+      isInterval: false,
+      isGap: false,
+      isRedirected: isRedirected,
+      semExecucaoType: isRedirected ? 'REDIRECIONADO' : null,
+      tipo: isRedirected ? (s.tipo ? `${s.tipo} (REDIR)` : 'REDIRECIONADO') : s.tipo,
+      categoria: isRedirected ? 'CANCELADO / REDIRECIONADO' : s.categoria,
+    };
+  });
+
+  // 2. Intervalos de Refeição / Pausa do Turno
+  const turno = snapshot.turno || {};
+  const rawIntervalos = Array.isArray(turno.intervalos) ? turno.intervalos : (Array.isArray(snapshot.intervalos) ? snapshot.intervalos : []);
+  if (rawIntervalos.length === 0 && snapshot.intervalo && (snapshot.intervalo.inicio_iso || snapshot.intervalo.inicioIso || snapshot.intervalo.inicio || snapshot.intervalo.inicio_ms)) {
+    rawIntervalos.push(snapshot.intervalo);
+  }
+
+  const isEmIntervalo = String(snapshot.turnStatus || snapshot.estadoConsolidado || snapshot.estado || (snapshot.current && snapshot.current.turnStatus) || '').toUpperCase() === 'INTERVALO';
+
+  const intervalEvents = rawIntervalos.map((it, idx) => {
+    let inicio = it.inicio || it.inicio_iso || it.inicioIso;
+    let fim = it.fim || it.fim_iso || it.fimIso;
+    if (!inicio && it.inicio_ms) {
+      inicio = new Date(Number(it.inicio_ms)).toISOString();
+    }
+    if (!fim && it.fim_ms) {
+      fim = new Date(Number(it.fim_ms)).toISOString();
+    }
+    const isCurrent = !fim && isEmIntervalo;
+    return {
+      isInterval: true,
+      isGap: false,
+      isRedirected: false,
+      tipo: 'INTERVALO',
+      categoria: 'REFEIÇÃO',
+      protocolo: null,
+      inicioDeslocamento: null,
+      inicioExecucao: inicio,
+      fimExecucao: fim,
+      statusAtual: isCurrent ? 'EXECUCAO' : 'CONCLUSAO',
+      sequencia: null,
+      serviceId: `interval_${idx}_${inicio || ''}`,
+    };
+  }).filter(it => Boolean(it.inicioExecucao));
+
+  // 3. Detecção de GAPs >= 5 minutos entre eventos
+  const allChronological = [...services, ...intervalEvents].filter(e => Boolean(e.inicioDeslocamento || e.inicioExecucao)).sort((a, b) => {
+    const tA = a.inicioDeslocamento || a.inicioExecucao || '';
+    const tB = b.inicioDeslocamento || b.inicioExecucao || '';
+    return tA.localeCompare(tB);
+  });
+
+  const gapEvents = [];
+  const GAP_THRESHOLD_MINUTES = 5;
+
+  for (let i = 0; i < allChronological.length - 1; i++) {
+    const current = allChronological[i];
+    const next = allChronological[i + 1];
+
+    const fimCurrent = current.fimExecucao || current.termino || current.retorno || current.inicioExecucao;
+    const inicioNext = next.inicioDeslocamento || next.inicioExecucao;
+
+    if (fimCurrent && inicioNext) {
+      const gapMins = getDiffMinutes(fimCurrent, inicioNext);
+      if (gapMins >= GAP_THRESHOLD_MINUTES) {
+        // Verificar se esse gap já está coberto por algum intervalo de refeição
+        const isCoveredByInterval = intervalEvents.some(it => {
+          const itIni = it.inicioExecucao;
+          const itFim = it.fimExecucao;
+          if (!itIni || !itFim) return false;
+          return itIni <= fimCurrent && itFim >= inicioNext;
+        });
+
+        if (!isCoveredByInterval) {
+          const fila = current.filaNaConclusao || {};
+          const hasQueue = (Number(fila.emergencia || 0) > 0 || Number(fila.comercial || 0) > 0);
+          const gapType = hasQueue ? 'SEM_PRODUCAO' : 'SEM_SERVICO';
+
+          gapEvents.push({
+            isInterval: false,
+            isGap: true,
+            isRedirected: false,
+            gapType: gapType,
+            semExecucaoType: gapType,
+            tipo: hasQueue ? 'SEM PRODUÇÃO' : 'SEM SERVIÇO',
+            categoria: hasQueue ? 'DEMORA P/ INICIAR OS' : 'AGUARDANDO DESPACHO',
+            protocolo: hasQueue ? `Fila disponível (${fila.emergencia || 0} emerg, ${fila.comercial || 0} com)` : 'Fila zerada (sem OS atribuída)',
+            inicioDeslocamento: null,
+            inicioExecucao: fimCurrent,
+            fimExecucao: inicioNext,
+            durMin: gapMins,
+            statusAtual: 'CONCLUSAO',
+            sequencia: null,
+            serviceId: `gap_${i}_${fimCurrent}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Gap do início do turno até o primeiro evento
+  const turnoInicio = turno.inicio;
+  if (turnoInicio && allChronological.length > 0) {
+    const primeiroEvento = allChronological[0];
+    const inicioPrimeiro = primeiroEvento.inicioDeslocamento || primeiroEvento.inicioExecucao;
+    if (inicioPrimeiro) {
+      const gapInicialMins = getDiffMinutes(turnoInicio, inicioPrimeiro);
+      if (gapInicialMins >= GAP_THRESHOLD_MINUTES) {
+        gapEvents.push({
+          isInterval: false,
+          isGap: true,
+          isRedirected: false,
+          gapType: 'SEM_SERVICO',
+          semExecucaoType: 'SEM_SERVICO',
+          tipo: 'SEM SERVIÇO',
+          categoria: 'INÍCIO DE TURNO / AGUARDANDO',
+          protocolo: 'Aguardando primeiro despacho',
+          inicioDeslocamento: null,
+          inicioExecucao: turnoInicio,
+          fimExecucao: inicioPrimeiro,
+          durMin: gapInicialMins,
+          statusAtual: 'CONCLUSAO',
+          sequencia: null,
+          serviceId: `gap_init_${turnoInicio}`,
+        });
+      }
+    }
+  }
+
+  return [...services, ...intervalEvents, ...gapEvents];
+}
+
+function renderTeamTimeline(item) {
+  const container = document.getElementById('teamTimelineList');
+  const countBadge = document.getElementById('teamTimelineCount');
+  const summaryBox = document.getElementById('teamTimelineSummaryBox');
+  if (!container) return;
+
+  const events = extractTeamServices(item);
+  if (!events || events.length === 0) {
+    container.innerHTML = '<div class="popoverEmpty">Nenhum atendimento registrado hoje</div>';
+    if (countBadge) countBadge.textContent = '0 serviços';
+    if (summaryBox) summaryBox.innerHTML = '';
+    return;
+  }
+
+  const snapshot = (item && item.rotalogSnapshot) || item || {};
+  const turno = snapshot.turno || {};
+
+  const servicesOnly = events.filter(e => !e.isInterval && !e.isGap);
+  const concluidosProdutivosCount = servicesOnly.filter(s => !s.isRedirected && String(s.statusAtual || s.status || '').toUpperCase() === 'CONCLUSAO').length;
+  const redirecionadosCount = servicesOnly.filter(s => s.isRedirected).length;
+  const andamentoCount = servicesOnly.filter(s => {
+    const st = String(s.statusAtual || s.status || '').toUpperCase();
+    return st === 'EXECUCAO' || st === 'DESLOCAMENTO';
+  }).length;
+  const intervalosCount = events.filter(e => e.isInterval).length;
+
+  let totalDeslocMin = 0;
+  let totalExecMin = 0;
+  let totalIntervalMin = 0;
+  let totalRedirecionadoMin = 0;
+  let totalSemServicoMin = 0;
+  let totalSemProducaoMin = 0;
+
+  servicesOnly.forEach(s => {
+    if (s.isRedirected) {
+      // Tempo de deslocamento do serviço cancelado vai para Redirecionado
+      const d = (s.inicioDeslocamento && (s.fimExecucao || s.inicioExecucao || s.termino))
+        ? getDiffMinutes(s.inicioDeslocamento, s.fimExecucao || s.inicioExecucao || s.termino)
+        : null;
+      if (d && d > 0) totalRedirecionadoMin += d;
+    } else {
+      if (s.inicioDeslocamento && s.inicioExecucao) {
+        const d = getDiffMinutes(s.inicioDeslocamento, s.inicioExecucao);
+        if (d && d > 0) totalDeslocMin += d;
+      }
+      if (s.inicioExecucao) {
+        const isRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(s.statusAtual || s.status || '').toUpperCase());
+        const fim = s.fimExecucao || s.termino || (isRunning ? new Date().toISOString() : null);
+        if (fim) {
+          const e = getDiffMinutes(s.inicioExecucao, fim);
+          if (e && e > 0) totalExecMin += e;
+        }
+      }
+    }
+  });
+
+  events.filter(e => e.isInterval).forEach(it => {
+    if (it.inicioExecucao) {
+      const isRunning = it.statusAtual === 'EXECUCAO';
+      const fim = it.fimExecucao || (isRunning ? new Date().toISOString() : null);
+      if (fim) {
+        const dur = getDiffMinutes(it.inicioExecucao, fim);
+        if (dur && dur > 0) totalIntervalMin += dur;
+      }
+    }
+  });
+
+  events.filter(e => e.isGap).forEach(gap => {
+    const dur = gap.durMin || (gap.inicioExecucao && gap.fimExecucao ? getDiffMinutes(gap.inicioExecucao, gap.fimExecucao) : 0);
+    if (dur > 0) {
+      if (gap.gapType === 'SEM_PRODUCAO') totalSemProducaoMin += dur;
+      else totalSemServicoMin += dur;
+    }
+  });
+
+  const totalSemExecucaoMin = totalRedirecionadoMin + totalSemServicoMin + totalSemProducaoMin;
+
+  // Renderizar Box Completo de Indicadores Operacionais
+  if (summaryBox) {
+    summaryBox.innerHTML = `
+      <div class="timelineSummaryGrid">
+        <div class="timelineSummaryStatCard timelineSummaryStatCard--services" title="Total de atendimentos concluídos no dia">
+          <div class="summaryStatIconWrap">📋</div>
+          <div class="summaryStatData">
+            <span class="summaryStatValue">${concluidosProdutivosCount} <small>concluído${concluidosProdutivosCount !== 1 ? 's' : ''}${andamentoCount > 0 ? ` · ${andamentoCount} atual` : ''}${redirecionadosCount > 0 ? ` · ${redirecionadosCount} redir` : ''}</small></span>
+            <span class="summaryStatLabel">Serviços concluídos</span>
+          </div>
+        </div>
+
+        <div class="timelineSummaryStatCard timelineSummaryStatCard--desloc" title="Tempo total gasto em deslocamento produtivo">
+          <div class="summaryStatIconWrap">🚗</div>
+          <div class="summaryStatData">
+            <span class="summaryStatValue">${fmtHMS(totalDeslocMin)}</span>
+            <span class="summaryStatLabel">Deslocamento</span>
+          </div>
+        </div>
+
+        <div class="timelineSummaryStatCard timelineSummaryStatCard--exec" title="Tempo total em execução das ordens de serviço">
+          <div class="summaryStatIconWrap">⚡</div>
+          <div class="summaryStatData">
+            <span class="summaryStatValue">${fmtHMS(totalExecMin)}</span>
+            <span class="summaryStatLabel">Execução</span>
+          </div>
+        </div>
+
+        <div class="timelineSummaryStatCard timelineSummaryStatCard--semexec" title="Tempo total sem atendimento (Redirecionado + Sem Serviço + Sem Produção)">
+          <div class="summaryStatIconWrap">⏳</div>
+          <div class="summaryStatData">
+            <span class="summaryStatValue">${fmtHMS(totalSemExecucaoMin)}</span>
+            <span class="summaryStatLabel">Sem Execução Total</span>
+            <div class="summaryStatSubBreakdown">
+              <span title="Redirecionado (deslocamento abortado por emergência)">🔀 ${fmtHM(totalRedirecionadoMin)}</span>
+              <span title="Sem Serviço (fila zerada / aguardando despacho)">🟡 ${fmtHM(totalSemServicoMin)}</span>
+              <span title="Sem Produção (fila disponível / demora p/ iniciar)">🔴 ${fmtHM(totalSemProducaoMin)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timelineSummaryStatCard timelineSummaryStatCard--interval" title="Pausas e intervalos de refeição">
+          <div class="summaryStatIconWrap">☕</div>
+          <div class="summaryStatData">
+            <span class="summaryStatValue">${fmtHM(totalIntervalMin)}</span>
+            <span class="summaryStatLabel">${intervalosCount} intervalo${intervalosCount !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Ordenar do mais recente (em cima) para o mais antigo (embaixo)
+  const orderedEvents = [...events].sort((a, b) => {
+    const aRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(a.statusAtual || a.status || '').toUpperCase());
+    const bRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(b.statusAtual || b.status || '').toUpperCase());
+    if (aRunning && !bRunning) return -1;
+    if (!aRunning && bRunning) return 1;
+
+    const timeA = a.fimExecucao || a.inicioExecucao || a.inicioDeslocamento || '';
+    const timeB = b.fimExecucao || b.inicioExecucao || b.inicioDeslocamento || '';
+    return timeB.localeCompare(timeA);
+  });
+
+  let html = '<div class="teamTimelineItems">';
+  orderedEvents.forEach((srv, idx) => {
+    const status = String(srv.statusAtual || srv.status || 'CONCLUSAO').toUpperCase();
+    const isRunning = status === 'EXECUCAO' || status === 'DESLOCAMENTO';
+    const isInterval = Boolean(srv.isInterval);
+    const isGap = Boolean(srv.isGap);
+    const isRedirected = Boolean(srv.isRedirected);
+
+    const tipo = srv.tipo || (isInterval ? 'INTERVALO' : (isGap ? srv.tipo : (srv.serviceType || 'SS')));
+    const categoria = srv.categoria || (isInterval ? 'REFEIÇÃO' : (srv.tipo === 'COMERCIAL' ? 'COMERCIAL' : 'EMERGÊNCIA'));
+    const isEmergencia = String(categoria).toUpperCase().includes('EMERG');
+    const protocolo = srv.protocolo || srv.protocol || srv.ssId || '-';
+    
+    let seq = srv.sequencia;
+    if (!seq) {
+      if (isInterval) seq = '☕';
+      else if (isRedirected) seq = '🔀';
+      else if (isGap) seq = (srv.gapType === 'SEM_PRODUCAO' ? '🔴' : '🟡');
+      else seq = (orderedEvents.length - idx);
+    }
+
+    const desloc = fmtTimeStr(srv.inicioDeslocamento);
+    const inicio = fmtTimeStr(srv.inicioExecucao || srv.inicioIso);
+    const fim = fmtTimeStr(srv.fimExecucao || srv.termino || srv.fimIso);
+
+    const durDesloc = (srv.inicioDeslocamento && srv.inicioExecucao)
+      ? getDiffMinutes(srv.inicioDeslocamento, srv.inicioExecucao)
+      : (isRedirected && srv.inicioDeslocamento && (srv.fimExecucao || srv.termino) ? getDiffMinutes(srv.inicioDeslocamento, srv.fimExecucao || srv.termino) : null);
+
+    const durExec = (srv.inicioExecucao && (srv.fimExecucao || srv.termino))
+      ? getDiffMinutes(srv.inicioExecucao, srv.fimExecucao || srv.termino)
+      : (isRunning && srv.inicioExecucao ? getDiffMinutes(srv.inicioExecucao, new Date().toISOString()) : (isGap ? (srv.durMin || null) : null));
+
+    const flexDesloc = (durDesloc && durDesloc > 0) ? durDesloc : 1;
+    const flexExec = (durExec && durExec > 0) ? durExec : 2;
+
+    let barHtml = '<div class="timelineBarTrack">';
+
+    if (isInterval) {
+      barHtml += `
+        <div class="timelineBarSeg timelineBarSeg--interval ${isRunning ? 'timelineBarSeg--running' : ''}" style="flex: 1;" title="Intervalo: ${inicio}${durExec !== null ? ` (${fmtRelMinutes(durExec)})` : ''}">
+          <span class="timelineBarIcon">☕</span>
+          <span class="timelineBarTime">${inicio || '-'}</span>
+          ${durExec !== null ? `<span class="timelineBarDur">${fmtRelMinutes(durExec)}</span>` : (isRunning ? `<span class="timelineBarDur">em andamento</span>` : '')}
+        </div>
+      `;
+
+      if (fim) {
+        barHtml += `
+          <div class="timelineBarPoint timelineBarPoint--done" title="Fim do Intervalo: ${fim}">
+            <span class="timelineBarIcon">✅</span>
+            <span class="timelineBarTime">${fim}</span>
+          </div>
+        `;
+      } else if (isRunning) {
+        barHtml += `
+          <div class="timelineBarPoint timelineBarPoint--running" title="Em intervalo">
+            <span class="timelineBarIcon">⏳</span>
+            <span class="timelineBarTime">Atual</span>
+          </div>
+        `;
+      }
+    } else if (isGap) {
+      const isSemProd = srv.gapType === 'SEM_PRODUCAO';
+      barHtml += `
+        <div class="timelineBarSeg ${isSemProd ? 'timelineBarSeg--semproducao' : 'timelineBarSeg--semservico'}" style="flex: 1;" title="${srv.tipo}: ${inicio} até ${fim} (${fmtRelMinutes(durExec)})">
+          <span class="timelineBarIcon">${isSemProd ? '🔴' : '🟡'}</span>
+          <span class="timelineBarTime">${inicio || '-'}</span>
+          ${durExec !== null ? `<span class="timelineBarDur">${fmtRelMinutes(durExec)}</span>` : ''}
+        </div>
+        <div class="timelineBarPoint timelineBarPoint--done" title="Término da Espera: ${fim}">
+          <span class="timelineBarIcon">✅</span>
+          <span class="timelineBarTime">${fim || '-'}</span>
+        </div>
+      `;
+    } else if (isRedirected) {
+      barHtml += `
+        <div class="timelineBarSeg timelineBarSeg--redirecionado" style="flex: 1;" title="Deslocamento interrompido: ${desloc}${durDesloc !== null ? ` (${fmtRelMinutes(durDesloc)})` : ''}">
+          <span class="timelineBarIcon">🔀</span>
+          <span class="timelineBarTime">${desloc || inicio || '-'}</span>
+          ${durDesloc !== null ? `<span class="timelineBarDur">${fmtRelMinutes(durDesloc)}</span>` : ''}
+        </div>
+        <div class="timelineBarPoint timelineBarPoint--done" style="background: rgba(168, 85, 247, 0.2); color: #d8b4fe;" title="Redirecionado p/ Emergência: ${fim || '-'}">
+          <span class="timelineBarIcon">🚫</span>
+          <span class="timelineBarTime">${fim || '-'}</span>
+        </div>
+      `;
+    } else {
+      if (desloc) {
+        const showDesloc = desloc !== inicio || (durDesloc && durDesloc > 0);
+        if (showDesloc) {
+          barHtml += `
+            <div class="timelineBarSeg timelineBarSeg--desloc" style="flex: ${flexDesloc};" title="Deslocamento: ${desloc}${durDesloc !== null ? ` (${fmtRelMinutes(durDesloc)})` : ''}">
+              <span class="timelineBarIcon">🚗</span>
+              <span class="timelineBarTime">${desloc}</span>
+              ${durDesloc !== null ? `<span class="timelineBarDur">${fmtRelMinutes(durDesloc)}</span>` : ''}
+            </div>
+          `;
+        }
+      }
+
+      if (inicio || isRunning) {
+        barHtml += `
+          <div class="timelineBarSeg timelineBarSeg--exec ${isRunning ? 'timelineBarSeg--running' : ''}" style="flex: ${flexExec};" title="Execução: ${inicio || desloc || '-'}${durExec !== null ? ` (${fmtRelMinutes(durExec)})` : ''}">
+            <span class="timelineBarIcon">⚡</span>
+            <span class="timelineBarTime">${inicio || desloc || '-'}</span>
+            ${durExec !== null ? `<span class="timelineBarDur">${fmtRelMinutes(durExec)}</span>` : (isRunning ? `<span class="timelineBarDur">em andamento</span>` : '')}
+          </div>
+        `;
+      }
+
+      if (fim) {
+        barHtml += `
+          <div class="timelineBarPoint timelineBarPoint--done" title="Conclusão: ${fim}">
+            <span class="timelineBarIcon">✅</span>
+            <span class="timelineBarTime">${fim}</span>
+          </div>
+        `;
+      } else if (isRunning) {
+        barHtml += `
+          <div class="timelineBarPoint timelineBarPoint--running" title="Em atendimento">
+            <span class="timelineBarIcon">⏳</span>
+            <span class="timelineBarTime">Atual</span>
+          </div>
+        `;
+      }
+    }
+
+    barHtml += '</div>';
+
+    let typeBadgeClass = 'timelineTypeBadge--comercial';
+    if (isInterval) typeBadgeClass = 'timelineTypeBadge--intervalo';
+    else if (isRedirected) typeBadgeClass = 'timelineTypeBadge--redirecionado';
+    else if (isGap) typeBadgeClass = (srv.gapType === 'SEM_PRODUCAO' ? 'timelineTypeBadge--semproducao' : 'timelineTypeBadge--semservico');
+    else if (isEmergencia) typeBadgeClass = 'timelineTypeBadge--emergencia';
+
+    let cardExtraClass = '';
+    if (isInterval) cardExtraClass = 'teamTimelineCard--interval';
+    else if (isRedirected) cardExtraClass = 'teamTimelineCard--redirecionado';
+    else if (isGap) cardExtraClass = (srv.gapType === 'SEM_PRODUCAO' ? 'teamTimelineCard--semproducao' : 'teamTimelineCard--semservico');
+
+    let dotExtraClass = '';
+    if (isInterval) dotExtraClass = 'timelineIndicatorDot--interval';
+    else if (isRedirected) dotExtraClass = 'timelineIndicatorDot--redirecionado';
+    else if (isGap) dotExtraClass = (srv.gapType === 'SEM_PRODUCAO' ? 'timelineIndicatorDot--semproducao' : 'timelineIndicatorDot--semservico');
+
+    let statusText = 'Concluído';
+    if (isRunning) {
+      statusText = isInterval ? 'Em Intervalo' : (status === 'DESLOCAMENTO' ? 'Deslocamento' : 'Em Execução');
+    } else if (isRedirected) {
+      statusText = 'Redirecionado';
+    } else if (isGap) {
+      statusText = 'Sem Execução';
+    }
+
+    html += `
+      <div class="teamTimelineCard ${isRunning ? 'teamTimelineCard--running' : ''} ${cardExtraClass}">
+        <div class="teamTimelineCardIndicator">
+          <span class="timelineIndicatorDot ${isRunning ? 'timelineIndicatorDot--pulse' : ''} ${dotExtraClass}"></span>
+        </div>
+        <div class="teamTimelineCardContent">
+          <div class="teamTimelineCardHeader">
+            <div class="teamTimelineCardTitleWrap">
+              <span class="timelineSeqBadge">${isInterval ? '☕' : (isRedirected ? '🔀' : (isGap ? (srv.gapType === 'SEM_PRODUCAO' ? '🔴' : '🟡') : `#${seq}`))}</span>
+              <span class="timelineTypeBadge ${typeBadgeClass}">${escapeHtml(tipo)}</span>
+              <span class="timelineCategoryTag">${escapeHtml(categoria)}</span>
+              ${!isInterval && !isGap && protocolo && protocolo !== '-' ? `
+                <span class="timelineProtocolInline"><span class="timelineProtocolLabel">OS:</span> <strong class="timelineProtocolValue">${escapeHtml(protocolo)}</strong></span>
+              ` : (isGap ? `
+                <span class="timelineProtocolInline"><strong class="timelineProtocolValue" style="color: #94a3b8; font-size: 11px; font-weight: 500;">${escapeHtml(protocolo)}</strong></span>
+              ` : (isInterval ? `
+                <span class="timelineProtocolInline"><strong class="timelineProtocolValue" style="color: #94a3b8; font-size: 11px; font-weight: 500;">Intervalo da Equipe</strong></span>
+              ` : ''))}
+            </div>
+            <span class="timelineStatusBadge ${isRunning ? 'timelineStatusBadge--running' : 'timelineStatusBadge--done'} ${isRedirected ? 'timelineStatusBadge--redirected' : ''}">
+              ${statusText}
+            </span>
+          </div>
+          
+          <div class="teamTimelineCardBarWrap">
+            ${barHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+async function loadAndRenderTeamTimeline(teamKey, item) {
+  const container = document.getElementById('teamTimelineList');
+  const countBadge = document.getElementById('teamTimelineCount');
+  
+  const snapshot = (item && item.rotalogSnapshot) || item;
+  if (snapshot && Array.isArray(snapshot.services) && snapshot.services.length > 0) {
+    renderTeamTimeline(item);
+  } else {
+    if (container) {
+      container.innerHTML = '<div class="popoverEmpty">Carregando atendimentos do dia...</div>';
+      if (countBadge) countBadge.textContent = 'Carregando...';
+    }
+  }
+
+  if (!teamKey) return;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const resp = await fetch(`/api/rotalog/teams/${encodeURIComponent(teamKey)}/daily?date=${today}`, { cache: 'no-store' });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.daily && Array.isArray(data.daily.services)) {
+        const enrichedItem = {
+          ...(item || {}),
+          rotalogSnapshot: {
+            ...((item && item.rotalogSnapshot) || {}),
+            services: data.daily.services,
+            current: data.daily.current,
+            turno: data.daily.turno,
+          }
+        };
+        renderTeamTimeline(enrichedItem);
+        return;
+      }
+    }
+  } catch (err) {
+    console.debug('Aviso: Não foi possível buscar o diário complementar:', err);
+  }
+  renderTeamTimeline(item);
+}
+
 function updateLiveSummary(item) {
   const operational = getOperationalRotalogData(item);
   teamLiveStatus.textContent = stateLabel(operational.status);
@@ -418,25 +1016,9 @@ function updateLiveSummary(item) {
     ? `Há ${fmtAgeFromMinutes(operational.ageMinutes)}`
     : '-';
 
-  const ddsToggle = document.getElementById('ddsToggle');
-  const isDdsChecked = ddsToggle ? ddsToggle.checked : false;
-
-  const ddsTitleEl = document.querySelector('.modalSectionTitleDds');
-  if (ddsTitleEl) {
-    ddsTitleEl.style.display = isDdsChecked ? 'block' : 'none';
-  }
-
-  if (teamLiveDds) {
-    teamLiveDds.style.display = isDdsChecked ? 'block' : 'none';
-    const renderer = utils().renderDdsKpiHtml;
-    if (typeof renderer === 'function') {
-      teamLiveDds.innerHTML = renderer(item || {}, {
-        maxItems: 20,
-        showDayLabels: true,
-        showMeta: false,
-        containerClass: 'ddsRowModal',
-      });
-    }
+  const snapshot = (item && item.rotalogSnapshot) || item;
+  if (snapshot && Array.isArray(snapshot.services) && snapshot.services.length > 0) {
+    renderTeamTimeline(item);
   }
 }
 
@@ -688,6 +1270,9 @@ function renderEquipmentCards() {
     const summary = equipment.identifier || equipment.summary || summarizeEquipment(equipment) || '';
     if (meta.summaryEl) meta.summaryEl.textContent = summary || 'Nenhum equipamento vinculado';
   });
+  if (equipmentSummaryDds) {
+    equipmentSummaryDds.textContent = 'Ver histórico (3 sem.)';
+  }
 }
 
 function renderEquipmentHistoryTable(equipmentType = openEquipmentType) {
@@ -965,9 +1550,10 @@ async function openTeamForm(teamKey) {
   suspendDirtyTracking = false;
 
   updateHeader(currentItem, teamKey);
-  // Atualiza apenas o painel de situação (status, ss, atualizado). 
-  // Se currentItem já tem DDS, mostra — se não, não limpa a seção DDS (evita piscar vazio).
-  if (currentItem) updateLiveSummary(currentItem);
+  if (currentItem) {
+    updateLiveSummary(currentItem);
+    loadAndRenderTeamTimeline(teamKey, currentItem);
+  }
 
   equipmentState = buildEmptyEquipmentMap();
   equipmentHistory = [];
@@ -993,8 +1579,6 @@ async function openTeamForm(teamKey) {
     if (!response.ok) throw new Error(data?.detail || 'Falha ao carregar formulário.');
     if (requestId !== loadToken) return;
     fillForm(data);
-    // Monta um objeto de item enriquecido com os dados DDS vindos da API,
-    // apenas se eles não vierem vazios (já que [] e {} são truthy em JS e sobrescreveriam o currentItem)
     const hasApiDds = Array.isArray(data.ddsHistory) && data.ddsHistory.length > 0;
     const liveItem = {
       ...(currentItem || {}),
@@ -1006,6 +1590,7 @@ async function openTeamForm(teamKey) {
     };
     updateHeader(liveItem, teamKey);
     updateLiveSummary(liveItem);
+    loadAndRenderTeamTimeline(teamKey, liveItem);
     teamFormMeta.textContent = `Equipe ${teamKey} pronta para edição`;
   } catch (error) {
     setNotice(error?.message || 'Não foi possível carregar o formulário.', 'error');
@@ -1198,14 +1783,45 @@ teamFormCommBtn?.addEventListener('click', () => {
   }
 });
 
-chatPopoverClose?.addEventListener('click', () => {
-  if (teamChatPopover) teamChatPopover.hidden = true;
-});
+function openDdsHistoryModal() {
+  if (!ddsHistoryModal) return;
+  const currentItem = (state().findItem && openTeamKey) ? state().findItem(openTeamKey) : null;
+  const teamDisplayName = formDisplayName?.value || openTeamKey || 'Equipe';
 
+  if (ddsHistoryModalTitle) ddsHistoryModalTitle.textContent = `Presenças no DDS - ${teamDisplayName}`;
+  if (ddsHistoryModalSubtitle) ddsHistoryModalSubtitle.textContent = 'Histórico das últimas 3 semanas de reuniões diárias';
+
+  if (ddsHistoryModalContent) {
+    const renderer = utils().renderDdsKpiHtml;
+    if (typeof renderer === 'function') {
+      ddsHistoryModalContent.innerHTML = renderer(currentItem || {}, {
+        maxItems: 20,
+        showDayLabels: true,
+        showMeta: true,
+        containerClass: 'ddsRowModal',
+      });
+    } else {
+      ddsHistoryModalContent.innerHTML = '<div class="popoverEmpty">Nenhum registro de DDS encontrado.</div>';
+    }
+  }
+
+  ddsHistoryModal.hidden = false;
+}
+
+function closeDdsHistoryModal() {
+  if (ddsHistoryModal) ddsHistoryModal.hidden = true;
+}
+
+equipmentCardDds?.addEventListener('click', openDdsHistoryModal);
+ddsHistoryModalClose?.addEventListener('click', closeDdsHistoryModal);
+ddsHistoryModalCloseBtn?.addEventListener('click', closeDdsHistoryModal);
+ddsHistoryModalBackdrop?.addEventListener('click', closeDdsHistoryModal);
 
 window.teamForm = {
   openTeamForm,
   closeTeamForm,
   refreshOpenTeam,
+  openDdsHistoryModal,
+  closeDdsHistoryModal,
   getOpenTeamKey: () => openTeamKey,
 };

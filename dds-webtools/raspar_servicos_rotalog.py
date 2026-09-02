@@ -117,6 +117,11 @@ def main():
     print(" [ROTALOG] INICIANDO RASPAGEM COMPLETA E DETALHADA (COPEL)")
     print("=" * 70)
 
+    import time
+    t_inicio_total = time.perf_counter()
+    hora_inicio = datetime.now(LOCAL_TZ)
+    print(f"[*] Início da Raspagem: {hora_inicio.strftime('%H:%M:%S.%f')[:-3]}")
+
     from bdo.services.rotalog_crawler_service import CrawlerRotalog
     from bdo.services.rotalog_tempo_real_service import extrair_dados_tempo_real
     from bdo.services.rotalog_team_file_repository import compact_service
@@ -127,12 +132,16 @@ def main():
     # 1. Raspagem com enriquecimento de timeline integrado
     equipes_lista = extrair_dados_tempo_real(crawler=crawler)
 
+    t_fim_raspagem = time.perf_counter()
+    hora_fim_raspagem = datetime.now(LOCAL_TZ)
+    dur_raspagem = t_fim_raspagem - t_inicio_total
+
     if not equipes_lista:
         print("[ERRO] Nenhuma equipe encontrada ou falha de autenticação/conexão com o RotaLog.", file=sys.stderr)
         sys.exit(1)
 
     total_equipes = len(equipes_lista)
-    print(f"[OK] Dados capturados com sucesso: {total_equipes} equipes encontradas no sistema.")
+    print(f"[OK] {total_equipes} equipes capturadas em {dur_raspagem:.3f}s (às {hora_fim_raspagem.strftime('%H:%M:%S.%f')[:-3]}).")
 
     # 2. Preparar pasta de saída
     pasta_saida = Path(args.saida).resolve()
@@ -243,9 +252,20 @@ def main():
         with arquivo_equipe.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
+    t_fim_salvamento = time.perf_counter()
+    hora_fim_salvamento = datetime.now(LOCAL_TZ)
+    dur_salvamento = t_fim_salvamento - t_fim_raspagem
+    dur_total = t_fim_salvamento - t_inicio_total
+
     print("\n" + "=" * 70)
     print(f" RESUMO GERAL: {total_equipes_processadas} equipes | {total_concluidos_geral} concluídos | {total_agendados_geral} agendados/em andamento.")
     print(f" Arquivos JSON salvos em: {pasta_saida}")
+    print("=" * 70)
+    print(" ⏱️ AFERIÇÃO DE TEMPO DA OPERAÇÃO:")
+    print(f"  • Início da Raspagem:          {hora_inicio.strftime('%H:%M:%S.%f')[:-3]}")
+    print(f"  • Fim da Raspagem (Rotalog):   {hora_fim_raspagem.strftime('%H:%M:%S.%f')[:-3]} (duração: {dur_raspagem:.3f}s)")
+    print(f"  • Fim da Gravação dos Arquivos: {hora_fim_salvamento.strftime('%H:%M:%S.%f')[:-3]} (duração: {dur_salvamento:.3f}s)")
+    print(f"  • TEMPO TOTAL DO CICLO:         {dur_total:.3f}s")
     print("=" * 70)
 
 

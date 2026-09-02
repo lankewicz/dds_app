@@ -43,6 +43,94 @@ def _iso_local(value: typing.Any, day: str | None = None) -> str | None:
         return None
 
 
+def _extrair_data_base(service: dict[str, typing.Any], day: str) -> str:
+    """Extrai a data base real do serviço (YYYY-MM-DD), evitando assumir horas futuras."""
+    for field in ("inicioIso", "inicio_iso", "fimIso", "fim_iso"):
+        val = str(service.get(field) or "").strip()
+        if len(val) >= 10 and val[4] == "-" and val[7] == "-":
+            try:
+                datetime.date.fromisoformat(val[:10])
+                return val[:10]
+            except ValueError:
+                pass
+
+    for field in ("inicio_ms", "timestampMs", "start"):
+        val = service.get(field)
+        if isinstance(val, (int, float)) and val > 1000000000000:
+            dt = datetime.datetime.fromtimestamp(val / 1000, LOCAL_TZ)
+            return dt.date().isoformat()
+
+    hora_str = str(service.get("inicioDeslocamento") or service.get("inicioExecucao") or "").strip()
+    if len(hora_str) == 5 and hora_str[2] == ":":
+        try:
+            ref_dt = datetime.datetime.fromisoformat(f"{day}T{hora_str}:00").replace(tzinfo=LOCAL_TZ)
+            agora = datetime.datetime.now(LOCAL_TZ)
+            if day == agora.date().isoformat() and ref_dt > agora + datetime.timedelta(minutes=15):
+                ontem = (datetime.date.fromisoformat(day) - datetime.timedelta(days=1)).isoformat()
+                return ontem
+        except Exception:
+            pass
+
+    return day
+
+
+def _formatar_horarios_servico(
+    service: dict[str, typing.Any],
+    base_day: str,
+) -> dict[str, str | None]:
+    """Formata os 4 tempos operacionais com suporte a virada de meia-noite e sem inversões."""
+    raw_desloc = service.get("inicioDeslocamento") or service.get("inicioIso")
+    raw_exec = service.get("inicioExecucao") or service.get("inicioIso")
+    raw_fim = service.get("termino") or service.get("fimIso") or service.get("fimExecucao")
+    raw_retorno = service.get("retorno")
+
+    cur_day = datetime.date.fromisoformat(base_day)
+    prev_dt: datetime.datetime | None = None
+
+    result: dict[str, str | None] = {
+        "inicioDeslocamento": None,
+        "inicioExecucao": None,
+        "fimExecucao": None,
+        "retorno": None,
+    }
+
+    for key, raw_val in [
+        ("inicioDeslocamento", raw_desloc),
+        ("inicioExecucao", raw_exec),
+        ("fimExecucao", raw_fim),
+        ("retorno", raw_retorno),
+    ]:
+        if not raw_val or str(raw_val).strip() in ("", "-"):
+            continue
+
+        raw_str = str(raw_val).strip()
+        dt_val: datetime.datetime | None = None
+
+        if len(raw_str) == 5 and raw_str[2] == ":":
+            try:
+                candidate = datetime.datetime.fromisoformat(f"{cur_day.isoformat()}T{raw_str}:00").replace(tzinfo=LOCAL_TZ)
+                if prev_dt and candidate < prev_dt:
+                    cur_day = cur_day + datetime.timedelta(days=1)
+                    candidate = datetime.datetime.fromisoformat(f"{cur_day.isoformat()}T{raw_str}:00").replace(tzinfo=LOCAL_TZ)
+                dt_val = candidate
+            except ValueError:
+                dt_val = None
+        else:
+            try:
+                parsed = datetime.datetime.fromisoformat(raw_str.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=LOCAL_TZ)
+                dt_val = parsed.astimezone(LOCAL_TZ)
+            except ValueError:
+                dt_val = None
+
+        if dt_val:
+            prev_dt = dt_val
+            result[key] = dt_val.isoformat()
+
+    return result
+
+
 import re
 
 def _eh_protocolo_valido(prot: typing.Any) -> bool:
@@ -87,20 +175,23 @@ def compact_service(team_key: str, day: str, service: dict[str, typing.Any]) -> 
         }
 
     status_atual = service.get("status") or service.get("statusAtual")
+    base_day = _extrair_data_base(service, day)
+    horarios = _formatar_horarios_servico(service, base_day)
 
     result = {
         "categoria": service.get("categoria"),
         "tipo": service.get("tipo"),
         "protocolo": service.get("protocolo") or service.get("ssId") or None,
-        "inicioDeslocamento": _iso_local(service.get("inicioDeslocamento") or service.get("inicioIso"), day),
-        "inicioExecucao": _iso_local(service.get("inicioExecucao") or service.get("inicioIso"), day),
-        "fimExecucao": _iso_local(service.get("termino") or service.get("fimIso"), day),
-        "retorno": _iso_local(service.get("retorno"), day),
+        "inicioDeslocamento": horarios["inicioDeslocamento"],
+        "inicioExecucao": horarios["inicioExecucao"],
+        "fimExecucao": horarios["fimExecucao"],
+        "retorno": horarios["retorno"],
         "latitude": lat,
         "longitude": lon,
         "serviceId": _service_id(team_key, service),
         "statusAtual": status_atual,
         "sequencia": service.get("sequencia") or None,
+        "baseDay": base_day,
     }
     if fila_conclusao is not None and status_atual == "CONCLUSAO":
         result["filaNaConclusao"] = fila_conclusao
@@ -145,7 +236,7 @@ def merge_daily_document(
     }
 
     raw_services = []
-    for field in ("ssExecutadas", "ssEmAndamento"):
+    for field in ("ssExecutadas", "ssEmAndamento", "services"):
         raw_services.extend(current.get(field) or [])
     for raw in raw_services:
         compact = compact_service(team_key, day, raw)
@@ -181,8 +272,56 @@ def merge_daily_document(
         if service_data.get("statusAtual") == "CONCLUSAO":
             ordered_service["filaNaConclusao"] = service_data.get("filaNaConclusao") or fila_atual
         service_map[target_id] = ordered_service
+    # Deduplicação inteligente e limpeza de registros provisórios / órfãos
+    def _service_priority(s: dict[str, typing.Any]) -> tuple:
+        tem_prot = 1 if _eh_protocolo_valido(s.get("protocolo")) else 0
+        concluido = 1 if s.get("statusAtual") == "CONCLUSAO" else 0
+        tem_gps = 1 if (s.get("latitude") is not None) else 0
+        return (concluido, tem_prot, tem_gps)
+
+    active_service_ids = set()
+    active_activity = current.get("atividadeAtual") or {}
+    if active_activity:
+        active_service_ids.add(_service_id(team_key, active_activity))
+    for s in (current.get("ssEmAndamento") or []):
+        active_service_ids.add(_service_id(team_key, s))
+
+    all_raw_list = sorted(service_map.values(), key=_service_priority, reverse=True)
+    seen_keys: set[str] = set()
+    cleaned_map: dict[str, dict[str, typing.Any]] = {}
+
+    for srv in all_raw_list:
+        prot = srv.get("protocolo")
+        ini_desloc = srv.get("inicioDeslocamento") or srv.get("inicioExecucao") or ""
+        fim_exec = srv.get("fimExecucao") or srv.get("retorno") or ""
+        status = srv.get("statusAtual")
+        sid = srv.get("serviceId")
+
+        # Se for um serviço provisório em EXECUCAO que não está mais ativo no momento
+        if status in ("EXECUCAO", "DESLOCAMENTO") and sid not in active_service_ids:
+            if (prot and _eh_protocolo_valido(prot) and str(prot) in seen_keys) or (ini_desloc and fim_exec and (ini_desloc, fim_exec) in seen_keys) or (ini_desloc and any(k.startswith(f"INI:{ini_desloc}") for k in seen_keys)):
+                continue
+
+        dedup_keys = []
         if prot and _eh_protocolo_valido(prot):
-            protocol_to_id[str(prot)] = target_id
+            dedup_keys.append(str(prot))
+        if ini_desloc and fim_exec:
+            dedup_keys.append(f"INIFIM:{ini_desloc}|{fim_exec}")
+        elif ini_desloc and status in ("EXECUCAO", "DESLOCAMENTO"):
+            dedup_keys.append(f"INI_ACT:{ini_desloc}")
+
+        already_seen = any(k in seen_keys for k in dedup_keys)
+        if already_seen:
+            continue
+
+        for k in dedup_keys:
+            seen_keys.add(k)
+        if ini_desloc:
+            seen_keys.add(f"INI:{ini_desloc}")
+
+        cleaned_map[sid] = srv
+
+    service_map = cleaned_map
 
     interval_map = {
         str(item.get("inicio")): dict(item)
@@ -202,16 +341,27 @@ def merge_daily_document(
             }
 
     turno = current.get("turno") or {}
-    services = sorted(service_map.values(), key=lambda item: str(item.get("inicioDeslocamento") or item.get("inicioExecucao") or ""))
+    services = [
+        srv for srv in sorted(service_map.values(), key=lambda item: str(item.get("inicioDeslocamento") or item.get("inicioExecucao") or ""))
+        if (srv.get("baseDay") == day or str(srv.get("inicioDeslocamento") or srv.get("inicioExecucao") or "")[:10] == day)
+    ]
     activity_raw = current.get("atividadeAtual") or {}
     current_service = compact_service(team_key, day, activity_raw) if activity_raw else None
+
+    prev_version = int((previous.get("current") or {}).get("version") or 0)
+    prev_date = str(previous.get("date") or "")
+    if prev_date != day:
+        daily_version = 1
+    else:
+        daily_version = (prev_version + 1) if previous else 1
+
     return {
         "schemaVersion": 1,
         "teamKey": team_key,
         "date": day,
         "updatedAt": current.get("updatedAtIso"),
         "current": {
-            "version": current.get("version"),
+            "version": daily_version,
             "turnStatus": current.get("estadoConsolidado"),
             "service": current_service,
         },

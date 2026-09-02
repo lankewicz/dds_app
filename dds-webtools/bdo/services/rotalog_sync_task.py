@@ -477,28 +477,28 @@ def _build_rotalog_document(
 ) -> dict[str, typing.Any]:
     return {
         "empresa": empresa,
-        "equipe": eq["equipe_codigo"],
+        "equipe": eq.get("equipe_codigo") or team_key,
         "teamKey": team_key,
-        "groupRaw": eq["group_raw"],
-        "veiculo": eq["veiculo"],
+        "groupRaw": eq.get("group_raw") or "",
+        "veiculo": eq.get("veiculo") or "",
         "identificadorEquipamento": eq.get("identificador_equipamento"),
         "origemResolucaoEquipe": eq.get("origem_resolucao"),
-        "colaborador": eq["colaborador"],
-        "statusConexao": eq["status_conexao"],
-        "isOnline": eq["is_online"],
-        "estadoConsolidado": eq["estado_consolidado"],
-        "turno": eq["turno"],
-        "intervalo": eq["intervalo"],
+        "colaborador": eq.get("colaborador") or "",
+        "statusConexao": eq.get("status_conexao") or "offline",
+        "isOnline": bool(eq.get("is_online")),
+        "estadoConsolidado": eq.get("estado_consolidado") or "DESCONHECIDO",
+        "turno": eq.get("turno") or {},
+        "intervalo": eq.get("intervalo") or {},
         "intervalos": eq.get("intervalos") or [],
-        "atividadeAtual": eq["atividade_atual"],
-        "bdoList": eq["bdo_list"],
-        "ssExecutadasCount": len(eq["ss_executadas"]),
-        "ssExecutadas": eq["ss_executadas"],
-        "ssEmAndamento": eq["ss_em_andamento"],
-        "ssPendentesCount": len(eq["ss_pendentes"]),
+        "atividadeAtual": eq.get("atividade_atual"),
+        "bdoList": eq.get("bdo_list") or [],
+        "ssExecutadasCount": len(eq.get("ss_executadas") or []),
+        "ssExecutadas": eq.get("ss_executadas") or [],
+        "ssEmAndamento": eq.get("ss_em_andamento") or [],
+        "ssPendentesCount": len(eq.get("ss_pendentes") or []),
         "ssPendentesEmergenciaCount": fila_counts.get("emergencia", 0),
         "ssPendentesComercialCount": fila_counts.get("comercial", 0),
-        "ssPendentes": eq["ss_pendentes"],
+        "ssPendentes": eq.get("ss_pendentes") or [],
         "eventTimestampMs": _extrair_timestamp_rotalog(eq),
         "updatedAtIso": timestamp_iso,
     }
@@ -626,9 +626,14 @@ def _persistir_somente_json(
     timestamp_iso: str,
     fila_por_equipe: dict[str, dict[str, int]],
     *,
+    forcar: bool = False,
     gcs_reads_before: int,
     gcs_writes_before: int,
     firestore_reads: int,
+    t_inicio_total: float | None = None,
+    t_fim_raspagem: float | None = None,
+    hora_inicio: datetime.datetime | None = None,
+    hora_fim_raspagem: datetime.datetime | None = None,
 ) -> dict[str, typing.Any]:
     updates: dict[str, dict[str, typing.Any]] = {}
     feed_items: list[dict[str, typing.Any]] = []
@@ -648,10 +653,15 @@ def _persistir_somente_json(
         previous = _local_cache.get(team_key)
         needs_full_upgrade = not previous or not previous.get("teamKey")
         changes = changed_fields(previous, current)
-        if not needs_full_upgrade and not changes:
+        if not forcar and not needs_full_upgrade and not changes:
             skipped += 1
             continue
-        current["version"] = int((previous or {}).get("version") or 0) + 1
+        prev_date = str((previous or {}).get("updatedAtIso") or (previous or {}).get("updatedAt") or "")[:10]
+        cur_date = timestamp_iso[:10]
+        if prev_date != cur_date:
+            current["version"] = 1
+        else:
+            current["version"] = int((previous or {}).get("version") or 0) + 1
         updates[team_key] = current
         if previous and changes:
             activity_at = _rotalog_change_activity_at(previous, current, timestamp_iso)
@@ -716,12 +726,44 @@ def _persistir_somente_json(
         except Exception as exc:
             logger.warning("Falha na consolidação mensal ROTALOG: %s", exc)
             monthly_result = {"executed": False, "reason": "error", "error": str(exc)}
+
+    t_fim_persistencia = time.perf_counter()
+    hora_fim = datetime.datetime.now(LOCAL_TZ)
+    t0 = t_inicio_total if t_inicio_total is not None else t_fim_persistencia
+    t_crawler = t_fim_raspagem if t_fim_raspagem is not None else t0
+    dur_raspagem = max(0.0, t_crawler - t0)
+    dur_persistencia = max(0.0, t_fim_persistencia - t_crawler)
+    dur_total = max(0.0, t_fim_persistencia - t0)
+
+    h_ini_str = hora_inicio.strftime("%H:%M:%S.%f")[:-3] if hora_inicio else "-"
+    h_fim_rasp_str = hora_fim_raspagem.strftime("%H:%M:%S.%f")[:-3] if hora_fim_raspagem else "-"
+    h_fim_str = hora_fim.strftime("%H:%M:%S.%f")[:-3]
+
+    logger.info(
+        "[AFERICAO ROTALOG] Inicio: %s | Fim Raspagem: %s (%.3fs) | Fim Persistencia Firebase: %s (%.3fs) | TEMPO TOTAL: %.3fs",
+        h_ini_str,
+        h_fim_rasp_str,
+        dur_raspagem,
+        h_fim_str,
+        dur_persistencia,
+        dur_total,
+    )
+
     fila_emergencia = sum(item["emergencia"] for item in fila_por_equipe.values())
     fila_comercial = sum(item["comercial"] for item in fila_por_equipe.values())
     return {
         "status": "success",
         "persistenceMode": "json",
         "updatedAtIso": timestamp_iso,
+        "afericaoTempo": {
+            "inicioRaspagem": hora_inicio.isoformat() if hora_inicio else None,
+            "fimRaspagem": hora_fim_raspagem.isoformat() if hora_fim_raspagem else None,
+            "fimPersistenciaFirebase": hora_fim.isoformat(),
+            "duracaoRaspagemSegundos": round(dur_raspagem, 3),
+            "duracaoPersistenciaSegundos": round(dur_persistencia, 3),
+            "duracaoTotalSegundos": round(dur_total, 3),
+            "duracaoTotalFormatada": f"{dur_total:.3f}s",
+        },
         "totalEquipesRotalog": len(equipas),
         "equipesAtualizadasJson": len(updates),
         "ignoradosSemMudanca": skipped,
@@ -761,6 +803,9 @@ def _executar_sincronizacao_rotalog(
     Executa a raspagem do Rotalog Tempo Real, lê os dados do DDS no Firestore,
     compara recência e altera o Firestore SOMENTE SE HOUVER MUDANÇA (Diff Hash Check).
     """
+    t_inicio_total = time.perf_counter()
+    hora_inicio = datetime.datetime.now(LOCAL_TZ)
+
     db = get_firestore_client()
     gcs_reads_before = int(_durable_cache_state.get("reads", 0))
     gcs_writes_before = int(_durable_cache_state.get("writes", 0))
@@ -768,12 +813,20 @@ def _executar_sincronizacao_rotalog(
     timestamp_now = datetime.datetime.now(datetime.timezone.utc)
     timestamp_iso = timestamp_now.isoformat()
 
-    logger.info("Iniciando captura Rotalog Tempo Real...")
+    logger.info("Iniciando captura Rotalog Tempo Real as %s...", hora_inicio.strftime("%H:%M:%S.%f")[:-3])
     equipment_reads_before = int(_durable_cache_state.get("equipment_firestore_reads", 0))
     equipment_index = _get_equipment_identifier_index(db)
     equipment_firestore_reads = int(_durable_cache_state.get("equipment_firestore_reads", 0)) - equipment_reads_before
     equipas = extrair_dados_tempo_real(identificador_para_equipe=equipment_index)
-    logger.info(f"Rotalog extraído: {len(equipas)} equipes capturadas.")
+
+    t_fim_raspagem = time.perf_counter()
+    hora_fim_raspagem = datetime.datetime.now(LOCAL_TZ)
+    logger.info(
+        "Rotalog extraido: %d equipes capturadas em %.3fs (as %s).",
+        len(equipas),
+        t_fim_raspagem - t_inicio_total,
+        hora_fim_raspagem.strftime("%H:%M:%S.%f")[:-3],
+    )
     fila_por_equipe: dict[str, dict[str, int]] = {}
     for eq in equipas:
         codigo = str(eq.get("equipe_codigo") or "").strip().upper()
@@ -800,9 +853,14 @@ def _executar_sincronizacao_rotalog(
             empresa,
             timestamp_iso,
             fila_por_equipe,
+            forcar=forcar,
             gcs_reads_before=gcs_reads_before,
             gcs_writes_before=gcs_writes_before,
             firestore_reads=equipment_firestore_reads,
+            t_inicio_total=t_inicio_total,
+            t_fim_raspagem=t_fim_raspagem,
+            hora_inicio=hora_inicio,
+            hora_fim_raspagem=hora_fim_raspagem,
         )
 
     rotalog_updated = 0

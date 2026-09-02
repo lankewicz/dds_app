@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
     if rotalog_enabled:
         try:
             from bdo.services.rotalog_sync_task import RotalogBackgroundScheduler
-            interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "590")))
+            interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "120")))
             rotalog_scheduler = RotalogBackgroundScheduler(interval_seconds=interval_seconds)
             rotalog_scheduler.start()
         except Exception as e:

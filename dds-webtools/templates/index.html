@@ -170,6 +170,11 @@
             <div class="modalSubtitle" id="teamFormSubtitle">Carregando informações...</div>
           </div>
         </div>
+
+        <div class="modalHeaderStatusCard" id="teamFormHeaderStatusCard">
+          <span class="modalHeaderStatusLabel">Status do turno</span>
+          <strong class="modalHeaderStatusValue" id="teamLiveStatus">-</strong>
+        </div>
         
         <div class="modalHeaderComm">
           <button type="button" id="teamFormCommBtn" class="modalHeaderCommBtn" title="Abrir comunicação com a equipe">
@@ -278,6 +283,20 @@
                           vinculado</span>
                       </span>
                     </button>
+
+                    <button class="equipmentCard" id="equipmentCardDds" type="button" data-action="view-dds">
+                      <span class="equipmentCardThumbWrap">
+                        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: #60a5fa;">
+                          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                          <path d="m9 14 2 2 4-4"></path>
+                        </svg>
+                      </span>
+                      <span class="equipmentCardBody">
+                        <span class="equipmentCardTitle">Presença DDS</span>
+                        <span class="equipmentCardSummary" id="equipmentSummaryDds">3 semanas</span>
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -307,14 +326,11 @@
               </div>
 
               <div class="liveSummary liveSummaryOperational" id="teamLiveSummary">
-                <div class="liveSummaryItem liveSummaryItemStatus">
-                  <span>Status do turno</span><strong id="teamLiveStatus">-</strong>
+                <div class="liveSummaryItem">
+                  <span>Serviço atual</span><strong id="teamLiveService">Nenhum serviço em andamento</strong>
                 </div>
                 <div class="liveSummaryItem">
                   <span>Atividade</span><strong id="teamLiveActivity">-</strong>
-                </div>
-                <div class="liveSummaryItem liveSummaryItemWide">
-                  <span>Serviço atual</span><strong id="teamLiveService">Nenhum serviço em andamento</strong>
                 </div>
                 <div class="liveSummaryItem">
                   <span>Protocolo</span><strong id="teamLiveProtocol">-</strong>
@@ -326,9 +342,18 @@
                 </div>
               </div>
 
-              <div class="modalSectionTitle modalSectionTitleDds" style="margin-top: 1.5rem; display: none;">Presenças no DDS (Últimas 3 semanas)</div>
-              <div class="ddsPanel" id="teamLiveDds" style="margin-bottom: 1.5rem; display: none;">
-                <div class="popoverEmpty">Nenhum DDS registrado</div>
+              <div class="teamTimelineSection" id="teamTimelineSection" style="margin-top: 1.25rem;">
+                <div class="teamTimelineHeader">
+                  <div>
+                    <div class="modalSectionTitle">Atendimentos do Dia</div>
+                    <div class="modalSectionSubtitle">Histórico sequencial das tarefas e ordens de serviço</div>
+                  </div>
+                  <span class="teamTimelineCountBadge" id="teamTimelineCount" style="display: none;">0 serviços</span>
+                </div>
+                <div class="teamTimelineSummaryBox" id="teamTimelineSummaryBox"></div>
+                <div class="teamTimelineList" id="teamTimelineList">
+                  <div class="popoverEmpty">Nenhum serviço registrado hoje</div>
+                </div>
               </div>
 
               <details class="manualTurnoEditor">
@@ -487,6 +512,34 @@
         <div class="modalActions">
           <button class="buttonGhost" id="equipmentModalCancel" type="button" hidden>Cancelar</button>
           <button class="buttonPrimary" id="equipmentModalSave" type="button">Fechar</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal de Histórico do DDS da Equipe -->
+  <div class="modalShell" id="ddsHistoryModal" hidden>
+    <div class="modalBackdrop" id="ddsHistoryModalBackdrop"></div>
+    <section class="modalDialog" role="dialog" aria-modal="true" aria-labelledby="ddsHistoryModalTitle" style="max-width: 520px; width: 95%;">
+      <header class="modalHeader">
+        <div class="modalTitleWrap">
+          <div class="modalVehicle">📋</div>
+          <div class="modalTitles">
+            <div class="modalTitle" id="ddsHistoryModalTitle">Presenças no DDS</div>
+            <div class="modalSubtitle" id="ddsHistoryModalSubtitle">Histórico das últimas 3 semanas</div>
+          </div>
+        </div>
+        <button class="modalClose" id="ddsHistoryModalClose" type="button" aria-label="Fechar">×</button>
+      </header>
+      <div class="modalBody" style="padding: 20px 24px;">
+        <div class="ddsPanel" id="ddsHistoryModalContent" style="margin: 0; padding: 8px 0;">
+          <div class="popoverEmpty">Carregando dados do DDS...</div>
+        </div>
+      </div>
+      <footer class="modalFooter">
+        <div class="modalFooterMeta">Indicadores de participação nos Diálogos Diários de Segurança.</div>
+        <div class="modalActions">
+          <button class="buttonPrimary" id="ddsHistoryModalCloseBtn" type="button">Fechar</button>
         </div>
       </footer>
     </section>
