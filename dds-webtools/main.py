@@ -72,6 +72,13 @@ if os.path.exists(env_path):
 
 
 
+import anyio
+try:
+    import anyio.from_thread
+    import anyio.to_thread
+except Exception:
+    pass
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
