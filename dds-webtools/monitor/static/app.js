@@ -1038,39 +1038,61 @@ function ddsSequenceHtml(item, options = {}) {
 }
 
 
-function getTeamOperationalTimeLabel(item, shown, art66Active, art66EndAt) {
+function formatStatusWithTime(item, shown, art66Active, art66EndAt) {
+  const statusLabel = stateLabel(shown);
   const normState = normalizedState(shown);
   const snapshot = item?.rotalogSnapshot || {};
   const turno = item?.turno || snapshot?.turno || {};
   const intervalos = Array.isArray(item?.intervalos) ? item.intervalos : (Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : []);
   const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (item?.intervalo || snapshot?.intervalo || {});
 
+  let dateLike = null;
   if (normState === "ABERTO") {
-    const openedTime = turno.inicio_iso || turno.inicioIso || turno.inicio || item?.turnoInicio || item?.inicioIso || item?.openedAtClientMs;
-    return openedTime ? fmtHourMinute(openedTime) : fmtHourMinute(item?.updatedAt);
+    dateLike = turno.inicio_iso || turno.inicioIso || turno.inicio || item?.turnoInicio || item?.inicioIso || item?.openedAtClientMs || item?.updatedAt;
+  } else if (normState === "FECHADO") {
+    dateLike = turno.fim_iso || turno.fimIso || turno.fim || item?.turnoFim || item?.fimIso || item?.closedAtClientMs || item?.updatedAt;
+  } else if (normState === "INTERVALO") {
+    dateLike = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio || item?.updatedAt;
+  } else {
+    dateLike = item?.lastContact || item?.updatedAt;
   }
 
-  if (normState === "FECHADO") {
-    const closedTime = turno.fim_iso || turno.fimIso || turno.fim || item?.turnoFim || item?.fimIso || item?.closedAtClientMs || item?.updatedAt;
-    const closedLabel = fmtHourMinute(closedTime);
+  if (!dateLike) {
+    return statusLabel;
+  }
+
+  const dt = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(dt.getTime())) {
+    return statusLabel;
+  }
+
+  const today = new Date();
+  const isToday = dt.getDate() === today.getDate() &&
+                  dt.getMonth() === today.getMonth() &&
+                  dt.getFullYear() === today.getFullYear();
+
+  const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dayMonthStr = `${dd}/${mm}`;
+
+  if (normState === "FECHADO" && art66Active) {
     const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
     const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
-    if (art66Active && !isBeforeSeven && art66EndLabel) {
-      return `${closedLabel} → ${art66EndLabel}`;
+    if (!isBeforeSeven && art66EndLabel) {
+      if (isToday) {
+        return `${statusLabel} (${timeStr} → ${art66EndLabel})`;
+      } else {
+        return `${statusLabel} (${dayMonthStr} - ${timeStr} → ${art66EndLabel})`;
+      }
     }
-    return closedLabel;
   }
 
-  if (normState === "INTERVALO") {
-    const intervalTime = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio || item?.updatedAt;
-    return fmtHourMinute(intervalTime);
+  if (isToday) {
+    return `${statusLabel} (${timeStr})`;
+  } else {
+    return `${statusLabel} (${dayMonthStr} - ${timeStr})`;
   }
-
-  if (normState === "DESATUALIZADO") {
-    return "";
-  }
-
-  return fmtHourMinute(item?.updatedAt);
 }
 
 function tile(item) {
@@ -1083,13 +1105,12 @@ function tile(item) {
   const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
   const details = hoverRows(item);
   const statusLabel = stateLabel(shown);
-  const hideTimeLine = shown === "DESATUALIZADO";
   const art66Active = isArt66Active(item, shown);
   const art66EndAt = getArt66EndAt(item, shown);
   const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
   const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
 
-  const timeLabel = getTeamOperationalTimeLabel(item, shown, art66Active, art66EndAt);
+  const statusLineFormatted = formatStatusWithTime(item, shown, art66Active, art66EndAt);
 
   const badgeLabel = item.lastWasDescansoSemanal ? "ART 67" : "ART 66";
   const badgeHtml = art66Active
@@ -1205,10 +1226,7 @@ function tile(item) {
             </div>
             ${isTrash ? '' : `
             <div class="statusBlock">
-              <div class="statusLine">${escapeHtml(statusLabel)}</div>
-              <div class="timeLine ${hideTimeLine ? "timeLineHidden" : ""}">
-                ${escapeHtml(timeLabel)}
-              </div>
+              <div class="statusLine">${escapeHtml(statusLineFormatted)}</div>
             </div>
             `}
           </div>
