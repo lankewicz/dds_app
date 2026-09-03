@@ -1038,6 +1038,41 @@ function ddsSequenceHtml(item, options = {}) {
 }
 
 
+function getTeamOperationalTimeLabel(item, shown, art66Active, art66EndAt) {
+  const normState = normalizedState(shown);
+  const snapshot = item?.rotalogSnapshot || {};
+  const turno = item?.turno || snapshot?.turno || {};
+  const intervalos = Array.isArray(item?.intervalos) ? item.intervalos : (Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : []);
+  const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (item?.intervalo || snapshot?.intervalo || {});
+
+  if (normState === "ABERTO") {
+    const openedTime = turno.inicio_iso || turno.inicioIso || turno.inicio || item?.turnoInicio || item?.inicioIso || item?.openedAtClientMs;
+    return openedTime ? fmtHourMinute(openedTime) : fmtHourMinute(item?.updatedAt);
+  }
+
+  if (normState === "FECHADO") {
+    const closedTime = turno.fim_iso || turno.fimIso || turno.fim || item?.turnoFim || item?.fimIso || item?.closedAtClientMs || item?.updatedAt;
+    const closedLabel = fmtHourMinute(closedTime);
+    const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
+    const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
+    if (art66Active && !isBeforeSeven && art66EndLabel) {
+      return `${closedLabel} → ${art66EndLabel}`;
+    }
+    return closedLabel;
+  }
+
+  if (normState === "INTERVALO") {
+    const intervalTime = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio || item?.updatedAt;
+    return fmtHourMinute(intervalTime);
+  }
+
+  if (normState === "DESATUALIZADO") {
+    return "";
+  }
+
+  return fmtHourMinute(item?.updatedAt);
+}
+
 function tile(item) {
   const shown = normalizedState(item.estado);
   const border = borderClass(item.alerta);
@@ -1051,13 +1086,10 @@ function tile(item) {
   const hideTimeLine = shown === "DESATUALIZADO";
   const art66Active = isArt66Active(item, shown);
   const art66EndAt = getArt66EndAt(item, shown);
-  const closedAtLabel = fmtTimeOnly(item.updatedAt);
   const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
   const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
 
-  const timeLabel = (art66Active && !isBeforeSeven)
-    ? `${closedAtLabel} → ${art66EndLabel}`
-    : closedAtLabel;
+  const timeLabel = getTeamOperationalTimeLabel(item, shown, art66Active, art66EndAt);
 
   const badgeLabel = item.lastWasDescansoSemanal ? "ART 67" : "ART 66";
   const badgeHtml = art66Active

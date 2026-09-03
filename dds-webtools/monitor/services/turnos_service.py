@@ -1431,6 +1431,22 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
     if protocol:
         merged["ss"] = protocol
 
+    turno = snapshot.get("turno") or {}
+    if turno.get("inicio"):
+        merged["turnoInicio"] = turno.get("inicio")
+        merged["inicioIso"] = turno.get("inicio")
+        dt_ini = to_utc_dt(turno.get("inicio"))
+        if dt_ini:
+            merged["openedAtClientMs"] = int(dt_ini.timestamp() * 1000)
+    if turno.get("fim"):
+        merged["turnoFim"] = turno.get("fim")
+        merged["fimIso"] = turno.get("fim")
+        dt_fim = to_utc_dt(turno.get("fim"))
+        if dt_fim:
+            merged["closedAtClientMs"] = int(dt_fim.timestamp() * 1000)
+    if turno.get("status"):
+        merged["turnStatus"] = turno.get("status")
+
     rotalog_ms = int(snapshot.get("eventTimestampMs") or 0)
     current_dt = to_utc_dt(merged.get("updatedAt"))
     current_ms = int(current_dt.timestamp() * 1000) if current_dt else 0
