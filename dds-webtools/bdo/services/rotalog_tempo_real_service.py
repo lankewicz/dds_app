@@ -285,13 +285,28 @@ def consolidar_turno_por_contexto(
             inicio_ms = services_today[0] if services_today else all_services[0]
 
         # REGRA DE FECHAMENTO AUTOMÁTICO POR INATIVIDADE:
-        # 1. Antes das 20:00 (horário local), NUNCA fecha o turno automaticamente por inatividade (aguarda despacho/comunicação).
-        # 2. A partir das 20:00, se ficou mais de 2 horas sem novo serviço ou se possui marcador T de fim explícito -> FECHADO.
+        # 1. Plantão Noturno (termina às 08:00):
+        #    - A partir das 08:00, se a equipe era do plantão da madrugada/noite (início antes das 08:00 ou último serviço antes das 08:00)
+        #      e não executou novos serviços pós-08:00, fecha o turno automaticamente no RETORNO do último serviço (ou conclusão).
+        # 2. Turno Diurno (após 20:00):
+        #    - A partir das 20:00, se ficou mais de 2 horas sem novo serviço ou possui marcador T de fim explícito -> FECHADO.
+        # 3. Durante o expediente diurno (entre 08:00 e 20:00 para equipes do dia): permanece ABERTO aguardando novos despachos.
         hora_atual_local = datetime.datetime.now(LOCAL_TZ).hour
+        dt_inicio = datetime.datetime.fromtimestamp(inicio_ms / 1000, LOCAL_TZ) if inicio_ms else None
+        dt_fim_servico = datetime.datetime.fromtimestamp(fim_turno_ms / 1000, LOCAL_TZ) if fim_turno_ms else None
+
+        era_plantao_madrugada = False
+        if dt_inicio and dt_fim_servico:
+            if (dt_inicio.hour < 8 or dt_inicio.date() < datetime.datetime.now(LOCAL_TZ).date()) and dt_fim_servico.hour < 8:
+                era_plantao_madrugada = True
+
         tem_marcador_fim = bool(markers and int(markers[-1]["start"]) >= fim_turno_ms)
         fim_fechamento_ms = int(markers[-1]["start"]) if (tem_marcador_fim and int(markers[-1]["start"]) > fim_turno_ms) else fim_turno_ms
 
-        deve_fechar = tem_marcador_fim or (hora_atual_local >= 20 and tempo_sem_servico_ms >= duas_horas_ms)
+        fechar_plantao_08h = (hora_atual_local >= 8 and era_plantao_madrugada and tempo_sem_servico_ms >= duas_horas_ms)
+        fechar_diurno_20h = (hora_atual_local >= 20 and tempo_sem_servico_ms >= duas_horas_ms)
+
+        deve_fechar = tem_marcador_fim or fechar_plantao_08h or fechar_diurno_20h
 
         if deve_fechar:
             result.update({

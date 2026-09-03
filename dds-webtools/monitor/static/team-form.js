@@ -487,23 +487,40 @@ function extractTeamServices(item) {
     rawServices = [...executadas, ...emAndamento].filter(Boolean).map(s => ({ ...s }));
   }
 
-  // Identificar serviços regulares vs Redirecionados (sem execução concluída)
+  // Identificar serviços regulares vs Relocados vs Retirados pelo COD
   const services = rawServices.map(s => {
     const isRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(s.statusAtual || s.status || '').toUpperCase());
     const durExec = (s.inicioExecucao && (s.fimExecucao || s.termino))
       ? getDiffMinutes(s.inicioExecucao, s.fimExecucao || s.termino)
       : null;
     
-    const isRedirected = String(s.statusAtual || s.status || '').toUpperCase() === 'REDIRECIONADO' || (!isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null));
+    const statusUpper = String(s.statusAtual || s.status || s.semExecucaoType || '').toUpperCase();
+    const isRelocado = statusUpper.includes('RELOC');
+    const isRetiradoCod = statusUpper.includes('RETIRADO') || statusUpper.includes('REDIR');
+    const isSpecialRedirect = isRelocado || isRetiradoCod || (!isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null));
+
+    let displayTipo = s.tipo;
+    let displayCat = s.categoria;
+    let semExecType = null;
+
+    if (isRelocado) {
+      displayTipo = s.tipo ? `${s.tipo} (RELOCADO)` : 'RELOCADO';
+      displayCat = 'RELOCADO';
+      semExecType = 'RELOCADO';
+    } else if (isRetiradoCod || isSpecialRedirect) {
+      displayTipo = s.tipo ? `${s.tipo} (RETIRADO COD)` : 'RETIRADO PELO COD';
+      displayCat = 'RETIRADO PELO COD';
+      semExecType = 'RETIRADO PELO COD';
+    }
 
     return {
       ...s,
       isInterval: false,
       isGap: false,
-      isRedirected: isRedirected,
-      semExecucaoType: isRedirected ? 'REDIRECIONADO' : null,
-      tipo: isRedirected ? (s.tipo ? `${s.tipo} (REDIR)` : 'REDIRECIONADO') : s.tipo,
-      categoria: isRedirected ? 'CANCELADO / REDIRECIONADO' : s.categoria,
+      isRedirected: isSpecialRedirect,
+      semExecucaoType: semExecType,
+      tipo: displayTipo,
+      categoria: displayCat,
     };
   });
 

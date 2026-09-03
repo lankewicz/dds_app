@@ -320,20 +320,30 @@ def merge_daily_document(
 
         # Se for um serviço que estava em EXECUCAO/DESLOCAMENTO e não está mais ativo no momento
         if status in ("EXECUCAO", "DESLOCAMENTO") and sid not in active_service_ids:
-            # Caso 1: Se tem protocolo válido e não foi concluído normalmente (foi trocado/relocado para outro protocolo)
+            # Caso 1: Se tem protocolo válido e não foi concluído normalmente
             if prot and _eh_protocolo_valido(prot) and str(prot) not in seen_keys:
                 proximo_ini = None
+                houve_mudanca_tipo = False
+                tipo_atual = str(srv.get("tipo") or "").upper()
+
                 for other in all_raw_list:
                     other_ini = other.get("inicioDeslocamento") or other.get("inicioExecucao") or ""
+                    other_tipo = str(other.get("tipo") or "").upper()
                     if other_ini and other_ini > ini_desloc:
                         if proximo_ini is None or other_ini < proximo_ini:
                             proximo_ini = other_ini
+                    # Se há outro serviço no mesmo horário ou imediatamente seguinte com elemento diferente (ex: UC -> CHAVE/TRAFO/ALIMENTADOR)
+                    if (other.get("serviceId") != sid) and (other_ini == ini_desloc or (proximo_ini and other_ini == proximo_ini)):
+                        if (tipo_atual in ("UC", "DISJUNTOR") and other_tipo in ("CHAVE", "TRAFO", "ALIMENTADOR", "ALIM", "RISCO")) or (other_tipo and other_tipo != tipo_atual):
+                            houve_mudanca_tipo = True
 
-                srv["statusAtual"] = "REDIRECIONADO"
+                tipo_status = "RELOCADO" if houve_mudanca_tipo else "RETIRADO PELO COD"
+
+                srv["statusAtual"] = tipo_status
                 srv["fimExecucao"] = proximo_ini or fim_exec or ini_desloc
                 srv["retorno"] = proximo_ini or fim_exec or ini_desloc
-                srv["semExecucaoType"] = "REDIRECIONADO"
-                status = "REDIRECIONADO"
+                srv["semExecucaoType"] = tipo_status
+                status = tipo_status
                 fim_exec = srv["fimExecucao"]
             elif (prot and _eh_protocolo_valido(prot) and str(prot) in seen_keys) or (ini_desloc and fim_exec and (ini_desloc, fim_exec) in seen_keys) or (ini_desloc and any(k.startswith(f"INI:{ini_desloc}") for k in seen_keys)):
                 continue
