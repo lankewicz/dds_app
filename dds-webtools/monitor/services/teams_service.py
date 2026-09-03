@@ -181,6 +181,7 @@ def move_to_trash(team_key: str) -> None:
     batch.commit()
 
     # 2. Identifica todos os possíveis nomes desta equipe para encontrar registros
+    from monitor.services import turnos_service
     aliases = _get_team_aliases(team_key, data)
 
     # 3. Move registros de DDS para a lixeira (usando aliases)
@@ -277,6 +278,7 @@ def restore_from_trash(team_key: str) -> None:
     batch.commit()
 
     # Restaura registros de DDS da lixeira para a coleção principal
+    from monitor.services import turnos_service
     _move_dds_records(team_key, DDS_TRASH_COLLECTION_NAME, turnos_service.DDS_COLLECTION)
 
 
@@ -314,6 +316,7 @@ def permanently_delete(team_key: str) -> list[str]:
     logs.append("Cadastro base e histórico de equipamentos removidos.")
 
     # 4. Deleta DDS (Principal e Lixeira)
+    from monitor.services import turnos_service
     dds_count = _delete_collection_records(aliases, "equipe", turnos_service.DDS_COLLECTION)
     dds_trash_count = _delete_collection_records(aliases, "equipe", DDS_TRASH_COLLECTION_NAME)
     if dds_count or dds_trash_count:
