@@ -358,28 +358,29 @@ def login_required(view):
 
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
-        if not session.get("is_admin"):
-            portal_user = request.headers.get("X-Portal-User", "").strip().lower()
-            portal_role = request.headers.get("X-Portal-Role", "").strip().lower()
-            if portal_user and portal_role in {"admin", "root"}:
-                session["is_admin"] = True
-                session["portal_user"] = portal_user
-            else:
-                # Para chamadas via fetch/API, não redirecionar HTML (isso quebra .json()).
-                wants_json = (
-                    request.is_json
-                    or "application/json" in (request.headers.get("Accept") or "").lower()
-                    or "text/event-stream" in (request.headers.get("Accept") or "").lower()
-                    or request.path.endswith("/sessions/prepare")
-                )
-                if wants_json:
-                    return jsonify({
-                        "ok": False,
-                        "error": "Não autenticado. Faça login novamente.",
-                        "redirect": url_for("admin.login", next=request.path),
-                    }), 401
-                return redirect(url_for("admin.login", next=request.path))
-        return view(*args, **kwargs)
+        portal_user = request.headers.get("X-Portal-User", "").strip().lower()
+        if portal_user:
+            session["is_admin"] = True
+            session["portal_user"] = portal_user
+            return view(*args, **kwargs)
+
+        if session.get("is_admin"):
+            return view(*args, **kwargs)
+
+        # Para chamadas via fetch/API, não redirecionar HTML
+        wants_json = (
+            request.is_json
+            or "application/json" in (request.headers.get("Accept") or "").lower()
+            or "text/event-stream" in (request.headers.get("Accept") or "").lower()
+            or request.path.endswith("/sessions/prepare")
+        )
+        if wants_json:
+            return jsonify({
+                "ok": False,
+                "error": "Não autenticado. Faça login no Portal.",
+                "redirect": "/login",
+            }), 401
+        return redirect("/login")
 
     return wrapper
 
@@ -475,26 +476,12 @@ def _sse(event: str, data: Dict[str, Any]) -> str:
 
 @admin_bp.get("/login")
 def login():
-    next_url = request.args.get("next") or url_for("admin.dashboard")
-    return render_template("login.html", next_url=next_url)
+    return redirect("/login")
 
 
 @admin_bp.post("/login")
 def login_post():
-    admin_password = current_app.config.get("ADMIN_PASSWORD", "")
-    if not admin_password:
-        flash("ADMIN_PASSWORD não está configurada no serviço.", "error")
-        return redirect(url_for("admin.login"))
-
-    password = (request.form.get("password") or "").strip()
-    next_url = (request.form.get("next_url") or "").strip() or url_for("admin.dashboard")
-
-    if password != admin_password:
-        flash("Senha inválida.", "error")
-        return redirect(url_for("admin.login", next=next_url))
-
-    session["is_admin"] = True
-    return redirect(next_url)
+    return redirect("/login")
 
 
 # ------------------------------------------------------------------
