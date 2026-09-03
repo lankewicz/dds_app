@@ -289,6 +289,7 @@ def consolidar_turno_por_contexto(
         # 2. A partir das 20:00, se ficou mais de 2 horas sem novo serviço ou se possui marcador T de fim explícito -> FECHADO.
         hora_atual_local = datetime.datetime.now(LOCAL_TZ).hour
         tem_marcador_fim = bool(markers and int(markers[-1]["start"]) >= fim_turno_ms)
+        fim_fechamento_ms = int(markers[-1]["start"]) if (tem_marcador_fim and int(markers[-1]["start"]) > fim_turno_ms) else fim_turno_ms
 
         deve_fechar = tem_marcador_fim or (hora_atual_local >= 20 and tempo_sem_servico_ms >= duas_horas_ms)
 
@@ -297,8 +298,8 @@ def consolidar_turno_por_contexto(
                 "aberto": False,
                 "inicio_ms": inicio_ms,
                 "inicio_iso": _convert_ms_to_iso(inicio_ms),
-                "fim_ms": fim_turno_ms,
-                "fim_iso": _convert_ms_to_iso(fim_turno_ms),
+                "fim_ms": fim_fechamento_ms,
+                "fim_iso": _convert_ms_to_iso(fim_fechamento_ms),
                 "classificacao": "FECHADO",
             })
             return result
@@ -1318,6 +1319,11 @@ def _forcar_cliques_timeline_tempo_real(
                     prot_raw = m_prot.group(1).strip() if m_prot else None
                     clean_prot = formatar_protocolo_copel(prot_raw) if prot_raw else None
 
+                    ini_desl_val = m_desl.group(1) if m_desl else None
+                    ini_exec_val = m_exec.group(1) if m_exec else None
+                    if ini_desl_val and ini_exec_val and ini_exec_val < ini_desl_val:
+                        ini_exec_val = ini_desl_val
+
                     data = {
                         "eventIdx": idx,
                         "protocolo": clean_prot or prot_raw,
@@ -1328,8 +1334,8 @@ def _forcar_cliques_timeline_tempo_real(
                         "categoria": m_cat.group(1).strip() if m_cat else None,
                         "latitude": float(lat),
                         "longitude": float(lng),
-                        "inicioDeslocamento": m_desl.group(1) if m_desl else None,
-                        "inicioExecucao": m_exec.group(1) if m_exec else None,
+                        "inicioDeslocamento": ini_desl_val,
+                        "inicioExecucao": ini_exec_val,
                         "termino": m_term.group(1) if m_term else None,
                         "retorno": m_ret.group(1) if m_ret else None,
                         "start_ms": item.get("start"),

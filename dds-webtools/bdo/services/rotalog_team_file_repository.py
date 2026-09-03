@@ -129,6 +129,22 @@ def _formatar_horarios_servico(
             prev_dt = dt_val
             result[key] = dt_val.isoformat()
 
+    # Normalização de coerência cronológica estrita:
+    # 1. inicioExecucao não pode ser anterior a inicioDeslocamento (artefato de hora de abertura de chamado no call center)
+    if result["inicioDeslocamento"] and result["inicioExecucao"]:
+        if result["inicioExecucao"] < result["inicioDeslocamento"]:
+            result["inicioExecucao"] = result["inicioDeslocamento"]
+
+    # 2. fimExecucao não pode ser anterior a inicioExecucao
+    if result["inicioExecucao"] and result["fimExecucao"]:
+        if result["fimExecucao"] < result["inicioExecucao"]:
+            result["fimExecucao"] = result["inicioExecucao"]
+
+    # 3. retorno não pode ser anterior a fimExecucao
+    if result["fimExecucao"] and result["retorno"]:
+        if result["retorno"] < result["fimExecucao"]:
+            result["retorno"] = result["fimExecucao"]
+
     return result
 
 

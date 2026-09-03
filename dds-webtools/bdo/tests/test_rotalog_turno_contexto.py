@@ -79,10 +79,11 @@ class RotalogTurnoContextoTests(unittest.TestCase):
         self.assertEqual(turno["fim_ms"], 4000)
 
     def test_sem_t_assume_fim_no_ultimo_servico(self):
+        # Durante o dia (< 20:00), equipe sem T explícito aguardando novos despachos permanece ABERTA
         turno = consolidar_turno_por_contexto([], [2000, 3000])
-        self.assertEqual(turno["classificacao"], "FECHADO")
-        self.assertFalse(turno["aberto"])
-        self.assertEqual(turno["fim_ms"], 3000)
+        self.assertEqual(turno["classificacao"], "ABERTO")
+        self.assertTrue(turno["aberto"])
+        self.assertEqual(turno["inicio_ms"], 2000)
 
     def test_ultimo_t_antes_de_nova_serie_reabre(self):
         turno = consolidar_turno_por_contexto(
