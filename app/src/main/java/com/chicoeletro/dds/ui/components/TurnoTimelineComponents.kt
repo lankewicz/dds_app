@@ -27,6 +27,7 @@ import com.chicoeletro.dds.features.turno.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun ServicoItem(
@@ -37,11 +38,14 @@ fun ServicoItem(
     onAlterarEstado: (SsStatus) -> Unit,
     readOnly: Boolean = false
 ) {
-    val statusColor = when (ss.status) {
-        SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
-        SsStatus.EXECUCAO -> Color(0xFFEF6C00)
-        SsStatus.CONCLUSAO -> Color(0xFF2E7D32)
-        SsStatus.CANCELADO -> Color(0xFFC62828)
+    val isCancelled = ss.status == SsStatus.CANCELADO || !ss.cancelReason.isNullOrBlank()
+    val displayStatus = ss.cancelReason ?: ss.rawStatus ?: ss.status.name
+    val statusColor = when {
+        isCancelled -> Color(0xFFC62828)
+        ss.status == SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
+        ss.status == SsStatus.EXECUCAO -> Color(0xFFEF6C00)
+        ss.status == SsStatus.CONCLUSAO -> Color(0xFF2E7D32)
+        else -> MaterialTheme.colorScheme.onSurface
     }
 
     Card(
@@ -79,7 +83,7 @@ fun ServicoItem(
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        text = ss.status.name,
+                        text = displayStatus,
                         color = statusColor,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelSmall,
@@ -259,7 +263,9 @@ fun TransicaoItem(
     todasTrans: List<TurnoTransition>
 ) {
     val (transBg, transFg) = obterCoresTransicao(trans.estado)
-    val formattedTime = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR")).format(Date(trans.timestampMs))
+    val formattedTime = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR")).apply {
+        timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+    }.format(Date(trans.timestampMs))
     
     Surface(
         color = transBg,
@@ -310,7 +316,9 @@ fun TransicaoItem(
 fun SemExecucaoItem(item: UnifiedHistoryItem.SemExecucao) {
     val yellowBg = Color(0xFFFFFDE7) // Light yellow/amber
     val yellowFg = Color(0xFFF57F17) // Amber/Yellow
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR"))
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR")).apply {
+        timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+    }
     val startStr = timeFormat.format(Date(item.startMs))
     val endStr = timeFormat.format(Date(item.endMs))
     
@@ -353,6 +361,7 @@ fun SemExecucaoItem(item: UnifiedHistoryItem.SemExecucao) {
         }
     }
 }
+
 @Composable
 fun ServiceTableHeader() {
     Surface(
@@ -371,18 +380,25 @@ fun ServiceTableHeader() {
             TableCell("Desloc.", 0.8f, true)
             TableCell("Execução", 0.8f, true)
             TableCell("Conclusão", 0.8f, true)
-            TableCell("Status", 1f, true)
+            TableCell("Status", 1.2f, true)
         }
     }
 }
 
 @Composable
 fun ServiceTableRow(ss: BdoSs, position: Int) {
-    val statusColor = when (ss.status) {
-        SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
-        SsStatus.EXECUCAO -> Color(0xFFEF6C00)
-        SsStatus.CONCLUSAO -> Color(0xFF2E7D32)
-        SsStatus.CANCELADO -> Color(0xFFC62828)
+    val isCancelled = ss.status == SsStatus.CANCELADO || !ss.cancelReason.isNullOrBlank()
+    val displayStatus = if (isCancelled) {
+        ss.cancelReason?.takeIf { it.isNotBlank() } ?: ss.rawStatus?.takeIf { it.isNotBlank() } ?: "CANCELADO"
+    } else {
+        ss.rawStatus?.takeIf { it.isNotBlank() } ?: ss.status.name
+    }
+    val statusColor = when {
+        isCancelled -> Color(0xFFC62828)
+        ss.status == SsStatus.DESLOCAMENTO -> Color(0xFF1565C0)
+        ss.status == SsStatus.EXECUCAO -> Color(0xFFEF6C00)
+        ss.status == SsStatus.CONCLUSAO -> Color(0xFF2E7D32)
+        else -> MaterialTheme.colorScheme.onSurface
     }
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -401,7 +417,89 @@ fun ServiceTableRow(ss: BdoSs, position: Int) {
             TableCell(ss.getTransitionTime(SsStatus.DESLOCAMENTO).ifEmpty { "—" }, 0.8f)
             TableCell(ss.getTransitionTime(SsStatus.EXECUCAO).ifEmpty { "—" }, 0.8f)
             TableCell(ss.getTransitionTime(SsStatus.CONCLUSAO).ifEmpty { "—" }, 0.8f)
-            TableCell(ss.status.name, 1f, color = statusColor)
+            TableCell(displayStatus, 1.2f, color = statusColor)
+        }
+    }
+}
+
+@Composable
+fun IntervalTableRow(startMs: Long, endMs: Long) {
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR")).apply {
+        timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+    }
+    val startStr = if (startMs > 0) timeFormat.format(Date(startMs)) else "—"
+    val endStr = if (endMs > 0) timeFormat.format(Date(endMs)) else "—"
+    val orangeColor = Color(0xFFE65100)
+
+    Surface(
+        color = Color(0xFFFFF3E0),
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(1.dp, orangeColor.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TableCell("—", 0.35f, color = orangeColor)
+            TableCell("INTERVALO", 0.7f, color = orangeColor, header = true)
+            TableCell("REFEIÇÃO", 1.05f, color = orangeColor)
+            TableCell("—", 1.25f, color = orangeColor)
+            TableCell("—", 0.8f, color = orangeColor)
+            TableCell(startStr, 0.8f, color = orangeColor)
+            TableCell(endStr, 0.8f, color = orangeColor)
+            TableCell("INTERVALO", 1.2f, color = orangeColor, header = true)
+        }
+    }
+}
+
+@Composable
+fun IntervaloTimelineItem(startMs: Long, endMs: Long) {
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR")).apply {
+        timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+    }
+    val startStr = if (startMs > 0) timeFormat.format(Date(startMs)) else "—"
+    val endStr = if (endMs > 0) timeFormat.format(Date(endMs)) else "—"
+    val orangeColor = Color(0xFFE65100)
+    val durationMs = if (endMs > startMs && startMs > 0) endMs - startMs else 0L
+
+    Surface(
+        color = Color(0xFFFFF3E0),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, orangeColor.copy(alpha = 0.3f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Pause,
+                    contentDescription = null,
+                    tint = orangeColor,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                val durText = if (durationMs > 0) " (${formatDuration(durationMs)})" else ""
+                Text(
+                    text = "INTERVALO$durText",
+                    color = orangeColor,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Text(
+                text = "$startStr às $endStr",
+                color = orangeColor,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
@@ -419,6 +517,7 @@ private fun RowScope.TableCell(
         style = MaterialTheme.typography.labelSmall,
         fontWeight = if (header) FontWeight.Bold else FontWeight.Medium,
         color = color,
-        maxLines = 1
+        maxLines = 1,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
     )
 }

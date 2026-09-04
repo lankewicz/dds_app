@@ -37,6 +37,9 @@ fun TurnoSection(
         },
         onRequestTransition = { req ->
             turnoViewModel.requestTransition(req, empresa, eletricistas, isOnline)
+        },
+        onReconcileRotalog = { team ->
+            turnoViewModel.reconcileTurnoState(team)
         }
     )
 }

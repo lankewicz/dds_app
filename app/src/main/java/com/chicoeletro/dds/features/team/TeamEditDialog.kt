@@ -195,12 +195,16 @@ fun TeamEditDialog(
             }
         }
     }
-    // =========================================================================
-    // NOVO: buscar a última formação no Firestore ao PERDER O FOCO
-    // - UX mais previsível: usuário digita, sai do campo, e então carrega
 
-
-    // ═══════════════════════════════════════════════════════════════════════════════
+    LaunchedEffect(teamName) {
+        val key = normalizeTeamName(teamName)
+        if (isTeamNameValid(key) && lastLoadedKey != key) {
+            delay(600)
+            if (key == normalizeTeamName(teamName)) {
+                triggerLoadFormationIfNeeded()
+            }
+        }
+    }
     // UI - Dialog
     // ═══════════════════════════════════════════════════════════════════════════════
     Dialog(

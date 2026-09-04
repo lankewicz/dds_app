@@ -40,6 +40,13 @@ sealed class UnifiedHistoryItem {
         val endMs: Long,
         override val timestampMs: Long
     ) : UnifiedHistoryItem()
+
+    data class Intervalo(
+        val startMs: Long,
+        val endMs: Long,
+        val label: String = "INTERVALO",
+        override val timestampMs: Long = if (endMs > 0) endMs else startMs
+    ) : UnifiedHistoryItem()
 }
 
 @Composable
@@ -57,7 +64,8 @@ fun TurnoControlScreen(
     teamType: String? = null,
     rotalogState: RotalogMobileTeam? = null,
     rawDailyJson: String? = null,
-    onClickEquipe: () -> Unit = {}
+    onClickEquipe: () -> Unit = {},
+    onReconcileRotalog: (RotalogMobileTeam) -> Unit = {}
 ) {
     var step by remember(startAtKmTarget) {
         mutableStateOf(if (startAtKmTarget != null) Step.KM else Step.MENU)
@@ -95,36 +103,53 @@ fun TurnoControlScreen(
     }
 
     val context = LocalContext.current
-    val isStcTeam = teamType == "STC" || teamType == "STC_CESTO"
-    val today = remember { java.time.LocalDate.now() }
+    val isStcTeam = teamType == "STC" || teamType == "STC_CESTO" || teamType.isNullOrBlank() || equipe.startsWith("E", ignoreCase = true)
+    val today = remember { java.time.LocalDate.now(java.time.ZoneId.of("America/Sao_Paulo")) }
     var selectedHistoryDate by remember(equipe) { mutableStateOf(today) }
-    var historicalRotalogState by remember(equipe) { mutableStateOf<RotalogMobileTeam?>(rotalogState) }
+    var historicalRotalogState by remember(equipe) { mutableStateOf<RotalogMobileTeam?>(null) }
 
-    LaunchedEffect(equipe, selectedHistoryDate, rotalogState) {
-        if (selectedHistoryDate == today) {
-            historicalRotalogState = rotalogState
-        } else {
-            historicalRotalogState = null
-            historicalRotalogState = RotalogMobileRepository.daily(equipe, selectedHistoryDate.toString())
+    LaunchedEffect(equipe, selectedHistoryDate) {
+        if (equipe.isNotBlank()) {
+            val dateStr = selectedHistoryDate.toString()
+            val teamData = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                RotalogMobileRepository.fetchDailyWithCache(context, equipe, dateStr)
+            }
+            if (teamData != null) {
+                historicalRotalogState = teamData
+                if (selectedHistoryDate == today) {
+                    onReconcileRotalog(teamData)
+                }
+            } else if (selectedHistoryDate == today && rotalogState != null) {
+                historicalRotalogState = rotalogState
+            } else {
+                historicalRotalogState = null
+            }
         }
     }
 
-    val displayedRotalogState = if (isStcTeam) historicalRotalogState else rotalogState
-    var bdoList by remember(equipe, teamType, displayedRotalogState) {
-        val loaded = BdoLocalStore.loadToday(context, equipe)
-        val initialList: List<BdoSs> = if (isStcTeam) {
+    LaunchedEffect(rotalogState) {
+        if (selectedHistoryDate == today && rotalogState != null && historicalRotalogState == null) {
+            historicalRotalogState = rotalogState
+        }
+    }
+
+    val displayedRotalogState = historicalRotalogState ?: (if (selectedHistoryDate == today) rotalogState else null)
+    var bdoList by remember(equipe, displayedRotalogState, selectedHistoryDate) {
+        val initialList: List<BdoSs> = if (isStcTeam || selectedHistoryDate < today) {
             displayedRotalogState?.toBdoSsList() ?: emptyList()
         } else {
+            val loaded = BdoLocalStore.loadToday(context, equipe)
             if (loaded.isNotEmpty()) loaded else (displayedRotalogState?.toBdoSsList() ?: emptyList())
         }
         mutableStateOf(initialList)
     }
 
-    LaunchedEffect(equipe, teamType, displayedRotalogState) {
-        val loaded = BdoLocalStore.loadToday(context, equipe)
-        bdoList = if (isStcTeam) {
+
+    LaunchedEffect(equipe, displayedRotalogState, selectedHistoryDate, isStcTeam) {
+        bdoList = if (isStcTeam || selectedHistoryDate < today) {
             displayedRotalogState?.toBdoSsList() ?: emptyList()
         } else {
+            val loaded = BdoLocalStore.loadToday(context, equipe)
             if (loaded.isNotEmpty()) loaded else (displayedRotalogState?.toBdoSsList() ?: emptyList())
         }
     }
@@ -561,7 +586,7 @@ fun TurnoControlScreen(
                         teamType = teamType,
                         rotalogState = displayedRotalogState,
                         rawDailyJson = rawDailyJson,
-                        servicesReadOnly = isStcTeam,
+                        servicesReadOnly = isStcTeam || selectedHistoryDate < today,
                         historyDate = selectedHistoryDate,
                         canNavigateNext = selectedHistoryDate < today,
                         onPreviousDay = { selectedHistoryDate = selectedHistoryDate.minusDays(1) },

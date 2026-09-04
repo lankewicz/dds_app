@@ -588,11 +588,30 @@ fun BdoSection(
         gaps.sumOf { it.durationMs }
     }
 
-    val items = remember(bdoList, snapshot.transicoes, gaps) {
+    val items = remember(bdoList, snapshot.transicoes, gaps, rotalogState, historyDate) {
         val serviceItems = bdoList.map { UnifiedHistoryItem.Servico(it) }
         val transItems = snapshot.transicoes.map { UnifiedHistoryItem.Transicao(it) }
         val gapItems = gaps
-        val allItems = if (readOnly) serviceItems else serviceItems + transItems + gapItems
+
+        val targetDateStr = historyDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        val intervalItems = (rotalogState?.intervals ?: emptyList())
+            .filter { interval ->
+                interval.startAt?.startsWith(targetDateStr) == true || interval.endAt?.startsWith(targetDateStr) == true
+            }
+            .map { interval ->
+                val startMs = parseIsoToMs(interval.startAt)
+                val endMs = parseIsoToMs(interval.endAt)
+                UnifiedHistoryItem.Intervalo(
+                    startMs = startMs,
+                    endMs = endMs
+                )
+            }
+
+        val allItems = if (readOnly) {
+            serviceItems + intervalItems
+        } else {
+            serviceItems + transItems + gapItems + intervalItems
+        }
         allItems.sortedByDescending { it.timestampMs }
     }
 
@@ -693,18 +712,25 @@ fun BdoSection(
                 }
 
                 if (readOnly) {
-                    val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.forLanguageTag("pt-BR"))
+                    val timeZoneSp = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+                    val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.forLanguageTag("pt-BR")).apply {
+                        timeZone = timeZoneSp
+                    }
                     fun remoteTime(value: String?): String {
                         if (value.isNullOrBlank()) return "—"
                         val millis = parseIsoToMs(value)
                         return if (millis > 0L) timeFormat.format(java.util.Date(millis)) else "—"
                     }
-                    val intervalsLabel = rotalogState?.intervals
-                        ?.mapIndexed { index, interval ->
+                    val targetDateStr = historyDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                    val filteredIntervals = rotalogState?.intervals?.filter { interval ->
+                        interval.startAt?.startsWith(targetDateStr) == true || interval.endAt?.startsWith(targetDateStr) == true
+                    } ?: emptyList()
+                    val intervalsLabel = filteredIntervals
+                        .mapIndexed { index, interval ->
                             (index + 1).toString() + ": " + remoteTime(interval.startAt) + "–" + remoteTime(interval.endAt)
                         }
-                        ?.joinToString("  ")
-                        ?.takeIf { it.isNotBlank() }
+                        .joinToString("  ")
+                        .takeIf { it.isNotBlank() }
                         ?: "Nenhum"
                     Text(
                         "Turno: " + remoteTime(rotalogState?.turnoInicio) +
@@ -758,10 +784,11 @@ fun BdoSection(
                             bdoList.sortedByDescending { it.transitions.maxOfOrNull { transition -> transition.timestampMs } ?: 0L }
                         }
                         val index = sortedServices.indexOf(item.ss)
-                        val label = "${index + 1}º Serviço"
+                        val descendingPosition = if (index >= 0) sortedServices.size - index else 0
+                        val label = "${descendingPosition}º Serviço"
                         
                         if (readOnly) {
-                            ServiceTableRow(ss = item.ss, position = index + 1)
+                            ServiceTableRow(ss = item.ss, position = descendingPosition)
                         } else {
                             ServicoItem(
                                 ss = item.ss,
@@ -770,6 +797,13 @@ fun BdoSection(
                                 nowMs = nowMs,
                                 onAlterarEstado = { onAlterarEstado(item.ss.ssId, it) }
                             )
+                        }
+                    }
+                    is UnifiedHistoryItem.Intervalo -> {
+                        if (readOnly) {
+                            IntervalTableRow(startMs = item.startMs, endMs = item.endMs)
+                        } else {
+                            IntervaloTimelineItem(startMs = item.startMs, endMs = item.endMs)
                         }
                     }
                     is UnifiedHistoryItem.Transicao -> {

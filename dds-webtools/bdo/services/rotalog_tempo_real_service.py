@@ -295,9 +295,17 @@ def consolidar_turno_por_contexto(
         dt_inicio = datetime.datetime.fromtimestamp(inicio_ms / 1000, LOCAL_TZ) if inicio_ms else None
         dt_fim_servico = datetime.datetime.fromtimestamp(fim_turno_ms / 1000, LOCAL_TZ) if fim_turno_ms else None
 
+        dia_atual = datetime.datetime.now(LOCAL_TZ).date()
+        servicos_hoje_existentes = bool(services_today)
+        marcadores_hoje_existentes = bool(markers and any(
+            datetime.datetime.fromtimestamp(int(m["start"]) / 1000, LOCAL_TZ).date() == dia_atual
+            for m in markers if m.get("start")
+        ))
+        sem_atividade_hoje = (not servicos_hoje_existentes and not marcadores_hoje_existentes)
+
         era_plantao_madrugada = False
-        if dt_inicio and dt_fim_servico:
-            if (dt_inicio.hour < 8 or dt_inicio.date() < datetime.datetime.now(LOCAL_TZ).date()) and dt_fim_servico.hour < 8:
+        if dt_fim_servico:
+            if dt_fim_servico.date() < dia_atual or (dt_fim_servico.date() == dia_atual and dt_fim_servico.hour < 8):
                 era_plantao_madrugada = True
 
         tem_marcador_fim = bool(markers and int(markers[-1]["start"]) >= fim_turno_ms)
@@ -305,8 +313,15 @@ def consolidar_turno_por_contexto(
 
         fechar_plantao_08h = (hora_atual_local >= 8 and era_plantao_madrugada and tempo_sem_servico_ms >= duas_horas_ms)
         fechar_diurno_20h = (hora_atual_local >= 20 and tempo_sem_servico_ms >= duas_horas_ms)
+        fechar_inatividade_longa = (tempo_sem_servico_ms >= int(2.5 * 3600 * 1000))
 
-        deve_fechar = tem_marcador_fim or fechar_plantao_08h or fechar_diurno_20h
+        deve_fechar = (
+            tem_marcador_fim
+            or sem_atividade_hoje
+            or fechar_plantao_08h
+            or fechar_diurno_20h
+            or fechar_inatividade_longa
+        )
 
         if deve_fechar:
             result.update({
@@ -818,7 +833,21 @@ def extrair_dados_tempo_real(
         tem_andamento = bool(eq.get("ss_em_andamento") or eq.get("atividade_atual"))
         retorno_ultimo_ms = None
         if eq.get("ss_executadas"):
-            last_exec = eq["ss_executadas"][-1]
+            def _srv_sort_key(srv):
+                for k in ("fim_ms", "end", "end_ms"):
+                    v = srv.get(k)
+                    if isinstance(v, (int, float)) and v > 1000000000000:
+                        return int(v)
+                for k in ("fimIso", "inicioIso"):
+                    v = str(srv.get(k) or "")
+                    if len(v) >= 10:
+                        try:
+                            return int(datetime.datetime.fromisoformat(v).timestamp() * 1000)
+                        except Exception:
+                            pass
+                return 0
+            sorted_exec = sorted(eq["ss_executadas"], key=_srv_sort_key)
+            last_exec = sorted_exec[-1]
             retorno_str = last_exec.get("retorno") or last_exec.get("termino")
             if retorno_str and len(str(retorno_str).strip()) == 5:
                 base_day = None

@@ -108,7 +108,7 @@ def main():
         "--formato",
         "-f",
         choices=["lista", "completo"],
-        default="lista",
+        default="completo",
         help="Formato do JSON de saída: 'lista' (lista simples de serviços) ou 'completo' (envelope diário com current).",
     )
     args = parser.parse_args()
@@ -146,6 +146,13 @@ def main():
     # 2. Preparar pasta de saída
     pasta_saida = Path(args.saida).resolve()
     pasta_saida.mkdir(parents=True, exist_ok=True)
+    pasta_bruto = pasta_saida / "bruto"
+    pasta_bruto.mkdir(parents=True, exist_ok=True)
+
+    # Salva o dump bruto consolidado de todas as equipes
+    arquivo_dump_bruto = pasta_saida / "_dados_brutos_rotalog.json"
+    with arquivo_dump_bruto.open("w", encoding="utf-8") as f:
+        json.dump(equipes_lista, f, ensure_ascii=False, indent=2)
 
     data_hoje = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
     filtro_equipe = args.equipe.upper() if args.equipe else None
@@ -157,6 +164,7 @@ def main():
     total_concluidos_geral = 0
     total_agendados_geral = 0
     total_equipes_processadas = 0
+    resumo_equipes = []
 
     # 3. Processar cada equipe e exibir detalhes na tela
     for eq in sorted(equipes_lista, key=lambda x: (x.get("equipe_codigo") or x.get("veiculo") or "")):
@@ -251,6 +259,29 @@ def main():
 
         with arquivo_equipe.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        # Salva o JSON bruto individual da equipe
+        arquivo_equipe_bruto = pasta_bruto / f"{team_key}_bruto.json"
+        with arquivo_equipe_bruto.open("w", encoding="utf-8") as f:
+            json.dump(eq, f, ensure_ascii=False, indent=2)
+
+        resumo_equipes.append({
+            "equipe": team_key,
+            "status_consolidado": eq.get("estado_consolidado"),
+            "turno": eq.get("turno"),
+            "marcadores_t": eq.get("turno_marcadores_t"),
+            "concluidos": qtd_concluidos,
+            "agendados": qtd_agendados,
+            "em_andamento": bool(ss_andamento),
+            "colaborador": eq.get("colaborador"),
+            "veiculo": eq.get("veiculo"),
+            "is_online": eq.get("is_online"),
+        })
+
+    # Salva resumo consolidado das equipes
+    arquivo_resumo = pasta_saida / "_resumo_equipes.json"
+    with arquivo_resumo.open("w", encoding="utf-8") as f:
+        json.dump(resumo_equipes, f, ensure_ascii=False, indent=2)
 
     t_fim_salvamento = time.perf_counter()
     hora_fim_salvamento = datetime.now(LOCAL_TZ)

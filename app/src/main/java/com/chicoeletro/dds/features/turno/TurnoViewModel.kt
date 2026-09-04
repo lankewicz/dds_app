@@ -115,7 +115,8 @@ runCatching {
         }.getOrElse { 0L }
     }
 
-    private fun reconcileTurnoState(remote: RotalogMobileTeam) {
+    fun reconcileTurnoState(remote: RotalogMobileTeam) {
+        _rotalogState.value = remote
         reconcileBdoServices(remote)
 
         val currentSnap = _turnoSnapshot.value

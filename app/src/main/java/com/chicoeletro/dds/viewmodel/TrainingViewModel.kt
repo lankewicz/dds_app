@@ -102,7 +102,7 @@ class TrainingViewModel @Inject constructor(
         _isInitializing.value = true
         val isOnlineNow = NetworkStatusObserver.isOnlineNow(application.applicationContext)
 
-        val locais = LocalTrainingIndex.list(application)
+        val locais = LocalTrainingIndex.list(application, useCache = false)
         if (locais.isNotEmpty()) {
             _trainings.value = locais
             _isInitializing.value = false

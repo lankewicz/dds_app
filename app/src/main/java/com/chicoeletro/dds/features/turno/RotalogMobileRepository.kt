@@ -14,10 +14,13 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Path
+import android.content.Context
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 
@@ -30,7 +33,9 @@ data class RotalogMobileService(
     val startExecution: String? = null,
     val endExecution: String? = null,
     val returnAt: String? = null,
-    val protocol: String? = null
+    val protocol: String? = null,
+    val semExecucaoType: String? = null,
+    val sequence: String? = null
 )
 
 data class RotalogMobileInterval(
@@ -74,7 +79,7 @@ object RotalogMobileRepository {
     private val etagMap = ConcurrentHashMap<String, String>()
 
     private val storage: FirebaseStorage by lazy {
-        FirebaseStorage.getInstance("gs://dds-treinamentos.firebasestorage.app")
+        FirebaseStorage.getInstance()
     }
 
     private val api: RotalogMobileApi by lazy {
@@ -135,41 +140,71 @@ object RotalogMobileRepository {
             null
         }
     }
-
-    private suspend fun fetchTeamFromStorage(teamKey: String, dateIso: String? = null, allowCurrentFallback: Boolean = false): RotalogMobileTeam? {
-        return runCatching {
-            val requestedDate = dateIso ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-
-            val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$requestedDate/$teamKey.json.gz")
-            val bytes = runCatching {
-                dailyRef.getBytes(5 * 1024 * 1024).await()
-            }.getOrElse { error ->
-                if (!allowCurrentFallback) throw error
-                val currentRef = storage.reference.child("_cache/rotalog/teams/current/$teamKey.json.gz")
-                currentRef.getBytes(5 * 1024 * 1024).await()
+    private suspend fun ensureAuth() {
+        runCatching {
+            val auth = FirebaseAuth.getInstance()
+            if (auth.currentUser == null) {
+                auth.signInAnonymously().await()
             }
+        }
+    }
 
-            val rawStr = decodeBytesToString(bytes)
+    private fun getCacheFile(context: Context, teamKey: String, dateIso: String): File {
+        val dir = File(context.cacheDir, "rotalog_daily/$teamKey")
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, "$dateIso.json")
+    }
+
+    fun readLocalCache(context: Context, teamKey: String, dateIso: String): String? {
+        return runCatching {
+            val file = getCacheFile(context, teamKey, dateIso)
+            if (file.exists() && file.length() > 0) {
+                file.readText(Charsets.UTF_8)
+            } else null
+        }.getOrNull()
+    }
+
+    fun saveLocalCache(context: Context, teamKey: String, dateIso: String, json: String, hash: String? = null) {
+        runCatching {
+            val file = getCacheFile(context, teamKey, dateIso)
+            file.writeText(json, Charsets.UTF_8)
+            if (!hash.isNullOrBlank()) {
+                val sp = context.getSharedPreferences("rotalog_cache_meta", Context.MODE_PRIVATE)
+                sp.edit().putString("hash__${teamKey}__$dateIso", hash).apply()
+            }
+        }
+    }
+
+    fun getCachedHash(context: Context, teamKey: String, dateIso: String): String? {
+        return runCatching {
+            val sp = context.getSharedPreferences("rotalog_cache_meta", Context.MODE_PRIVATE)
+            sp.getString("hash__${teamKey}__$dateIso", null)
+        }.getOrNull()
+    }
+
+    fun parseJsonToTeam(rawStr: String, fallbackTeamKey: String, fallbackDate: String): RotalogMobileTeam? {
+        return runCatching {
             val parsedObj = runCatching { JsonParser.parseString(rawStr).asJsonObject }.getOrNull() ?: return null
 
-            val currentObj = parsedObj.getAsJsonObject("current")
-            val turnStatus = currentObj?.get("turnStatus")?.asString
-                ?: parsedObj.get("estadoConsolidado")?.asString
-                ?: parsedObj.getAsJsonObject("turno")?.get("status")?.asString
+            val currentObj = parsedObj.get("current")?.takeIf { it.isJsonObject }?.asJsonObject
+            val turnoObj = parsedObj.get("turno")?.takeIf { it.isJsonObject }?.asJsonObject
 
-            val version = currentObj?.get("version")?.asLong
-                ?: parsedObj.get("version")?.asLong
+            val turnStatus = currentObj?.textOrNull("turnStatus")
+                ?: parsedObj.textOrNull("estadoConsolidado")
+                ?: turnoObj?.textOrNull("status")
+
+            val version = currentObj?.get("version")?.takeIf { it.isJsonPrimitive }?.asLong
+                ?: parsedObj.get("version")?.takeIf { it.isJsonPrimitive }?.asLong
                 ?: 1L
 
-            val updatedAt = parsedObj.get("updatedAt")?.asString
-                ?: parsedObj.get("updatedAtIso")?.asString
+            val updatedAt = parsedObj.textOrNull("updatedAt")
+                ?: parsedObj.textOrNull("updatedAtIso")
 
-            val turnoObj = parsedObj.getAsJsonObject("turno")
             val turnoInicio = turnoObj?.textOrNull("inicio")
             val turnoFim = turnoObj?.textOrNull("fim")
 
             val intervalsList = mutableListOf<RotalogMobileInterval>()
-            turnoObj?.getAsJsonArray("intervalos")?.forEach { element ->
+            turnoObj?.get("intervalos")?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { element ->
                 if (element.isJsonObject) {
                     val interval = element.asJsonObject
                     intervalsList += RotalogMobileInterval(
@@ -179,8 +214,8 @@ object RotalogMobileRepository {
                 }
             }
 
-            val serviceObj = currentObj?.getAsJsonObject("service")
-                ?: parsedObj.getAsJsonObject("atividadeAtual")
+            val serviceObj = currentObj?.get("service")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: parsedObj.get("atividadeAtual")?.takeIf { it.isJsonObject }?.asJsonObject
 
             val service = serviceObj?.let { s ->
                 RotalogMobileService(
@@ -192,12 +227,14 @@ object RotalogMobileRepository {
                     startExecution = s.textOrNull("inicioExecucao") ?: s.textOrNull("startExecution"),
                     endExecution = s.textOrNull("fimExecucao") ?: s.textOrNull("termino") ?: s.textOrNull("endExecution"),
                     returnAt = s.textOrNull("retorno") ?: s.textOrNull("returnAt"),
-                    protocol = s.textOrNull("protocolo") ?: s.textOrNull("protocol")
+                    protocol = s.textOrNull("protocolo") ?: s.textOrNull("protocol"),
+                    semExecucaoType = s.textOrNull("semExecucaoType"),
+                    sequence = s.textOrNull("sequencia") ?: s.textOrNull("sequence")
                 )
             }
 
             val servicesList = mutableListOf<RotalogMobileService>()
-            val servicesArray = parsedObj.getAsJsonArray("services")
+            val servicesArray = parsedObj.get("services")?.takeIf { it.isJsonArray }?.asJsonArray
             servicesArray?.forEach { elem ->
                 if (elem.isJsonObject) {
                     val s = elem.asJsonObject
@@ -211,15 +248,19 @@ object RotalogMobileRepository {
                             startExecution = s.textOrNull("inicioExecucao") ?: s.textOrNull("startExecution"),
                             endExecution = s.textOrNull("fimExecucao") ?: s.textOrNull("termino") ?: s.textOrNull("endExecution"),
                             returnAt = s.textOrNull("retorno") ?: s.textOrNull("returnAt"),
-                            protocol = s.textOrNull("protocolo") ?: s.textOrNull("protocol")
+                            protocol = s.textOrNull("protocolo") ?: s.textOrNull("protocol"),
+                            semExecucaoType = s.textOrNull("semExecucaoType"),
+                            sequence = s.textOrNull("sequencia") ?: s.textOrNull("sequence")
                         )
                     )
                 }
             }
 
+            android.util.Log.i("RotalogRepo", "parseJsonToTeam: sucesso para $fallbackTeamKey! services=${servicesList.size}, status=$turnStatus")
+
             RotalogMobileTeam(
-                teamKey = teamKey,
-                date = parsedObj.textOrNull("date") ?: requestedDate,
+                teamKey = parsedObj.textOrNull("teamKey") ?: fallbackTeamKey,
+                date = parsedObj.textOrNull("date") ?: fallbackDate,
                 version = version,
                 updatedAt = updatedAt,
                 turnStatus = turnStatus,
@@ -229,15 +270,165 @@ object RotalogMobileRepository {
                 service = service,
                 services = servicesList
             )
+        }.onFailure { e ->
+            android.util.Log.e("RotalogRepo", "parseJsonToTeam: falha ao parsear JSON: ${e.message}", e)
         }.getOrNull()
     }
 
-
-    suspend fun daily(teamKey: String, dateIso: String): RotalogMobileTeam? {
+    suspend fun fetchDailyWithCache(context: Context, teamKey: String, dateIso: String): RotalogMobileTeam? {
         val normalizedKey = teamKey.trim().uppercase()
         if (normalizedKey.isBlank() || !dateIso.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) return null
-        return fetchTeamFromStorage(normalizedKey, dateIso = dateIso, allowCurrentFallback = false)
+
+        val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+        }.format(Date())
+
+        val isToday = (dateIso == todayIso)
+
+        // 1. Dias anteriores: se já estiver em cache local, retorna direto do cache sem chamada de rede
+        if (!isToday) {
+            val cachedJson = readLocalCache(context, normalizedKey, dateIso)
+            if (!cachedJson.isNullOrBlank()) {
+                val cachedTeam = parseJsonToTeam(cachedJson, normalizedKey, dateIso)
+                if (cachedTeam != null) {
+                    return cachedTeam
+                }
+            }
+        }
+
+        // 2. Garante autenticação Firebase para acesso ao Storage
+        ensureAuth()
+
+        val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$dateIso/$normalizedKey.json.gz")
+        val currentRef = storage.reference.child("_cache/rotalog/teams/current/$normalizedKey.json.gz")
+
+        // 3. Se for o dia de hoje: verifica se o hash do arquivo remoto é idêntico
+        if (isToday) {
+            val cachedHash = getCachedHash(context, normalizedKey, dateIso)
+            val cachedJson = readLocalCache(context, normalizedKey, dateIso)
+
+            // Tenta obter metadados para checagem rápida de hash
+            val remoteMeta = runCatching { dailyRef.metadata.await() }.getOrNull()
+                ?: runCatching { currentRef.metadata.await() }.getOrNull()
+            val remoteHash = remoteMeta?.md5Hash ?: remoteMeta?.let { "${it.updatedTimeMillis}_${it.sizeBytes}" }
+
+            // Se o hash bate e o cache local existe, usa o cache local
+            if (!cachedJson.isNullOrBlank() && remoteHash != null && cachedHash == remoteHash) {
+                val team = parseJsonToTeam(cachedJson, normalizedKey, dateIso)
+                if (team != null) {
+                    android.util.Log.i("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: cache local atualizado por hash ($remoteHash)")
+                    return team
+                }
+            }
+
+            // Baixa diretamente do Storage (dailyRef ou currentRef)
+            val downloaded = runCatching {
+                val bytes = runCatching {
+                    dailyRef.getBytes(5 * 1024 * 1024).await()
+                }.getOrElse {
+                    currentRef.getBytes(5 * 1024 * 1024).await()
+                }
+                val rawStr = decodeBytesToString(bytes)
+                saveLocalCache(context, normalizedKey, dateIso, rawStr, remoteHash)
+                android.util.Log.i("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: baixado com sucesso do Storage (${bytes.size} bytes)")
+                parseJsonToTeam(rawStr, normalizedKey, dateIso)
+            }.onFailure { e ->
+                android.util.Log.w("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: falha no Storage: ${e.message}")
+            }.getOrNull()
+
+            if (downloaded != null) return downloaded
+        } else {
+            // Dia anterior: não encontrado no cache local, baixa do Firebase Storage daily e salva no cache
+            val downloaded = runCatching {
+                val bytes = dailyRef.getBytes(5 * 1024 * 1024).await()
+                val rawStr = decodeBytesToString(bytes)
+                val meta = runCatching { dailyRef.metadata.await() }.getOrNull()
+                val hash = meta?.md5Hash ?: meta?.updatedTimeMillis?.toString()
+                saveLocalCache(context, normalizedKey, dateIso, rawStr, hash)
+                android.util.Log.i("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: baixado dia anterior do Storage (${bytes.size} bytes)")
+                parseJsonToTeam(rawStr, normalizedKey, dateIso)
+            }.onFailure { e ->
+                android.util.Log.w("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: falha no Storage (dia anterior): ${e.message}")
+            }.getOrNull()
+
+            if (downloaded != null) return downloaded
+        }
+
+        // 4. Fallback: consulta a API HTTP caso o Firebase Storage não tenha o arquivo ou falhe
+        return runCatching {
+            val auth = FirebaseAuth.getInstance()
+            val user = auth.currentUser ?: auth.signInAnonymously().await().user ?: return null
+            val token = user.getIdToken(false).await().token ?: return null
+            val currentEtag = etagMap[normalizedKey]
+
+            if (isToday) {
+                val currentResp = api.current(normalizedKey, "Bearer $token", currentEtag)
+                if (currentResp.isSuccessful && currentResp.body()?.team != null) {
+                    return currentResp.body()?.team
+                }
+            }
+
+            val dailyResp = api.dailyRaw(normalizedKey, "Bearer $token")
+            if (dailyResp.isSuccessful) {
+                val bytes = dailyResp.body()?.bytes()
+                if (bytes != null && bytes.isNotEmpty()) {
+                    val rawStr = decodeBytesToString(bytes)
+                    saveLocalCache(context, normalizedKey, dateIso, rawStr)
+                    return parseJsonToTeam(rawStr, normalizedKey, dateIso)
+                }
+            }
+
+            // Fallback final: usa o cache existente se houver
+            val fallbackCache = readLocalCache(context, normalizedKey, dateIso)
+            if (!fallbackCache.isNullOrBlank()) {
+                parseJsonToTeam(fallbackCache, normalizedKey, dateIso)
+            } else null
+        }.getOrElse {
+            val fallbackCache = readLocalCache(context, normalizedKey, dateIso)
+            if (!fallbackCache.isNullOrBlank()) {
+                parseJsonToTeam(fallbackCache, normalizedKey, dateIso)
+            } else null
+        }
     }
+
+    private suspend fun fetchTeamFromStorage(teamKey: String, dateIso: String? = null, allowCurrentFallback: Boolean = false): RotalogMobileTeam? {
+        ensureAuth()
+        return runCatching {
+            val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+            }.format(Date())
+            val requestedDate = dateIso ?: todayIso
+
+            val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$requestedDate/$teamKey.json.gz")
+            android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando dailyRef ${dailyRef.path}")
+            val bytes = runCatching {
+                dailyRef.getBytes(5 * 1024 * 1024).await()
+            }.onFailure { e ->
+                android.util.Log.w("RotalogRepo", "fetchTeamFromStorage: falha em ${dailyRef.path}: ${e.message}")
+            }.getOrElse { error ->
+                if (!allowCurrentFallback) throw error
+                val currentRef = storage.reference.child("_cache/rotalog/teams/current/$teamKey.json.gz")
+                android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando currentRef ${currentRef.path}")
+                currentRef.getBytes(5 * 1024 * 1024).await()
+            }
+
+            val rawStr = decodeBytesToString(bytes)
+            android.util.Log.i("RotalogRepo", "fetchTeamFromStorage: sucesso para $teamKey! bytes=${bytes.size}")
+            parseJsonToTeam(rawStr, teamKey, requestedDate)
+        }.onFailure { e ->
+            android.util.Log.e("RotalogRepo", "fetchTeamFromStorage: falha geral para $teamKey: ${e.message}", e)
+        }.getOrNull()
+    }
+
+    suspend fun daily(teamKey: String, dateIso: String, context: Context? = null): RotalogMobileTeam? {
+        val normalizedKey = teamKey.trim().uppercase()
+        if (normalizedKey.isBlank() || !dateIso.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) return null
+        if (context != null) {
+            return fetchDailyWithCache(context, normalizedKey, dateIso)
+        }
+        return fetchTeamFromStorage(normalizedKey, dateIso = dateIso, allowCurrentFallback = true)
+    }
+
     suspend fun fetchDailyDebugJson(teamKey: String): String {
         val normalizedKey = teamKey.trim().uppercase()
         if (normalizedKey.isBlank()) return "{\n  \"erro\": \"Equipe em branco\"\n}"

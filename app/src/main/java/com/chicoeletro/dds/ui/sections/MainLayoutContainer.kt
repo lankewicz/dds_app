@@ -94,6 +94,20 @@ fun MainLayoutContainer() {
         }
     }
 
+    // ✅ Atualiza a lista de treinamentos assim que o download da sync for finalizado
+    LaunchedEffect(syncViewModel) {
+        syncViewModel.refreshRequests.collect {
+            trainingViewModel.refreshTrainings()
+        }
+    }
+
+    // ✅ Sincroniza automaticamente quando o dispositivo ficar online
+    LaunchedEffect(online) {
+        if (online) {
+            syncViewModel.autoSyncIfNeeded(true)
+        }
+    }
+
     var selectedTraining by rememberSaveable { mutableStateOf<String?>(null) }
     var showAbastecimento by rememberSaveable { mutableStateOf(false) }
     var showForm by rememberSaveable { mutableStateOf(false) }

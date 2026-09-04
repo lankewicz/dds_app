@@ -1457,6 +1457,24 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
         or previous_writer in {"ROTALOG_AUTO_SYNC", "ROTALOG_JSON", "ADMIN_FECHAR_TODOS"}
     )
     estado_rotalog = normalize_rotalog_turn_state(snapshot.get("estadoConsolidado") or "DESCONHECIDO")
+
+    current_estado = normalize_estado(merged.get("estado") or "DESCONHECIDO")
+    closed_at_ms = merged.get("closedAtClientMs") or current_ms
+    has_active_activity = bool(activity and activity.get("status") in {"DESLOCAMENTO", "EXECUCAO"})
+
+    # Se a equipe já está com turno FECHADO no DDS (via app móvel ou encerramento),
+    # o ROTALOG só pode reabrir se houver uma nova atividade real em campo (deslocamento/execução)
+    # ou novo marcador T de início posterior ao fechamento.
+    if current_estado == "FECHADO" and estado_rotalog in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}:
+        t_inicio_rotalog = to_utc_dt(turno.get("inicio"))
+        t_inicio_rotalog_ms = int(t_inicio_rotalog.timestamp() * 1000) if t_inicio_rotalog else 0
+        reabertura_legitima = (
+            (has_active_activity and rotalog_ms > closed_at_ms)
+            or (t_inicio_rotalog_ms > closed_at_ms)
+        )
+        if not reabertura_legitima:
+            estado_rotalog = "FECHADO"
+
     if can_apply_state and estado_rotalog != "DESCONHECIDO":
         merged["estado"] = estado_rotalog
         merged["estadoOriginal"] = estado_rotalog

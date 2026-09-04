@@ -393,7 +393,9 @@ def _deve_aplicar_estado_rotalog(
     rotalog_ms: int,
     dds_data: dict[str, typing.Any],
     dds_exists: bool,
+    *,
     forcar: bool = False,
+    eq_data: dict[str, typing.Any] | None = None,
 ) -> bool:
     if estado_rotalog == "DESCONHECIDO":
         return False
@@ -409,8 +411,19 @@ def _deve_aplicar_estado_rotalog(
 
     estado_dds = str(dds_data.get("estado") or "").strip().upper()
 
-    # Se Rotalog detectou ABERTO ou INTERVALO e no DDS o turno está FECHADO, reabre automaticamente
+    # Se o DDS está FECHADO, Rotalog só deve reabrir se houver atividade ativa em andamento
+    # (deslocamento/execução) ou marcador T de início mais recente que o fechamento do DDS
     if estado_rotalog in ("ABERTO", "INTERVALO") and estado_dds == "FECHADO":
+        tem_atividade_ativa = False
+        if eq_data:
+            atv = eq_data.get("atividade_atual") or {}
+            tem_atividade_ativa = bool(atv and str(atv.get("status") or "").upper() in ("DESLOCAMENTO", "EXECUCAO"))
+        t_inicio_ms = 0
+        if eq_data and isinstance(eq_data.get("turno"), dict):
+            t_inicio_ms = int(eq_data["turno"].get("inicio_ms") or 0)
+        reabertura_legitima = (tem_atividade_ativa and rotalog_ms > dds_ms) or (t_inicio_ms > dds_ms)
+        if not reabertura_legitima:
+            return False
         return True
 
     if rotalog_ms > dds_ms:
@@ -1041,6 +1054,7 @@ def _executar_sincronizacao_rotalog(
             dds_data,
             dds_doc.exists,
             forcar=forcar,
+            eq_data=eq,
         )
         if deve_aplicar_rotalog:
             novo_estado_dds = {

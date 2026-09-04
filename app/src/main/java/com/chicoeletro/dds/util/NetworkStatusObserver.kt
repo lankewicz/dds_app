@@ -30,8 +30,7 @@ class NetworkStatusObserver(private val context: Context) {
                 ?: return false
             val activeNetwork = cm.activeNetwork ?: return false
             val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
-            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                   caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         }
     }
 
@@ -84,7 +83,6 @@ class NetworkStatusObserver(private val context: Context) {
     private fun checkNetwork(connectivityManager: ConnectivityManager): Boolean {
         val activeNetwork = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-               capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }
