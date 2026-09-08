@@ -94,15 +94,79 @@ function fmtDateTime(iso) {
 function fmtTimeOnly(iso) {
   if (!iso) return "-"; const d = new Date(iso); if (Number.isNaN(d.getTime())) return "-"; return d.toLocaleTimeString("pt-BR");
 }
+function isDateToday(d) {
+  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getDate() === now.getDate() &&
+         d.getMonth() === now.getMonth() &&
+         d.getFullYear() === now.getFullYear();
+}
+
 function fmtLastContact(iso, source) {
   if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
   const time = d.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
   const srcSuffix = source ? ` (${source})` : "";
+  if (isDateToday(d)) {
+    return `${time}${srcSuffix}`;
+  }
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
   return `${day}/${month} - ${time}${srcSuffix}`;
+}
+
+function parseServiceDate(value, service, item) {
+  if (!value) return null;
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  if (typeof value === 'number' || /^\d{10,13}$/.test(String(value).trim())) {
+    const num = Number(value);
+    const ms = num > 100000000000 ? num : num * 1000;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+  if (str.includes('-') && (str.includes('T') || str.includes(' '))) {
+    const d = new Date(str.replace(' ', 'T'));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const matchTime = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (matchTime) {
+    const h = parseInt(matchTime[1], 10);
+    const m = parseInt(matchTime[2], 10);
+    const s = matchTime[3] ? parseInt(matchTime[3], 10) : 0;
+    const refIso = service?.inicioIso || service?.fimIso || service?.baseDay || item?.rotalogSnapshot?.updatedAtIso || item?.lastContact || item?.updatedAt;
+    let baseDate = new Date();
+    if (refIso) {
+      if (typeof refIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(refIso.trim())) {
+        const parts = refIso.trim().split('-');
+        baseDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      } else {
+        const parsedRef = new Date(refIso);
+        if (!isNaN(parsedRef.getTime())) baseDate = parsedRef;
+      }
+    }
+    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), h, m, s);
+  }
+  const d = new Date(str);
+  return !isNaN(d.getTime()) ? d : null;
+}
+
+function formatEffectiveServiceTime(rawTime, service, item) {
+  if (!rawTime) return null;
+  const d = parseServiceDate(rawTime, service, item);
+  if (!d) {
+    if (/^\d{2}:\d{2}$/.test(String(rawTime).trim())) return String(rawTime).trim();
+    return null;
+  }
+  const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (isDateToday(d)) {
+    return timeStr;
+  }
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mon = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mon} - ${timeStr}`;
 }
 
 function latestCommunicationAt(item) {
@@ -732,12 +796,70 @@ function getRotalogService(item) {
       : rawStatus === 'CONCLUSAO'
         ? 'Conclusão'
         : rawStatus;
+
+  let effectiveRawTime = null;
+  let effectiveStageLabel = '';
+
+  if (rawStatus === 'EXECUCAO' || statusChar === 'E') {
+    effectiveStageLabel = 'Início da Execução';
+    let transitionTime = null;
+    if (Array.isArray(service.transitions)) {
+      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'EXECUCAO');
+      if (tr) transitionTime = tr.hora || tr.timestampMs;
+    }
+    effectiveRawTime = service.inicioExecucao || transitionTime || service.execucao || service.inicioHora || service.inicioIso || service.inicioDeslocamento || service.inicio;
+  } else if (rawStatus === 'DESLOCAMENTO' || statusChar === 'D') {
+    effectiveStageLabel = 'Início do Deslocamento';
+    let transitionTime = null;
+    if (Array.isArray(service.transitions)) {
+      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'DESLOCAMENTO');
+      if (tr) transitionTime = tr.hora || tr.timestampMs;
+    }
+    effectiveRawTime = service.inicioDeslocamento || transitionTime || service.deslocamento || service.inicioHora || service.inicioIso || service.inicio;
+  } else if (rawStatus === 'CONCLUSAO' || statusChar === 'C') {
+    effectiveStageLabel = 'Conclusão';
+    let transitionTime = null;
+    if (Array.isArray(service.transitions)) {
+      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'CONCLUSAO');
+      if (tr) transitionTime = tr.hora || tr.timestampMs;
+    }
+    effectiveRawTime = service.termino || service.fimExecucao || service.retorno || transitionTime || service.fimIso || service.retornoIso || service.terminoIso || service.inicioExecucao || service.inicioIso;
+  } else {
+    effectiveStageLabel = 'Atividade';
+    effectiveRawTime = service.inicioExecucao || service.inicioDeslocamento || service.inicioHora || service.inicioIso || service.termino || service.fimIso;
+  }
+
+  const effectiveTimeLabel = formatEffectiveServiceTime(effectiveRawTime, service, item);
+
+  let timeTooltip = '';
+  if (effectiveStageLabel && effectiveTimeLabel) {
+    const extraParts = [];
+    if (rawStatus === 'EXECUCAO') {
+      if (service.inicioDeslocamento && service.inicioDeslocamento !== effectiveRawTime) {
+        extraParts.push(`Deslocamento: ${service.inicioDeslocamento}`);
+      }
+    } else if (rawStatus === 'CONCLUSAO') {
+      if (service.inicioExecucao) {
+        extraParts.push(`Execução: ${service.inicioExecucao}`);
+      }
+      if (service.inicioDeslocamento) {
+        extraParts.push(`Deslocamento: ${service.inicioDeslocamento}`);
+      }
+    }
+    const extraStr = extraParts.length ? ` (${extraParts.join(' • ')})` : '';
+    timeTooltip = `${effectiveStageLabel}: ${effectiveTimeLabel}${extraStr}`;
+  }
+
   return {
     identifier: String(identifier), identifierLabel, statusChar, statusLabel, rawStatus,
     category,
     serviceType: String(serviceType || identifier),
     protocol,
     conclusionOlderThanTenMinutes,
+    effectiveRawTime,
+    effectiveStageLabel,
+    effectiveTimeLabel,
+    timeTooltip,
   };
 }
 function operationalTimestamp(value) {
@@ -873,6 +995,10 @@ function syncKpiSelection() {
 function hoverRows(item) {
   const rows = [];
   rows.push(`<div class="hoverRow"><span>Atualizado</span><strong>${escapeHtml(fmtDateTime(item.lastContact))}</strong></div>`);
+  const rotalogService = getRotalogService(item);
+  if (rotalogService?.effectiveTimeLabel && rotalogService.effectiveStageLabel) {
+    rows.push(`<div class="hoverRow"><span>${escapeHtml(rotalogService.effectiveStageLabel)}</span><strong>${escapeHtml(rotalogService.effectiveTimeLabel)}</strong></div>`);
+  }
   if (hasMeaningfulValue(item.ss)) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(detailValue(item.ss))}</strong></div>`);
   if (normalizedState(item.estado) === 'DESLOCAMENTO_ESPECIAL' && hasMeaningfulValue(item.motivo)) rows.push(`<div class="hoverRow"><span>Motivo</span><strong>${escapeHtml(detailValue(item.motivo))}</strong></div>`);
   return rows.join('');
@@ -1081,17 +1207,17 @@ function formatStatusWithTime(item, shown, art66Active, art66EndAt) {
     const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
     if (!isBeforeSeven && art66EndLabel) {
       if (isToday) {
-        return `${statusLabel} (${timeStr} → ${art66EndLabel})`;
+        return `${statusLabel}: ${timeStr} → ${art66EndLabel}`;
       } else {
-        return `${statusLabel} (${dayMonthStr} - ${timeStr} → ${art66EndLabel})`;
+        return `${statusLabel}: ${dayMonthStr} ${timeStr} → ${art66EndLabel}`;
       }
     }
   }
 
   if (isToday) {
-    return `${statusLabel} (${timeStr})`;
+    return `${statusLabel}: ${timeStr}`;
   } else {
-    return `${statusLabel} (${dayMonthStr} - ${timeStr})`;
+    return `${statusLabel}: ${dayMonthStr} ${timeStr}`;
   }
 }
 
@@ -1099,9 +1225,10 @@ function tile(item) {
   const shown = normalizedState(item.estado);
   const border = borderClass(item.alerta);
   const stateCard = stateCardClass(shown);
-  const crit = item.critico === true;
+  const crit = item.critico === true && shown === "DESATUALIZADO";
   const equipe = detailValue(item.equipe);
   const teamKey = detailValue(item.teamKey || item.equipe);
+  const veiculoLabel = item.veiculo ? String(item.veiculo).trim() : "-";
   const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
   const details = hoverRows(item);
   const statusLabel = stateLabel(shown);
@@ -1114,8 +1241,8 @@ function tile(item) {
 
   const badgeLabel = item.lastWasDescansoSemanal ? "ART 67" : "ART 66";
   const badgeHtml = art66Active
-    ? `<div class="critical art66Badge"><div class="art66Line1">${badgeLabel}</div>${isBeforeSeven ? '' : `<div class="art66Line2">até ${escapeHtml(art66EndLabel)}</div>`}</div>`
-    : (crit ? `<div class="critical">CRÍTICO</div>` : ``);
+    ? `<div class="topRightTab art66Tab"><div class="tabLine1">${badgeLabel}</div>${isBeforeSeven ? '' : `<div class="tabLine2">${escapeHtml(art66EndLabel)}</div>`}</div>`
+    : (crit ? `<div class="topRightTab criticalTab"><div class="tabLine1">CRÍTICO</div></div>` : ``);
 
   // Lógica de Mensagens Global por Setor (Estratégia 4)
   const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
@@ -1165,6 +1292,10 @@ function tile(item) {
   const origemTitle = getOrigemTitle(item);
   const rotalogService = getRotalogService(item);
   const turnSummary = getTurnSummary(item, shown);
+  const serviceTimeDisplay = rotalogService?.effectiveTimeLabel || lastContactLabel;
+  const serviceTimeTooltip = rotalogService?.timeTooltip
+    ? (lastContactLabel && lastContactLabel !== '-' ? `${rotalogService.timeTooltip} • Sincronizado: ${lastContactLabel}` : rotalogService.timeTooltip)
+    : (lastContactLabel ? `Última sincronização: ${lastContactLabel}` : '');
   const serviceStageHtml = rotalogService?.statusChar
     ? `<span class="contactServiceStage contactServiceStage--${rotalogService.statusChar}" title="${escapeHtml(rotalogService.statusLabel)}">${rotalogService.statusChar}</span>`
     : '';
@@ -1222,20 +1353,19 @@ function tile(item) {
           <div class="tileTitleBlock tileTitleBlockFull">
             <div class="teamIdentityBadge" title="${escapeHtml(equipe)}">
               ${teamTypeIconHtml}
-              <div class="equipeCompact equipeCompactInline">${escapeHtml(equipe)}</div>
+              <div class="teamIdentityContent">
+                <div class="equipeCompact equipeCompactInline">${escapeHtml(equipe)}</div>
+                <div class="veiculoLine">${escapeHtml(veiculoLabel)}</div>
+                ${isTrash ? '' : `<div class="statusLineSub">${escapeHtml(statusLineFormatted)}</div>`}
+              </div>
             </div>
-            ${isTrash ? '' : `
-            <div class="statusBlock">
-              <div class="statusLine">${escapeHtml(statusLineFormatted)}</div>
-            </div>
-            `}
           </div>
         </div>
       </div>
       ${isTrash ? trashActions : `
         <div class="tileContactRow" title="${escapeHtml(origemTitle)}">
            ${turnSummaryHtml || serviceContactHtml}
-           ${turnSummary ? '' : `<span class="contactValue">${escapeHtml(lastContactLabel)}</span>`}
+           ${turnSummary ? '' : `<span class="contactValue" title="${escapeHtml(serviceTimeTooltip)}">${escapeHtml(serviceTimeDisplay)}</span>`}
          </div>
         ${ddsRow}
       `}

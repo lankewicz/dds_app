@@ -1447,6 +1447,9 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
     if turno.get("status"):
         merged["turnStatus"] = turno.get("status")
 
+    if snapshot.get("veiculo"):
+        merged["veiculo"] = snapshot.get("veiculo")
+
     rotalog_ms = int(snapshot.get("eventTimestampMs") or 0)
     current_dt = to_utc_dt(merged.get("updatedAt"))
     current_ms = int(current_dt.timestamp() * 1000) if current_dt else 0
@@ -1482,6 +1485,10 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
         merged["deviceIdLastWriter"] = "ROTALOG_JSON"
         if estado_rotalog in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}:
             merged["active"] = True
+
+    if merged.get("estado") != "DESATUALIZADO":
+        merged["critico"] = False
+
     return merged
 
 def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: bool = False, setor: str = CURRENT_SETOR) -> dict[str, Any]:
@@ -2140,6 +2147,7 @@ def _process_single_team(
 
     equipment = team_data.get("equipment") if isinstance(team_data.get("equipment"), dict) else {}
     tablet_data = equipment.get("tablet") if isinstance(equipment.get("tablet"), dict) else {}
+    vehicle_data = equipment.get("veiculo") if isinstance(equipment.get("veiculo"), dict) else {}
     rotalog_snapshot = data.get("rotalogSnapshot") or team_data.get("rotalogSnapshot") or {}
     if not isinstance(rotalog_snapshot, dict):
         rotalog_snapshot = {}
@@ -2158,10 +2166,29 @@ def _process_single_team(
         ),
         None,
     )
+    veiculo_identifier = next(
+        (
+            str(value).strip().upper()
+            for value in (
+                data.get("veiculo"),
+                rotalog_snapshot.get("veiculo"),
+                rotalog_snapshot.get("placa"),
+                team_data.get("veiculo"),
+                team_data.get("placa"),
+                team_data.get("plate"),
+                vehicle_data.get("identifier"),
+                vehicle_data.get("placa"),
+                equipment.get("veiculo") if isinstance(equipment.get("veiculo"), str) else None,
+            )
+            if isinstance(value, (str, int)) and str(value).strip()
+        ),
+        None,
+    )
 
     return {
         "teamKey": team_key,
         "equipe": equipe,
+        "veiculo": veiculo_identifier,
         "setor": team_data.get("setor") or data.get("setor") or "TODOS",
         "estado": estado,
         "estadoOriginal": estado_original,
