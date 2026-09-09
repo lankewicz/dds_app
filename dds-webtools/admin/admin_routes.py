@@ -845,6 +845,13 @@ def dds_reports():
     )
 
 
+@admin_bp.get("/equipment-reports")
+@login_required
+def equipment_reports():
+    from equipment_reports import report
+    return report()
+
+
 @admin_bp.post("/dds-reports/generate")
 @login_required
 def dds_reports_generate():

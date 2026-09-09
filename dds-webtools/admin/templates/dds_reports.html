@@ -320,9 +320,11 @@ FUNCTION: Redesigned premium reports screen for DDS Admin.
 
 <div class="reports-wrapper">
   <div class="premium-header">
-    <h1>Relatórios DDS</h1>
+    <h1>Relatórios</h1>
     <p>Gere e visualize relatórios operacionais consolidados e detalhados</p>
   </div>
+
+  <a class="type-card" href="{{ url_for('admin.equipment_reports') }}" style="display:block;margin-bottom:24px;text-decoration:none;color:inherit"><div class="type-card-title">Equipamentos</div><div class="type-card-desc">Tablets e câmeras por equipe, pendências de cadastro e histórico de alterações. Consulte e exporte em CSV.</div></a>
 
   <form method="get" action="{{ url_for('admin.dds_reports_progress') }}" id="reportForm">
     <!-- Hidden input to store selected report type -->

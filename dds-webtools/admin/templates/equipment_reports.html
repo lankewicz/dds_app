@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.equipment-report{padding:24px 0}.equipment-filters{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin:24px 0}
+.equipment-filters label{display:flex;flex-direction:column;gap:6px}
+.equipment-filters select,.equipment-filters input{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel,#182235);color:var(--text)}
+.equipment-results{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.equipment-results table{width:100%;border-collapse:collapse}
+.equipment-results th,.equipment-results td{padding:12px;text-align:left;border-bottom:1px solid var(--line);min-width:110px;overflow-wrap:anywhere}
+</style>
+<section class="equipment-report">
+<a href="{{ url_for('admin.dds_reports') }}">← Relatórios</a>
+<h1>Equipamentos por equipe</h1>
+<p>Consulte tablets e câmeras cadastrados e o histórico de alterações.</p>
+<form class="equipment-filters" method="get">
+<label>Consulta<select name="mode" id="equipment-mode">{% for value,label in [('current','Equipamentos por equipe'),('missing','Pendências de cadastro'),('history','Histórico de alterações')] %}<option value="{{ value }}" {% if mode == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Equipe<select name="team"><option value="">Todas as equipes</option>{% for key,team in teams|dictsort %}<option value="{{ key }}" {% if selected_team == key %}selected{% endif %}>{{ key }} — {{ team.displayName or key }}</option>{% endfor %}</select></label>
+<label>Equipamento<select name="equipment"><option value="">Todos os equipamentos</option>{% for key,label in labels.items() %}<option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Situação da equipe<select name="active">{% for value,label in [('active','Ativas'),('inactive','Inativas'),('all','Todas')] %}<option value="{{ value }}" {% if active == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="history-date">Data inicial<input type="date" name="start_date" value="{{ start_date }}" required></label>
+<label class="history-date">Data final<input type="date" name="end_date" value="{{ end_date }}" required></label>
+<button class="btn btn-primary" type="submit">Consultar</button>
+<button class="btn btn-ghost" type="submit" name="export" value="csv">Exportar CSV</button>
+</form>
+{% if error %}<p role="alert">{{ error }}</p>{% else %}
+<p>{{ rows|length }} registro(s). {% if mode == 'history' %}Período em horário de Brasília. Inclui as alterações registradas no sistema.{% else %}Situação atual do cadastro. “Sem cadastro” indica ausência de dados do equipamento.{% endif %}</p>
+<div class="equipment-results"><table><thead><tr>{% for header in headers %}<th scope="col">{{ header }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value or '—' }}</td>{% endfor %}</tr>{% else %}<tr><td colspan="{{ headers|length }}">Nenhum registro encontrado para os filtros selecionados.</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</section>
+<script>
+const equipmentMode = document.getElementById('equipment-mode');
+function updateEquipmentDates(){document.querySelectorAll('.history-date').forEach(label=>{label.style.display=equipmentMode.value==='history'?'flex':'none';label.querySelector('input').disabled=equipmentMode.value!=='history';});}
+equipmentMode.addEventListener('change',updateEquipmentDates);updateEquipmentDates();
+</script>
+{% endblock %}
