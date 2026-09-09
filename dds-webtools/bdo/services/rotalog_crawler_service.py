@@ -26,6 +26,7 @@ URL_BASE = "https://www.copel.com/rtlweb"
 URL_DASHBOARD = f"{URL_BASE}/paginas/dashboard"
 URL_LOGIN_ACTION = f"{URL_BASE}/paginas/j_security_check"
 URL_LISTAGEM_EVENTOS = f"{URL_BASE}/paginas/listagemEventos"
+URL_EQUIPES = f"{URL_BASE}/paginas/equipes"
 
 
 def dividir_periodo_em_intervalos(data_inicio_str: str, data_fim_str: str, dias_por_chunk: int = 5) -> list[tuple[str, str]]:
@@ -82,31 +83,35 @@ class CrawlerRotalog:
         """Raspagem isolada de um bloco de datas em uma sessão própria."""
         session = self._criar_sessao_autenticada()
 
-        resp_page = session.get(URL_LISTAGEM_EVENTOS, verify=False, timeout=30)
-        soup_page = BeautifulSoup(resp_page.text, "html.parser")
-        view_state = soup_page.find("input", {"name": "javax.faces.ViewState"})["value"]
+        def pesquisar(url: str) -> tuple[requests.Response, BeautifulSoup, str]:
+            resp_page = session.get(url, verify=False, timeout=30)
+            resp_page.raise_for_status()
+            soup_page = BeautifulSoup(resp_page.text, "html.parser")
+            view_state_elem = soup_page.find("input", {"name": "javax.faces.ViewState"})
+            if not view_state_elem:
+                raise RuntimeError(f"ViewState ausente em {url}")
+            post_data = {
+                "form": "form",
+                "form:j_idt27:dataInicial_input": data_inicio,
+                "form:j_idt27:dataFinal_input": data_fim,
+                "form:veiculo": "",
+                "form:contrato_input": "",
+                "form:j_idt40": "",
+                "javax.faces.ViewState": view_state_elem["value"],
+            }
+            response = session.post(url, data=post_data, verify=False, timeout=60)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            updated_view_state = soup.find("input", {"name": "javax.faces.ViewState"})
+            return response, soup, updated_view_state["value"] if updated_view_state else view_state_elem["value"]
 
-        post_data = {
-            "form": "form",
-            "form:j_idt27:dataInicial_input": data_inicio,
-            "form:j_idt27:dataFinal_input": data_fim,
-            "form:veiculo": "",
-            "form:contrato_input": "",
-            "form:j_idt40": "",
-            "javax.faces.ViewState": view_state,
-        }
+        resp_equipes, soup_equipes, view_state_equipes = pesquisar(URL_EQUIPES)
+        resp_eventos, soup_eventos, view_state_eventos = pesquisar(URL_LISTAGEM_EVENTOS)
 
-        resp_search = session.post(URL_LISTAGEM_EVENTOS, data=post_data, verify=False, timeout=60)
-        soup_search = BeautifulSoup(resp_search.text, "html.parser")
-
-        view_state_elem = soup_search.find("input", {"name": "javax.faces.ViewState"})
-        if view_state_elem:
-            view_state = view_state_elem["value"]
-
-        m_eq = re.search(r"widget_form_tbEquipes.*?rowCount:(\d+)", resp_search.text)
+        m_eq = re.search(r"widget_form_tbEquipes.*?rowCount:(\d+)", resp_equipes.text)
         row_count_eq = int(m_eq.group(1)) if m_eq else 0
 
-        m_ev = re.search(r"widget_form_tbListagemEventos.*?rowCount:(\d+)", resp_search.text)
+        m_ev = re.search(r"widget_form_tbListagemEventos.*?rowCount:(\d+)", resp_eventos.text)
         row_count_ev = int(m_ev.group(1)) if m_ev else 0
 
         headers_ajax = {
@@ -122,8 +127,9 @@ class CrawlerRotalog:
         page_size_eq = 25
         total_pages_eq = math.ceil(row_count_eq / page_size_eq) if row_count_eq > 0 else 1
 
-        tbls = soup_search.find_all("table")
-        headers0 = [th.text.strip().replace("\n", " ") for th in tbls[0].find_all("th") if th.text.strip()] if tbls else []
+        equipes_component = soup_equipes.find(id="form:tbEquipes")
+        equipes_table = equipes_component.find("table") if equipes_component else None
+        headers0 = [th.text.strip().replace("\n", " ") for th in equipes_table.find_all("th") if th.text.strip()] if equipes_table else []
 
         def parse_equipes_tr(soup_ctx):
             for tr in soup_ctx.find_all("tr"):
@@ -146,8 +152,8 @@ class CrawlerRotalog:
 
         for page in range(total_pages_eq):
             offset = page * page_size_eq
-            if offset == 0 and tbls:
-                parse_equipes_tr(tbls[0])
+            if offset == 0 and equipes_table:
+                parse_equipes_tr(equipes_table)
             else:
                 ajax_data = {
                     "javax.faces.partial.ajax": "true",
@@ -162,9 +168,10 @@ class CrawlerRotalog:
                     "form": "form",
                     "form:j_idt27:dataInicial_input": data_inicio,
                     "form:j_idt27:dataFinal_input": data_fim,
-                    "javax.faces.ViewState": view_state,
+                    "javax.faces.ViewState": view_state_equipes,
                 }
-                resp_ajax = session.post(URL_LISTAGEM_EVENTOS, data=ajax_data, headers=headers_ajax, verify=False, timeout=30)
+                resp_ajax = session.post(URL_EQUIPES, data=ajax_data, headers=headers_ajax, verify=False, timeout=30)
+                resp_ajax.raise_for_status()
                 soup_ajax = BeautifulSoup(resp_ajax.text, "html.parser")
                 update = soup_ajax.find("update", {"id": "form:tbEquipes"})
                 if update:
@@ -181,8 +188,10 @@ class CrawlerRotalog:
         total_pages_ev = math.ceil(row_count_ev / page_size_ev) if row_count_ev > 0 else 1
         headers1_clean = []
 
-        if len(tbls) > 1:
-            headers1 = [th.text.strip().replace("\n", " ") for th in tbls[1].find_all("th") if th.text.strip()]
+        eventos_component = soup_eventos.find(id="form:tbListagemEventos")
+        eventos_table = eventos_component.find("table") if eventos_component else None
+        if eventos_table:
+            headers1 = [th.text.strip().replace("\n", " ") for th in eventos_table.find_all("th") if th.text.strip()]
             headers1_clean = [re.sub(r"Filter by.*", "", h).strip() for h in headers1]
 
         def parse_eventos_tr(soup_ctx):
@@ -196,8 +205,8 @@ class CrawlerRotalog:
 
         for page in range(total_pages_ev):
             offset = page * page_size_ev
-            if offset == 0 and len(tbls) > 1:
-                parse_eventos_tr(tbls[1])
+            if offset == 0 and eventos_table:
+                parse_eventos_tr(eventos_table)
             else:
                 ajax_data = {
                     "javax.faces.partial.ajax": "true",
@@ -212,9 +221,10 @@ class CrawlerRotalog:
                     "form": "form",
                     "form:j_idt27:dataInicial_input": data_inicio,
                     "form:j_idt27:dataFinal_input": data_fim,
-                    "javax.faces.ViewState": view_state,
+                    "javax.faces.ViewState": view_state_eventos,
                 }
                 resp_ajax = session.post(URL_LISTAGEM_EVENTOS, data=ajax_data, headers=headers_ajax, verify=False, timeout=30)
+                resp_ajax.raise_for_status()
                 soup_ajax = BeautifulSoup(resp_ajax.text, "html.parser")
                 update = soup_ajax.find("update", {"id": "form:tbListagemEventos"})
                 if update:
