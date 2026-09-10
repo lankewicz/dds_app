@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revisão do Catálogo de Atividades MIT 163108</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-hover: #334155;
+            --primary: #10b981;
+            --primary-hover: #059669;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --accent-red: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        header .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        header a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        header a:hover {
+            text-decoration: underline;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 380px;
+            background-color: #0f172a;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .search-container {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--surface-color);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            font-size: 0.875rem;
+            outline: none;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+        }
+
+        .filter-container {
+            margin-top: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-transform: none;
+            color: var(--text-muted);
+            letter-spacing: normal;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            user-select: none;
+        }
+
+        .filter-label input {
+            width: auto;
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .stats-summary {
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            background-color: rgba(30, 41, 59, 0.5);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .item-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .item-row {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .item-row:hover {
+            background-color: var(--surface-hover);
+        }
+
+        .item-row.selected {
+            background-color: var(--surface-color);
+            border-left: 4px solid var(--primary);
+        }
+
+        .item-meta {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .item-code-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .item-code {
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 0.95rem;
+        }
+
+        .item-title {
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .item-category {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .status-pill {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 9999px;
+            white-space: nowrap;
+        }
+
+        .status-pill.pendente {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .status-pill.salvo {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .category-header {
+            background-color: #1e293b;
+            padding: 0.6rem 1rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--primary);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .category-count {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--primary);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
+        .editor-pane {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            background-color: #0b0f19;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .no-selection {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.25rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+
+        .col-3 { grid-column: span 3; }
+        .col-4 { grid-column: span 4; }
+        .col-6 { grid-column: span 6; }
+        .col-9 { grid-column: span 9; }
+        .col-12 { grid-column: span 12; }
+
+        label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--primary);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .raw-text-box {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #38bdf8;
+            white-space: pre-wrap;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .button-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            gap: 1rem;
+            position: sticky;
+            bottom: -2rem;
+            background-color: #0b0f19;
+            padding: 1rem 0;
+            border-top: 1px solid var(--border-color);
+            z-index: 10;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background-color: var(--border-color);
+            color: var(--text-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--surface-hover);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+
+        .form-check input {
+            width: auto;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background-color: #059669;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 1000;
+            transform: translateY(150%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Revisão e Cadastro do Catálogo de Atividades MIT</h1>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn btn-primary" id="btnPublicar" style="background-color: #f59e0b; border-color: #d97706; font-size: 0.85rem; padding: 0.5rem 1rem;">☁️ Publicar Catálogo p/ Tablets</button>
+            <div class="user-info" style="margin-left: 0;">
+                <span>Usuário: {{ user_email }}</span>
+                <a href="/controle-projetos" style="margin-left: 1rem;">Voltar ao Painel</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="search-container">
+                <div style="margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 4px;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Tipo de Equipe</label>
+                    <select id="teamTypeSelect" class="search-input" style="padding: 0.5rem 1rem;">
+                        <option value="CONSTRUCAO">Construção (MIT 163108)</option>
+                        <option value="EP">Manutenção EP (MIT 160904)</option>
+                        <option value="LV">Linha Viva LV (MIT 160904)</option>
+                        <option value="STC">STC (NR-10)</option>
+                    </select>
+                </div>
+                <input type="text" id="searchInput" class="search-input" placeholder="Pesquisar código, título ou categoria...">
+                <div class="filter-container">
+                    <label class="filter-label">
+                        <input type="checkbox" id="filterPending">
+                        Mostrar apenas não confirmados (pendentes)
+                    </label>
+                </div>
+            </div>
+            <div class="stats-summary">
+                <span id="savedCount">Carregando estatísticas...</span>
+            </div>
+            <div class="item-list" id="itemList">
+                <!-- Items inserted dynamically -->
+            </div>
+        </div>
+
+        <div class="editor-pane" id="editorPane">
+            <div class="no-selection" id="noSelection">
+                <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p style="margin-top: 1rem;">Selecione uma atividade na barra lateral para começar a revisão.</p>
+            </div>
+
+            <div id="editorContent" style="display: none;">
+                <div class="card">
+                    <div class="card-title">Dados de Registro no MIT</div>
+                    <form id="mitForm" onsubmit="event.preventDefault();">
+                        <div class="form-grid">
+                            <div class="form-group col-3">
+                                <label for="formCodigo">Código do Item</label>
+                                <input type="number" id="formCodigo" disabled>
+                            </div>
+                            <div class="form-group col-9">
+                                <label for="formCategoria">Categoria / Grupo do Serviço</label>
+                                <select id="formCategoria">
+                                    <option value="4.1 - LEVANTAMENTO CADASTRAL">4.1 - LEVANTAMENTO CADASTRAL</option>
+                                    <option value="4.2 - LEVANTAMENTO TOPOGRÁFICO">4.2 - LEVANTAMENTO TOPOGRÁFICO</option>
+                                    <option value="4.3 - PROJETOS E ORÇAMENTOS">4.3 - PROJETOS E ORÇAMENTOS</option>
+                                    <option value="4.4 - CAVAS E VALETAS">4.4 - CAVAS E VALETAS</option>
+                                    <option value="4.5 - POSTES">4.5 - POSTES</option>
+                                    <option value="4.6 - ESTRUTURAS PRIMÁRIAS">4.6 - ESTRUTURAS PRIMÁRIAS</option>
+                                    <option value="4.7 - ESTRUTURAS SECUNDÁRIAS">4.7 - ESTRUTURAS SECUNDÁRIAS</option>
+                                    <option value="4.8 - ESTAIS E ANCORAGENS">4.8 - ESTAIS E ANCORAGENS</option>
+                                    <option value="4.9 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA PRIMÁRIA">4.9 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA PRIMÁRIA</option>
+                                    <option value="4.10 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA SECUNDÁRIA">4.10 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA SECUNDÁRIA</option>
+                                    <option value="4.11 - LIGAÇÕES, AMARRAÇÕES E EMENDAS">4.11 - LIGAÇÕES, AMARRAÇÕES E EMENDAS</option>
+                                    <option value="4.12 - ATERRAMENTOS E SECCIONAMENTOS">4.12 - ATERRAMENTOS E SECCIONAMENTOS</option>
+                                    <option value="4.13 - EQUIPAMENTOS">4.13 - EQUIPAMENTOS</option>
+                                    <option value="4.14 - ILUMINAÇÃO PÚBLICA">4.14 - ILUMINAÇÃO PÚBLICA</option>
+                                    <option value="4.15 - LIGAÇÃO DE UNIDADE CONSUMIDORA">4.15 - LIGAÇÃO DE UNIDADE CONSUMIDORA</option>
+                                    <option value="4.16 - TRANSPORTES E DESLOCAMENTOS">4.16 - TRANSPORTES E DESLOCAMENTOS</option>
+                                    <option value="4.17 - PODA DE ÁRVORES E ROÇADA EM FAIXA DE SERVIDÃO">4.17 - PODA DE ÁRVORES E ROÇADA EM FAIXA DE SERVIDÃO</option>
+                                    <option value="4.18 - NUMERAÇÃO E IDENTIFICAÇÃO DA REDE">4.18 - NUMERAÇÃO E IDENTIFICAÇÃO DA REDE</option>
+                                    <option value="4.19 - OPERAÇÃO E DESLIGAMENTOS DA REDE">4.19 - OPERAÇÃO E DESLIGAMENTOS DA REDE</option>
+                                    <option value="4.20 - ATIVIDADES COM REDE ENERGIZADA (LINHA VIVA)">4.20 - ATIVIDADES COM REDE ENERGIZADA (LINHA VIVA)</option>
+                                    <option value="4.21 - ATIVIDADES DE REDE PRIMÁRIA COMPACTA (RDC)">4.21 - ATIVIDADES DE REDE PRIMÁRIA COMPACTA (RDC)</option>
+                                    <option value="4.22 - ATIVIDADES DE REDE SECUNDÁRIA ISOLADA (RSI)">4.22 - ATIVIDADES DE REDE SECUNDÁRIA ISOLADA (RSI)</option>
+                                    <option value="4.23 - ATIVIDADES DIVERSAS">4.23 - ATIVIDADES DIVERSAS</option>
+                                    <option value="4.24 - ATIVIDADES PARA SERVIÇOS EMERGENCIIS">4.24 - ATIVIDADES PARA SERVIÇOS EMERGENCIAIS</option>
+                                    <option value="4.25 - ATIVIDADES COM O BIG JUMPER">4.25 - ATIVIDADES COM O BIG JUMPER</option>
+                                    <option value="4.26 - ATIVIDADES DE SISTEMAS FOTOVOLTAICOS - SIGFI">4.26 - ATIVIDADES DE SISTEMAS FOTOVOLTAICOS - SIGFI</option>
+                                    <option value="4.27 - ATIVIDADES DE REDE SUBTERRÂNEA CABO DIRETAMENTE ENTERRADO">4.27 - ATIVIDADES DE REDE SUBTERRÂNEA CABO DIRETAMENTE ENTERRADO</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-12">
+                                <label for="formTarefa">Nome do Serviço (Título Curto)</label>
+                                <input type="text" id="formTarefa">
+                            </div>
+
+                            <div class="form-group col-4">
+                                <label for="formUnidade">Unidade / Forma Pagamento</label>
+                                <input type="text" id="formUnidade">
+                            </div>
+                            <div class="form-group col-4">
+                                <label for="formUsMontagem">US Montagem</label>
+                                <input type="number" step="0.001" id="formUsMontagem">
+                            </div>
+                            <div class="form-group col-4">
+                                <label for="formUsDesmontagem">US Desmontagem</label>
+                                <input type="number" step="0.001" id="formUsDesmontagem">
+                            </div>
+
+                            <div class="form-group col-12">
+                                <label for="formDescricao">Descrição Detalhada / Explicação</label>
+                                <textarea id="formDescricao"></textarea>
+                            </div>
+
+                            <div class="form-group col-12" style="border-top: 1px solid var(--border-color); padding-top: 1.25rem; margin-top: 0.5rem;">
+                                <label class="filter-label" style="font-weight: 600; color: var(--text-color);">
+                                    <input type="checkbox" id="formCalculoDinamico" onchange="toggleCalculoDinamico()">
+                                    Esta atividade possui cálculo dinâmico (US Variável)
+                                </label>
+                            </div>
+
+                            <div class="form-group col-12" id="calculoDinamicoGroup" style="display: none;">
+                                <label for="formTipoCalculo">Tipo de Cálculo / Regra de Faturamento</label>
+                                <select id="formTipoCalculo">
+                                    <option value="">-- Selecione a regra de cálculo --</option>
+                                    <option value="deslocamento">Deslocamento (0.045 * Elementos * Distância)</option>
+                                    <option value="deslocamento_simples">Deslocamento Simples (0.045 * Distância)</option>
+                                    <option value="deslocamento_adicional">Adicional Deslocamento (0.045 * Elementos * Distância * (N-1))</option>
+                                    <option value="deslocamento_cancelado">Deslocamento por Cancelamento (0.045 * Elementos * Distância)</option>
+                                    <option value="hora_extra">Serviços em Desligamentos ((Horas + 2) * Elementos)</option>
+                                    <option value="transporte_meios_alternativos">Meios Alternativos ((Horas + 2) * Elementos)</option>
+                                    <option value="transporte_postes_demanda">Transporte Poste TK Demanda (0.113 * (Distância - 50) * Tonelada)</option>
+                                    <option value="percentual_clima">Adicional de Clima Adverso (14.2% sobre a obra)</option>
+                                    <option value="minimo_obra">Garantia Mínima As Built (Mínimo de 2 US por obra)</option>
+                                    <option value="outros">Outros Cálculos Dinâmicos</option>
+                                </select>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Texto Extraído do PDF (Raw OCR)</div>
+                    <div class="raw-text-box" id="rawTextBox"></div>
+                </div>
+
+                <div class="button-bar">
+                    <button class="btn btn-secondary" id="btnPrev">Anterior</button>
+                    <button class="btn btn-primary" id="btnSalvar">Confirmar e Gravar no Firestore</button>
+                    <button class="btn btn-secondary" id="btnNext">Próximo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+        </svg>
+        <span id="toastMsg">Salvo com sucesso!</span>
+    </div>
+
+    <script>
+        let allItems = [];
+        let filteredItems = [];
+        let visualItems = [];
+        let selectedItem = null;
+        let lastSelectedCategory = '';
+
+        const itemList = document.getElementById('itemList');
+        const searchInput = document.getElementById('searchInput');
+        const savedCount = document.getElementById('savedCount');
+        const noSelection = document.getElementById('noSelection');
+        const editorContent = document.getElementById('editorContent');
+        const rawTextBox = document.getElementById('rawTextBox');
+
+        // Form Fields
+        const formCodigo = document.getElementById('formCodigo');
+        const formCategoria = document.getElementById('formCategoria');
+        formCategoria.onchange = () => {
+            lastSelectedCategory = formCategoria.value;
+            formCategoria.style.backgroundColor = '';
+            formCategoria.style.color = '';
+            formCategoria.style.border = '';
+        };
+        const formTarefa = document.getElementById('formTarefa');
+        const formUnidade = document.getElementById('formUnidade');
+        const formUsMontagem = document.getElementById('formUsMontagem');
+        const formUsDesmontagem = document.getElementById('formUsDesmontagem');
+        const formDescricao = document.getElementById('formDescricao');
+        const formCalculoDinamico = document.getElementById('formCalculoDinamico');
+        const formTipoCalculo = document.getElementById('formTipoCalculo');
+
+        function toggleCalculoDinamico() {
+            const isDinamico = formCalculoDinamico.checked;
+            document.getElementById('calculoDinamicoGroup').style.display = isDinamico ? 'flex' : 'none';
+        }
+
+        // Buttons
+        const btnSalvar = document.getElementById('btnSalvar');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+
+        const categoriesConstrucao = [
+            "4.1 - LEVANTAMENTO CADASTRAL",
+            "4.2 - LEVANTAMENTO TOPOGRÁFICO",
+            "4.3 - PROJETOS E ORÇAMENTOS",
+            "4.4 - CAVAS E VALETAS",
+            "4.5 - POSTES",
+            "4.6 - ESTRUTURAS PRIMÁRIAS",
+            "4.7 - ESTRUTURAS SECUNDÁRIAS",
+            "4.8 - ESTAIS E ANCORAGENS",
+            "4.9 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA PRIMÁRIA",
+            "4.10 - LANÇAMENTO E TRACIONAMENTO DE CABOS DA SECUNDÁRIA",
+            "4.11 - LIGAÇÕES, AMARRAÇÕES E EMENDAS",
+            "4.12 - ATERRAMENTOS E SECCIONAMENTOS",
+            "4.13 - EQUIPAMENTOS",
+            "4.14 - ILUMINAÇÃO PÚBLICA",
+            "4.15 - LIGAÇÃO DE UNIDADE CONSUMIDORA",
+            "4.16 - TRANSPORTES E DESLOCAMENTOS",
+            "4.17 - PODA DE ÁRVORES E ROÇADA EM FAIXA DE SERVIDÃO",
+            "4.18 - NUMERAÇÃO E IDENTIFICAÇÃO DA REDE",
+            "4.19 - OPERAÇÃO E DESLIGAMENTOS DA REDE",
+            "4.20 - ATIVIDADES COM REDE ENERGIZADA (LINHA VIVA)",
+            "4.21 - ATIVIDADES DE REDE PRIMÁRIA COMPACTA (RDC)",
+            "4.22 - ATIVIDADES DE REDE SECUNDÁRIA ISOLADA (RSI)",
+            "4.23 - ATIVIDADES DIVERSAS",
+            "4.24 - ATIVIDADES PARA SERVIÇOS EMERGENCIAIS",
+            "4.25 - ATIVIDADES COM O BIG JUMPER",
+            "4.26 - ATIVIDADES DE SISTEMAS FOTOVOLTAICOS - SIGFI",
+            "4.27 - ATIVIDADES DE REDE SUBTERRÂNEA CABO DIRETAMENTE ENTERRADO"
+        ];
+
+        const categoriesManutencao = [
+            "3 - Vegetação",
+            "4 - Abertura de cava",
+            "5 - Postes",
+            "6 - Estrutura Primária",
+            "7 - Estrutura Secundária",
+            "8 - Estaiamento e Ancoragem",
+            "9 - Lançamento de Condutor em MT",
+            "10 - Lançamento de Condutor em BT",
+            "11 - Retensionamento de Condutores",
+            "12 - Ligação, Amarração e Emenda",
+            "13 - Aterramento de Proteção",
+            "14 - Equipamentos",
+            "15 - Iluminação Pública",
+            "16 - Ligação de Consumidor",
+            "17 - Atividades Diversas",
+            "18 - Rede Compacta Protegida",
+            "19 - Rede Isolada de BT",
+            "20 - Cabo Óptico COPEL",
+            "21 - Abertura de Faixa",
+            "22 - Atividades especiais"
+        ];
+
+        function updateCategorySelect(teamType) {
+            const list = (teamType === 'EP' || teamType === 'LV') ? categoriesManutencao : categoriesConstrucao;
+            formCategoria.innerHTML = '';
+            list.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                formCategoria.appendChild(opt);
+            });
+        }
+
+        async function loadItems() {
+            try {
+                const teamType = document.getElementById('teamTypeSelect').value;
+                updateCategorySelect(teamType);
+                
+                const response = await fetch(`/controle-projetos/api/mit-import/pendentes?equipe=${teamType}`);
+                allItems = await response.json();
+                
+                if (selectedItem && !allItems.some(x => x.codigo === selectedItem.codigo)) {
+                    selectedItem = null;
+                    noSelection.style.display = 'flex';
+                    editorContent.style.display = 'none';
+                }
+                
+                applyFilters();
+                updateStats();
+            } catch (err) {
+                console.error("Erro ao carregar itens do MIT:", err);
+                alert("Falha ao carregar as atividades.");
+            }
+        }
+
+        document.getElementById('teamTypeSelect').onchange = loadItems;
+
+        function updateStats() {
+            const total = allItems.length;
+            const salvos = allItems.filter(x => x.salvo).length;
+            const pendentes = total - salvos;
+            savedCount.textContent = `Aprovados: ${salvos} | Restantes: ${pendentes} (Total: ${total})`;
+        }
+
+        function renderList() {
+            itemList.innerHTML = '';
+            visualItems = [];
+            
+            const groups = {};
+            filteredItems.forEach(item => {
+                const cat = item.categoria || 'Não Categorizado';
+                if (!groups[cat]) {
+                    groups[cat] = [];
+                }
+                groups[cat].push(item);
+            });
+            
+            const sortedCategories = Object.keys(groups).sort((a, b) => {
+                const matchA = a.match(/^(\d+)\.(\d+)/);
+                const matchB = b.match(/^(\d+)\.(\d+)/);
+                if (matchA && matchB) {
+                    const majorA = parseInt(matchA[1], 10);
+                    const minorA = parseInt(matchA[2], 10);
+                    const majorB = parseInt(matchB[1], 10);
+                    const minorB = parseInt(matchB[2], 10);
+                    if (majorA !== majorB) return majorA - majorB;
+                    return minorA - minorB;
+                }
+                return a.localeCompare(b);
+            });
+            
+            sortedCategories.forEach(catName => {
+                const items = groups[catName];
+                const pendentes = items.filter(x => !x.salvo).length;
+                const total = items.length;
+                
+                const header = document.createElement('div');
+                header.className = 'category-header';
+                header.innerHTML = `
+                    <span>${catName}</span>
+                    <span class="category-count">${total - pendentes}/${total}</span>
+                `;
+                itemList.appendChild(header);
+                
+                items.forEach(item => {
+                    visualItems.push(item);
+                    const row = document.createElement('div');
+                    row.className = `item-row ${selectedItem && selectedItem.codigo === item.codigo ? 'selected' : ''}`;
+                    row.onclick = () => selectItem(item);
+                    
+                    const statusClass = item.salvo ? 'salvo' : 'pendente';
+                    const statusLabel = item.salvo ? 'Salvo' : 'Revisar';
+                    
+                    row.innerHTML = `
+                        <div class="item-meta">
+                            <div class="item-code-title">
+                                <span class="item-code">${item.codigo}</span>
+                                <span class="item-title">${item.tarefa}</span>
+                            </div>
+                        </div>
+                        <span class="status-pill ${statusClass}">${statusLabel}</span>
+                    `;
+                    itemList.appendChild(row);
+                });
+            });
+        }
+
+        function selectItem(item) {
+            selectedItem = item;
+            renderList();
+
+            noSelection.style.display = 'none';
+            editorContent.style.display = 'block';
+
+            // Populate form
+            formCodigo.value = item.codigo;
+            
+            if (item.categoria && item.categoria.trim()) {
+                formCategoria.value = item.categoria;
+                lastSelectedCategory = item.categoria;
+                formCategoria.style.backgroundColor = '';
+                formCategoria.style.color = '';
+                formCategoria.style.border = '';
+            } else {
+                if (lastSelectedCategory) {
+                    formCategoria.value = lastSelectedCategory;
+                    formCategoria.style.backgroundColor = '#fffbeb'; // Amber-50
+                    formCategoria.style.color = '#b45309'; // Amber-700
+                    formCategoria.style.border = '2px dashed #f59e0b'; // Amber-500
+                } else {
+                    formCategoria.selectedIndex = 0;
+                    formCategoria.style.backgroundColor = '';
+                    formCategoria.style.color = '';
+                    formCategoria.style.border = '';
+                }
+            }
+
+            formTarefa.value = item.tarefa;
+            formUnidade.value = item.forma_pagamento;
+            formUsMontagem.value = item.us_montagem;
+            formUsDesmontagem.value = item.us_desmontagem;
+            formDescricao.value = item.descricao_detalhada;
+            rawTextBox.textContent = item.raw_text;
+
+            formCalculoDinamico.checked = !!item.calculo_dinamico;
+            formTipoCalculo.value = item.tipo_calculo || '';
+            toggleCalculoDinamico();
+
+            // Highlight values if zero to help manual check (only if not dynamic calculation)
+            if (parseFloat(item.us_montagem) === 0 && parseFloat(item.us_desmontagem) === 0 && !item.calculo_dinamico) {
+                formUsMontagem.style.borderColor = 'var(--accent-red)';
+            } else {
+                formUsMontagem.style.borderColor = 'var(--border-color)';
+            }
+        }
+
+        function applyFilters() {
+            const q = searchInput.value.toLowerCase().trim();
+            const onlyPending = document.getElementById('filterPending').checked;
+            
+            let temp = [...allItems];
+            
+            if (q) {
+                temp = temp.filter(x => 
+                    x.codigo.toString().includes(q) || 
+                    x.tarefa.toLowerCase().includes(q) || 
+                    x.categoria.toLowerCase().includes(q) ||
+                    x.descricao_detalhada.toLowerCase().includes(q)
+                );
+            }
+            
+            if (onlyPending) {
+                temp = temp.filter(x => !x.salvo);
+            }
+            
+            filteredItems = temp;
+            renderList();
+        }
+
+        searchInput.oninput = applyFilters;
+        document.getElementById('filterPending').onchange = applyFilters;
+
+        btnSalvar.onclick = async () => {
+            if (!selectedItem) return;
+            btnSalvar.disabled = true;
+
+            const payload = {
+                codigo: selectedItem.codigo,
+                categoria: formCategoria.value,
+                tarefa: formTarefa.value,
+                forma_pagamento: formUnidade.value,
+                us_montagem: parseFloat(formUsMontagem.value) || 0.0,
+                us_desmontagem: parseFloat(formUsDesmontagem.value) || 0.0,
+                descricao: formDescricao.value,
+                calculo_dinamico: formCalculoDinamico.checked,
+                tipo_calculo: formCalculoDinamico.checked ? formTipoCalculo.value : null,
+                tipo_equipe: document.getElementById('teamTypeSelect').value
+            };
+
+            try {
+                const res = await fetch('/controle-projetos/api/mit-import/confirmar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await res.json();
+                if (data.sucesso) {
+                    showToast(`Item ${selectedItem.codigo} gravado com sucesso!`);
+                    
+                    // Mark as saved in local model
+                    const localItem = allItems.find(x => x.codigo === selectedItem.codigo);
+                    if (localItem) {
+                        localItem.salvo = true;
+                        localItem.categoria = payload.categoria;
+                        localItem.tarefa = payload.tarefa;
+                        localItem.forma_pagamento = payload.forma_pagamento;
+                        localItem.us_montagem = payload.us_montagem;
+                        localItem.us_desmontagem = payload.us_desmontagem;
+                        localItem.descricao_detalhada = payload.descricao;
+                        localItem.calculo_dinamico = payload.calculo_dinamico;
+                        localItem.tipo_calculo = payload.tipo_calculo;
+                    }
+                    
+                    updateStats();
+                    applyFilters();
+                    
+                    // Auto advance to next pending item
+                    setTimeout(() => {
+                        autoAdvance();
+                    }, 500);
+                } else {
+                    alert("Erro ao gravar item: " + (data.detail || data.mensagem));
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Erro de conexão ao salvar.");
+            } finally {
+                btnSalvar.disabled = false;
+            }
+        };
+
+        function autoAdvance() {
+            const currentIndex = visualItems.findIndex(x => x.codigo === selectedItem.codigo);
+            // Search next unsaved item
+            for (let i = currentIndex + 1; i < visualItems.length; i++) {
+                if (!visualItems[i].salvo) {
+                    selectItem(visualItems[i]);
+                    // Scroll to item row
+                    const rows = itemList.getElementsByClassName('item-row');
+                    if (rows[i]) {
+                        rows[i].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                    return;
+                }
+            }
+            // If none found forward, search from the beginning
+            for (let i = 0; i < currentIndex; i++) {
+                if (!visualItems[i].salvo) {
+                    selectItem(visualItems[i]);
+                    const rows = itemList.getElementsByClassName('item-row');
+                    if (rows[i]) {
+                        rows[i].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                    return;
+                }
+            }
+        }
+
+        btnPrev.onclick = () => {
+            if (!selectedItem) return;
+            const currentIndex = visualItems.findIndex(x => x.codigo === selectedItem.codigo);
+            if (currentIndex > 0) {
+                selectItem(visualItems[currentIndex - 1]);
+                const rows = itemList.getElementsByClassName('item-row');
+                if (rows[currentIndex - 1]) {
+                    rows[currentIndex - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        };
+
+        btnNext.onclick = () => {
+            if (!selectedItem) return;
+            const currentIndex = visualItems.findIndex(x => x.codigo === selectedItem.codigo);
+            if (currentIndex < visualItems.length - 1) {
+                selectItem(visualItems[currentIndex + 1]);
+                const rows = itemList.getElementsByClassName('item-row');
+                if (rows[currentIndex + 1]) {
+                    rows[currentIndex + 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        };
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Helper string methods
+        String.prototype.strip = function() {
+            return this.replace(/^\s+|\s+$/g, '');
+        };
+
+        // Teclas de atalho: Ctrl+S ou Ctrl+Enter para salvar
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'Enter')) {
+                e.preventDefault();
+                btnSalvar.click();
+            }
+        });
+
+        const btnPublicar = document.getElementById('btnPublicar');
+        btnPublicar.onclick = async () => {
+            const teamType = document.getElementById('teamTypeSelect').value;
+            if (!confirm(`Deseja publicar o catálogo da equipe "${teamType}" para os tablets? Isso substituirá o arquivo JSON no Firebase Storage.`)) {
+                return;
+            }
+            btnPublicar.disabled = true;
+            btnPublicar.textContent = 'Enviando...';
+            try {
+                const response = await fetch(`/controle-projetos/api/mit-import/publicar?equipe=${teamType}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                if (result.sucesso) {
+                    showToast(`Catálogo publicado com sucesso! (${result.items_exportados} itens salvos)`);
+                } else {
+                    alert(`Falha ao publicar catálogo: ${result.detail || 'Erro desconhecido'}`);
+                }
+            } catch (err) {
+                console.error("Erro ao publicar:", err);
+                alert("Falha de conexão ao publicar o catálogo.");
+            } finally {
+                btnPublicar.disabled = false;
+                btnPublicar.textContent = '☁️ Publicar Catálogo p/ Tablets';
+            }
+        };
+
+        window.onload = loadItems;
+    </script>
+</body>
+</html>

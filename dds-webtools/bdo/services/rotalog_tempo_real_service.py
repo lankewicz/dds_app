@@ -192,10 +192,10 @@ def resolver_equipe_group(
     return resolved
 
 
-def _obter_inicio_dia_operacional_ms() -> int:
+def _obter_inicio_dia_operacional_ms(now: datetime.datetime | None = None) -> int:
     """Retorna o timestamp em ms da mudança do dia (meia-noite 00:00:00)."""
-    now = datetime.datetime.now(datetime.timezone.utc)
-    meia_noite = datetime.datetime.combine(now.date(), datetime.time(0, 0, 0), tzinfo=datetime.timezone.utc)
+    now = (now or datetime.datetime.now(LOCAL_TZ)).astimezone(LOCAL_TZ)
+    meia_noite = datetime.datetime.combine(now.date(), datetime.time(0, 0, 0), tzinfo=LOCAL_TZ)
     return int(meia_noite.timestamp() * 1000)
 
 
@@ -204,6 +204,7 @@ def consolidar_turno_por_contexto(
     eventos_servico_ms: list[int],
     tem_atividade_andamento: bool = False,
     retorno_ultimo_servico_ms: int | None = None,
+    now: datetime.datetime | None = None,
 ) -> dict[str, typing.Any]:
     """Classifica o turno da equipe no Rotalog.
 
@@ -212,8 +213,9 @@ def consolidar_turno_por_contexto(
     - O encerramento do turno fechado assume o horário de RETORNO (ou término) do último serviço.
     - Se a equipe estiver dentro da janela de 2 horas desde o último retorno e sem T de encerramento -> ABERTO aguardando despacho.
     """
-    inicio_dia_ms = _obter_inicio_dia_operacional_ms()
-    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    now = (now or datetime.datetime.now(LOCAL_TZ)).astimezone(LOCAL_TZ)
+    inicio_dia_ms = _obter_inicio_dia_operacional_ms(now)
+    now_ms = int(now.timestamp() * 1000)
 
     markers = sorted(
         (item for item in marcadores_t if item.get("start")),
@@ -291,11 +293,11 @@ def consolidar_turno_por_contexto(
         # 2. Turno Diurno (após 20:00):
         #    - A partir das 20:00, se ficou mais de 2 horas sem novo serviço ou possui marcador T de fim explícito -> FECHADO.
         # 3. Durante o expediente diurno (entre 08:00 e 20:00 para equipes do dia): permanece ABERTO aguardando novos despachos.
-        hora_atual_local = datetime.datetime.now(LOCAL_TZ).hour
+        hora_atual_local = now.hour
         dt_inicio = datetime.datetime.fromtimestamp(inicio_ms / 1000, LOCAL_TZ) if inicio_ms else None
         dt_fim_servico = datetime.datetime.fromtimestamp(fim_turno_ms / 1000, LOCAL_TZ) if fim_turno_ms else None
 
-        dia_atual = datetime.datetime.now(LOCAL_TZ).date()
+        dia_atual = now.date()
         servicos_hoje_existentes = bool(services_today)
         marcadores_hoje_existentes = bool(markers and any(
             datetime.datetime.fromtimestamp(int(m["start"]) / 1000, LOCAL_TZ).date() == dia_atual
@@ -566,6 +568,7 @@ def extrair_dados_tempo_real(
     crawler: CrawlerRotalog | None = None,
     max_tentativas: int = 3,
     identificador_para_equipe: dict[str, str] | None = None,
+    snapshots_anteriores: dict[str, dict[str, typing.Any]] | None = None,
 ) -> list[dict[str, typing.Any]]:
     """
     Realiza a requisição autenticada à página /paginas/tempoReal do Rotalog,
@@ -603,7 +606,7 @@ def extrair_dados_tempo_real(
             break
 
     if not timeline_script:
-        return []
+        raise RuntimeError("Resposta Copel sem timeline; coleta nao confirmada.")
 
     js_clean = re.sub(r"new Date\((\d+)\)", r"\1", timeline_script)
     pattern = r'\{"start":\s*(\d+)\s*,\s*"end":\s*(\d+|\w+)\s*,\s*"editable":\s*(true|false)\s*,\s*"group":\s*"(.*?)"\s*,\s*"className":\s*"(.*?)"\s*,\s*"content":\s*"(.*?)"\}'
@@ -621,6 +624,8 @@ def extrair_dados_tempo_real(
         })
 
     equipas_map: dict[str, dict[str, typing.Any]] = {}
+    if not raw_items:
+        raise RuntimeError("Timeline sem eventos reconhecidos; preservar ultimo snapshot.")
 
     for item in raw_items:
         group_raw = item["group"]
@@ -673,7 +678,8 @@ def extrair_dados_tempo_real(
         cnt = item["content"]
         eq_code = eq_dict["equipe_codigo"]
         equipment_identifier = str(eq_dict.get("identificador_equipamento") or "").strip().upper()
-        popup_info = (
+        popup_info = {}  # Popups globais nao identificam univocamente cada evento.
+        unused_popup_info = (
             popups_map.get(f"{eq_code}_{cnt}")
             or popups_map.get(f"IDENTIFIER:{equipment_identifier}_{cnt}")
             or popups_map.get(eq_code)
@@ -722,6 +728,7 @@ def extrair_dados_tempo_real(
                 "categoria": categoria,
                 "tipo": tipo_real,
                 "status": "CONCLUSAO",
+                "camposEstimados": ["inicioDeslocamento", "retorno"],
                 "inicioDeslocamento": popup_info.get("inicioDeslocamento") or hora_inicio,
                 "inicioExecucao": popup_info.get("inicioExecucao") or hora_inicio,
                 "termino": hora_fim,
@@ -756,6 +763,7 @@ def extrair_dados_tempo_real(
                 "protocolo": prot_real,
                 "protocoloBruto": popup_info.get("protocoloBruto") or prot_real,
                 "status": status_str,
+                "camposEstimados": ["inicioDeslocamento"] if status_str == "EXECUCAO" else [],
                 "categoria": categoria,
                 "tipo": tipo_real,
                 "inicioDeslocamento": popup_info.get("inicioDeslocamento") or hora_inicio,
@@ -786,12 +794,55 @@ def extrair_dados_tempo_real(
 
     resultado = consolidar_equipes_duplicadas(list(equipas_map.values()))
 
-    # 1. Enriquecimento prioritário via cliques forçados em cada quadrado da timeline do Tempo Real (mapeamento exato 1-a-1)
+    # 1. Reaproveita o snapshot anterior. A listagem historica de eventos pertence
+    # exclusivamente ao job diario das 04:30 e nao participa do tempo real.
+    resolvidos_pelo_snapshot = _enriquecer_com_snapshot_anterior(
+        resultado, snapshots_anteriores or {}
+    )
+    hoje_local = datetime.datetime.now(LOCAL_TZ).date()
+    data_minima_tempo_real = hoje_local - datetime.timedelta(days=1)
+
+    def _servico_recente_sem_protocolo(srv: dict[str, typing.Any]) -> bool:
+        if not _servico_precisa_detalhes(srv) or not srv.get("inicioIso"):
+            return False
+        try:
+            data_servico = (
+                datetime.datetime.fromisoformat(srv["inicioIso"])
+                .astimezone(LOCAL_TZ)
+                .date()
+            )
+        except (TypeError, ValueError):
+            return False
+        return data_minima_tempo_real <= data_servico <= hoje_local
+
+    candidatos_iniciais = 0
+    for eq in resultado:
+        for srv in eq.get("ss_executadas", []) + eq.get("ss_em_andamento", []):
+            if _servico_recente_sem_protocolo(srv):
+                candidatos_iniciais += 1
+
+    indices_sem_protocolo = {
+        srv.get("eventIdx")
+        for eq in resultado
+        for srv in (eq.get("ss_executadas", []) + eq.get("ss_em_andamento", []))
+        if srv.get("eventIdx") is not None and _servico_recente_sem_protocolo(srv)
+    }
+    logger.info(
+        "Enriquecimento incremental: candidatos=%s; resolvidos_pelo_snapshot=%s; "
+        "consultas_individuais=%s",
+        candidatos_iniciais,
+        resolvidos_pelo_snapshot,
+        len(indices_sem_protocolo),
+    )
+
+    # 2. Consulta individualmente apenas os quadrados que a listagem nao resolveu.
     try:
         vs_input = soup.find("input", {"name": "javax.faces.ViewState"})
         view_state = vs_input["value"] if vs_input and vs_input.get("value") else None
         if 'session' in locals() and session and view_state and raw_items:
-            cliques_by_idx = _forcar_cliques_timeline_tempo_real(session, view_state, raw_items)
+            cliques_by_idx = _forcar_cliques_timeline_tempo_real(
+                session, view_state, raw_items, event_indices=indices_sem_protocolo
+            )
             if cliques_by_idx:
                 for eq in resultado:
                     for srv in (eq.get("ss_executadas", []) + eq.get("ss_em_andamento", [])):
@@ -823,11 +874,17 @@ def extrair_dados_tempo_real(
                                 srv["termino"] = popup_data["termino"]
                             if popup_data.get("retorno"):
                                 srv["retorno"] = popup_data["retorno"]
+                            srv["detalhesStatus"] = srv.get("status")
+                            srv["camposEstimados"] = [
+                                f for f in srv.get("camposEstimados", [])
+                                if not popup_data.get(f)
+                            ]
+                            srv["fonteProtocolo"] = "POPUP"
                 logger.info("Enriquecimento via cliques forçados na timeline: %s eventos vinculados 1-a-1 com sucesso.", len(cliques_by_idx))
     except Exception as exc:
         logger.warning("Falha ao executar cliques forçados na timeline do Tempo Real: %s", exc)
 
-    # 2. Conclui consolidação de equipes e status de turno (após enriquecimento de horários e retornos)
+    # 3. Conclui consolidacao de equipes e status de turno.
     for eq in resultado:
         eventos_servico_ms = eq.pop("eventos_servico_ms", [])
         tem_andamento = bool(eq.get("ss_em_andamento") or eq.get("atividade_atual"))
@@ -895,7 +952,7 @@ def extrair_dados_tempo_real(
     # 4. Verificação final de serviços que ainda não possuem protocolo após todas as fontes de enriquecimento
     protocolos_ausentes = []
     for eq in resultado:
-        for service in eq.get("ss_em_andamento", []):
+        for service in eq.get("ss_em_andamento", []) + eq.get("ss_executadas", []):
             if not _eh_protocolo_valido(service.get("protocolo")):
                 protocolos_ausentes.append({
                     "equipe": eq.get("equipe_codigo"),
@@ -1042,69 +1099,135 @@ def _obter_eventos_tabela_dia(session: requests.Session, data_str: str | None = 
         return []
 
 
+def _enriquecer_tabela_segura(equipes, eventos):
+    """Associa uma linha a um unico servico por equipe, data, tipo e inicio."""
+    propostas = []
+    for eq in equipes:
+        for srv in eq.get("ss_executadas", []) + eq.get("ss_em_andamento", []):
+            if _eh_protocolo_valido(srv.get("protocolo")):
+                continue
+            inicio = srv.get("inicioIso")
+            if not inicio:
+                continue
+            data = datetime.datetime.fromisoformat(inicio).astimezone(LOCAL_TZ).date().isoformat()
+            hora = _extrair_hora_string(srv.get("inicioExecucao"))
+            tipo = str(srv.get("tipo") or "").strip().upper()
+            candidatos = [
+                ev for ev in eventos
+                if ev.get("equipe") == eq.get("equipe_codigo")
+                and ev.get("dataReferencia") == data
+                and tipo and tipo == str(ev.get("tipo") or ev.get("codigo") or "").strip().upper()
+                and hora and hora == ev.get("inicioExecucao")
+                and _eh_protocolo_valido(ev.get("protocolo"))
+            ]
+            if len(candidatos) == 1:
+                propostas.append((srv, candidatos[0]))
+            else:
+                srv["validacaoProtocolo"] = "AMBIGUO" if candidatos else "NAO_ENCONTRADO"
+    for srv, ev in propostas:
+        if sum(other is ev for _, other in propostas) != 1:
+            srv["validacaoProtocolo"] = "AMBIGUO"
+            continue
+        srv.update(protocolo=ev["protocolo"], protocoloBruto=ev.get("protocoloBruto"),
+                   ssId=ev["protocolo"], fonteProtocolo="LISTAGEM_EVENTOS",
+                   validacaoProtocolo="EQUIPE_DATA_TIPO_INICIO_UNICOS")
+        for origem, destino in (("inicioDeslocamento", "inicioDeslocamento"),
+                                ("fimExecucao", "termino"), ("retorno", "retorno")):
+            if not srv.get(destino) and ev.get(origem):
+                srv[destino] = ev[origem]
+
+
+def _enriquecer_com_snapshot_anterior(
+    equipes: list[dict[str, typing.Any]],
+    snapshots: dict[str, dict[str, typing.Any]],
+) -> int:
+    """Reaproveita detalhes somente quando equipe, inicio e tipo identificam um servico."""
+    if not equipes or not snapshots:
+        return 0
+
+    resolvidos = 0
+    campos = (
+        "protocolo",
+        "protocoloBruto",
+        "ssId",
+        "categoria",
+        "sequencia",
+        "latitude",
+        "longitude",
+        "geolocalizacao",
+        "inicioDeslocamento",
+        "inicioExecucao",
+        "retorno",
+    )
+    for eq in equipes:
+        equipe_codigo = str(eq.get("equipe_codigo") or "").strip().upper()
+        team_key = re.sub(r"[^A-Z0-9_-]+", "", equipe_codigo)
+        anterior = snapshots.get(team_key) or snapshots.get(equipe_codigo) or {}
+        servicos_anteriores = (
+            (anterior.get("ssExecutadas") or [])
+            + (anterior.get("ssEmAndamento") or [])
+        )
+        for srv in (eq.get("ss_executadas") or []) + (eq.get("ss_em_andamento") or []):
+            inicio = str(srv.get("inicioIso") or "")
+            tipo = str(srv.get("tipo") or "").strip().upper()
+            if not inicio or not tipo:
+                continue
+            candidatos = [
+                item
+                for item in servicos_anteriores
+                if str(item.get("inicioIso") or "") == inicio
+                and str(item.get("tipo") or "").strip().upper() == tipo
+                and _eh_protocolo_valido(item.get("protocolo"))
+            ]
+            if len(candidatos) != 1:
+                continue
+            anterior_srv = candidatos[0]
+            if (_eh_protocolo_valido(srv.get("protocolo"))
+                    and srv["protocolo"] != anterior_srv["protocolo"]):
+                continue
+            for campo in campos:
+                valor = anterior_srv.get(campo)
+                missing = srv.get(campo) in (None, "")
+                estimated = (campo in srv.get("camposEstimados", [])
+                             and campo not in anterior_srv.get("camposEstimados", [])
+                             and bool(anterior_srv.get("detalhesStatus")))
+                missing = missing or estimated
+                if campo in {"protocolo", "protocoloBruto", "ssId"}:
+                    missing = not _eh_protocolo_valido(srv.get(campo))
+                if missing and valor not in (None, ""):
+                    srv[campo] = valor
+                    if estimated:
+                        srv["camposEstimados"].remove(campo)
+            if anterior_srv.get("detalhesStatus") and anterior_srv.get("detalhesStatus") == srv.get("status"):
+                srv["detalhesStatus"] = anterior_srv["detalhesStatus"]
+            srv["fonteProtocolo"] = anterior_srv.get("fonteProtocolo") or "SNAPSHOT_ANTERIOR"
+            srv["validacaoProtocolo"] = anterior_srv.get("validacaoProtocolo") or "EQUIPE_INICIO_TIPO_UNICOS"
+            resolvidos += 1
+    return resolvidos
+
+
+def _servico_precisa_detalhes(srv):
+    """A mudanca de etapa pode exigir novos detalhes, mesmo com protocolo conhecido."""
+    if not _eh_protocolo_valido(srv.get("protocolo")):
+        return True
+    status = srv.get("status") or srv.get("statusAtual")
+    fields = ["inicioDeslocamento"]
+    if status in {"EXECUCAO", "CONCLUSAO"}:
+        fields.append("inicioExecucao")
+    if status == "CONCLUSAO":
+        fields.append("termino")
+        fields.append("retorno")
+    return (any(not srv.get(f) for f in fields)
+            or any(f in srv.get("camposEstimados", []) for f in fields)
+            or srv.get("detalhesStatus") != status)
+
+
 def _enriquecer_servicos_com_tabela_eventos(
     equipes: list[dict[str, typing.Any]],
     eventos_tabela: list[dict[str, typing.Any]],
 ) -> None:
     """Cruza os serviços extraídos da timeline com os protocolos detalhados da tbListagemEventos."""
-    if not eventos_tabela or not equipes:
-        return
-
-    eventos_por_equipe: dict[str, list[dict[str, typing.Any]]] = {}
-    for ev in eventos_tabela:
-        eq_chave = ev.get("equipe")
-        if eq_chave:
-            eventos_por_equipe.setdefault(eq_chave, []).append(ev)
-
-    for eq in equipes:
-        eq_codigo = (eq.get("equipe_codigo") or eq.get("veiculo") or "").strip().upper()
-        eventos_candidatos = eventos_por_equipe.get(eq_codigo, [])
-        if not eventos_candidatos:
-            continue
-
-        todos_servicos = (eq.get("ss_executadas") or []) + (eq.get("ss_em_andamento") or [])
-        for srv in todos_servicos:
-            if _eh_protocolo_valido(srv.get("protocolo")):
-                continue
-
-            tipo_srv = str(srv.get("tipo") or "").strip().upper()
-            hora_ini = str(srv.get("inicioExecucao") or srv.get("inicioDeslocamento") or "").strip()[:5]
-            hora_fim = str(srv.get("termino") or srv.get("retorno") or "").strip()[:5]
-
-            match_evento = None
-            # 1. Match por Tipo e Horário de Início
-            for ev in eventos_candidatos:
-                ev_tipo = str(ev.get("tipo") or ev.get("codigo") or "").strip().upper()
-                ev_ini = str(ev.get("inicioExecucao") or ev.get("inicioDeslocamento") or "").strip()[:5]
-                ev_fim = str(ev.get("fimExecucao") or ev.get("retorno") or "").strip()[:5]
-
-                if hora_ini and ev_ini and hora_ini == ev_ini:
-                    match_evento = ev
-                    break
-                if hora_fim and ev_fim and hora_fim == ev_fim:
-                    match_evento = ev
-                    break
-                if tipo_srv and (tipo_srv == ev_tipo or tipo_srv in ev_tipo or ev_tipo in tipo_srv):
-                    if (hora_ini and ev_ini and abs(int(hora_ini[:2])*60 + int(hora_ini[3:5]) - (int(ev_ini[:2])*60 + int(ev_ini[3:5]))) <= 15):
-                        match_evento = ev
-                        break
-
-            # Se não casou por horário exato, tenta o primeiro evento com o mesmo tipo
-            if not match_evento and len(eventos_candidatos) == 1:
-                match_evento = eventos_candidatos[0]
-
-            if match_evento and match_evento.get("protocolo"):
-                srv["protocolo"] = match_evento["protocolo"]
-                srv["protocoloBruto"] = match_evento.get("protocoloBruto") or match_evento["protocolo"]
-                srv["ssId"] = match_evento["protocolo"]
-                if match_evento.get("inicioDeslocamento") and not srv.get("inicioDeslocamento"):
-                    srv["inicioDeslocamento"] = match_evento["inicioDeslocamento"]
-                if match_evento.get("inicioExecucao") and not srv.get("inicioExecucao"):
-                    srv["inicioExecucao"] = match_evento["inicioExecucao"]
-                if match_evento.get("fimExecucao") and not srv.get("termino"):
-                    srv["termino"] = match_evento["fimExecucao"]
-                if match_evento.get("retorno") and not srv.get("retorno"):
-                    srv["retorno"] = match_evento["retorno"]
+    _enriquecer_tabela_segura(equipes, eventos_tabela)
 
 
 def _obter_dados_timeline_equipes(
@@ -1192,7 +1315,7 @@ def _eh_protocolo_valido(prot: typing.Any) -> bool:
     prot_str = str(prot).strip().upper()
     if prot_str in ["UC", "CHAVE", "TRAFO", "ALIM", "ALIMENTADOR", "RISCO", "9901", "196", "NONE", "NULL", ""]:
         return False
-    return bool(re.search(r"\d{6,}", prot_str))
+    return bool(re.fullmatch(r"\d{7,15}(?:\.\d+)*", prot_str))
 
 
 def _enriquecer_servicos_com_timelines_equipes(
@@ -1272,19 +1395,23 @@ def _forcar_cliques_timeline_tempo_real(
     session: requests.Session,
     view_state: str,
     raw_items: list[dict[str, typing.Any]],
+    event_indices: set[int] | None = None,
 ) -> dict[int, dict[str, typing.Any]]:
     """
     Simula o clique em cada quadrado/evento da timeline na página /paginas/tempoReal,
     disparando o evento AJAX 'select' com 'form:cm-patientregistry-facesheet-timeline_eventIdx'.
-    Utiliza cache em memória para eventos já concluídos e pool paralelo de threads para novos eventos.
+    Reutiliza eventos concluidos e consulta novos eventos sequencialmente na sessao JSF.
     """
     global _CLIQUE_EVENTOS_CACHE
     service_items = [
         item for item in raw_items
-        if "tempoRealExecutado" in item.get("className", "")
-        or "tempoRealEmExecucao" in item.get("className", "")
-        or "tempoRealEmDeslocamento" in item.get("className", "")
-        or "tempoRealPendente" in item.get("className", "")
+        if (event_indices is None or item.get("idx") in event_indices)
+        and (
+            "tempoRealExecutado" in item.get("className", "")
+            or "tempoRealEmExecucao" in item.get("className", "")
+            or "tempoRealEmDeslocamento" in item.get("className", "")
+            or "tempoRealPendente" in item.get("className", "")
+        )
     ]
 
     if not service_items or not view_state:
@@ -1309,7 +1436,7 @@ def _forcar_cliques_timeline_tempo_real(
             group = item.get("group", "")
             is_executado = "tempoRealExecutado" in cls
 
-            cache_key = (start_ms, end_ms, group)
+            cache_key = (start_ms, end_ms, group, item.get("content"), idx)
             if is_executado and cache_key in _CLIQUE_EVENTOS_CACHE:
                 cached = dict(_CLIQUE_EVENTOS_CACHE[cache_key])
                 cached["eventIdx"] = idx
@@ -1327,7 +1454,7 @@ def _forcar_cliques_timeline_tempo_real(
         end_ms = item.get("end")
         group = item.get("group", "")
         is_executado = "tempoRealExecutado" in cls
-        cache_key = (start_ms, end_ms, group) if is_executado else None
+        cache_key = (start_ms, end_ms, group, item.get("content"), idx) if is_executado else None
 
         payload = {
             "javax.faces.partial.ajax": "true",
@@ -1385,12 +1512,34 @@ def _forcar_cliques_timeline_tempo_real(
                         "start_ms": item.get("start"),
                         "end_ms": item.get("end"),
                     }
+                    equipe_popup = re.search(r"Equipe[\s:-]*(E[A-Z0-9]{3,7})\b", p_clean, re.IGNORECASE)
+                    equipe_item = parse_group_string(group).get("equipe_codigo", "")
+                    if not equipe_popup or equipe_popup.group(1).upper() != equipe_item.upper():
+                        linha_timeline = " ".join(str(group or "").split()) or "<linha vazia>"
+                        equipe_encontrada = equipe_popup.group(1).upper() if equipe_popup else "<ausente>"
+                        logger.warning(
+                            "Popup sem identidade de equipe confirmada: evento=%s; linha=%r; "
+                            "equipe_linha=%s; equipe_popup=%s",
+                            idx,
+                            linha_timeline,
+                            equipe_item or "<ausente>",
+                            equipe_encontrada,
+                        )
+                        return idx, None, None, False
+                    if data.get("tipo") != item.get("content"):
+                        return idx, None, None, False
+                    if data.get("inicioExecucao") != _convert_ms_to_hora(start_ms):
+                        return idx, None, None, False
                     return idx, data, cache_key, is_executado
         except Exception:
             pass
         return idx, None, None, False
 
+    popup_started = time.monotonic()
     for item in items_to_fetch:
+        if time.monotonic() - popup_started >= 120:
+            logger.warning("Limite de 120s dos popups atingido; detalhes restantes pendentes.")
+            break
         try:
             idx, data, cache_key, is_executado = _fetch_event_popup(item)
             if data:

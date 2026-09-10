@@ -1,0 +1,45 @@
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git
+.git/
+.gitignore
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Segredos/credenciais locais
+.env
+.env.*
+*.pem
+*.key
+firebase_service_account.json
+*service_account*.json
+
+# Artefatos gerados localmente
+*.pdf
+*.xlsx
+preview_importacao.json
+*.log
+
+# Pastas locais de apoio/teste, se existirem
+.cache/
+.cache_local/
+local/
+sandbox/
+.agent/
+tmp/
+temp/
+tests/
+teste/

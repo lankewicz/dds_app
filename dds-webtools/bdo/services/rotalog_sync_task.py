@@ -32,6 +32,7 @@ from bdo.services.rotalog_change_tracker import (
     changed_fields,
     compact_snapshot,
 )
+from bdo.services.rotalog_execution_log import RotalogExecutionLog
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,10 @@ _equipment_index_cache: dict[str, typing.Any] = {"data": {}, "team_docs": {}, "l
 _EQUIPMENT_INDEX_TTL_SECONDS = 86400  # 24 horas
 _durable_cache_store = RotalogGcsSnapshotStore(
     os.getenv("DDS_BUCKET_NAME", "dds-treinamentos.firebasestorage.app"),
-    os.getenv("ROTALOG_GCS_CACHE_BLOB", "_cache/rotalog/monitor-snapshot.json.gz"),
+    os.getenv(
+        "ROTALOG_GCS_CACHE_BLOB",
+        "dados/chicoeletro/rotalog/equipes/current/index.json.gz",
+    ),
 )
 _durable_cache_state: dict[str, typing.Any] = {
     "hydrated": False,
@@ -58,6 +62,7 @@ _durable_cache_state: dict[str, typing.Any] = {
 }
 _durable_cache_lock = threading.RLock()
 _team_file_repository = RotalogTeamFileRepository(_durable_cache_store)
+_execution_log = RotalogExecutionLog(_durable_cache_store)
 _ROTALOG_PERSISTENCE_MODE = os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower()
 _json_activity_feed: list[dict[str, typing.Any]] = []
 
@@ -129,10 +134,17 @@ def get_rotalog_team_daily_today(team_key: str) -> dict[str, typing.Any] | None:
     day = datetime.datetime.now(LOCAL_TZ).date().isoformat()
     return get_rotalog_team_daily(team_key, day)
 
+
+def get_rotalog_execution_log(day: str | None = None) -> dict[str, typing.Any]:
+    selected_day = day or datetime.datetime.now(LOCAL_TZ).date().isoformat()
+    datetime.date.fromisoformat(selected_day)
+    return _execution_log.load(selected_day)
+
 def _hydrate_durable_cache_once() -> None:
     """Hidrata snapshots e índice uma vez; falhas no GCS não interrompem a raspagem."""
     with _durable_cache_lock:
-        if _durable_cache_state["hydrated"]:
+        if (_durable_cache_state["hydrated"]
+                and time.monotonic() - _durable_cache_state.get("loaded_at", 0) < 30):
             return
         local_snapshot = _local_cache.snapshot()
         if not _durable_cache_store.enabled:
@@ -145,7 +157,11 @@ def _hydrate_durable_cache_once() -> None:
             if remote_snapshots is None:
                 # Compatibilidade com o primeiro formato, que continha somente snapshots.
                 remote_snapshots = remote_payload
-            if not local_snapshot and remote_snapshots:
+            if remote_snapshots is not None:
+                collected_at = remote_payload.get("updatedAtIso")
+                for snapshot in remote_snapshots.values():
+                    if isinstance(snapshot, dict) and collected_at:
+                        snapshot["lastCollectedAt"] = collected_at
                 _local_cache.replace(remote_snapshots)
             equipment_index = remote_payload.get("equipmentIndex")
             team_docs = remote_payload.get("teamDocs")
@@ -157,10 +173,10 @@ def _hydrate_durable_cache_once() -> None:
                 _equipment_index_cache["team_docs"] = team_docs if isinstance(team_docs, dict) else {}
                 _equipment_index_cache["loaded_at"] = time.monotonic()
             source = "gcs" if remote_payload else "gcs_empty"
-            _durable_cache_state.update({"hydrated": True, "source": source})
+            _durable_cache_state.update({"hydrated": True, "source": source, "loaded_at": time.monotonic()})
         except Exception as exc:
             logger.warning("Não foi possível hidratar o cache ROTALOG no GCS: %s", exc)
-            _durable_cache_state.update({"hydrated": True, "source": "gcs_error"})
+            _durable_cache_state.update({"hydrated": False, "source": "gcs_error"})
 
 def _persist_durable_cache() -> bool:
     if not _durable_cache_store.enabled:
@@ -666,11 +682,14 @@ def _persistir_somente_json(
         previous = _local_cache.get(team_key)
         needs_full_upgrade = not previous or not previous.get("teamKey")
         changes = changed_fields(previous, current)
-        if not forcar and not needs_full_upgrade and not changes:
+        local_day = datetime.datetime.fromisoformat(timestamp_iso).astimezone(LOCAL_TZ).date().isoformat()
+        previous_day = (previous or {}).get("historyDay")
+        if not forcar and not needs_full_upgrade and not changes and previous_day == local_day:
             skipped += 1
             continue
-        prev_date = str((previous or {}).get("updatedAtIso") or (previous or {}).get("updatedAt") or "")[:10]
-        cur_date = timestamp_iso[:10]
+        current["historyDay"] = local_day
+        prev_date = previous_day
+        cur_date = local_day
         if prev_date != cur_date:
             current["version"] = 1
         else:
@@ -699,15 +718,23 @@ def _persistir_somente_json(
     daily_file_writes = 0
     scheduled_file_writes = 0
     if updates:
-        _local_cache.set_many(updates)
         local_day = datetime.datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00")).astimezone(LOCAL_TZ).date().isoformat()
         if _durable_cache_store.enabled:
             for document in updates.values():
                 try:
                     _team_file_repository.merge_and_save_daily(document, local_day)
+                    _team_file_repository.save_current(document)
                     daily_file_writes += 1
+                    yesterday = (datetime.date.fromisoformat(local_day) - datetime.timedelta(days=1)).isoformat()
+                    if any(str(s.get("inicioIso") or "")[:10] == yesterday
+                           for s in (document.get("ssExecutadas") or []) + (document.get("ssEmAndamento") or [])):
+                        _team_file_repository.merge_and_save_daily(document, yesterday)
+                        daily_file_writes += 1
                 except Exception as exc:
                     logger.warning("Não foi possível persistir arquivos da equipe %s: %s", document.get("teamKey"), exc)
+                    raise
+        previous_cache = _local_cache.snapshot()
+        _local_cache.set_many(updates)
     if feed_items:
         combined = feed_items + _json_activity_feed
         seen = set()
@@ -719,9 +746,13 @@ def _persistir_somente_json(
             seen.add(event_id)
             deduplicated.append(item)
         _json_activity_feed[:] = deduplicated[:30]
-    should_persist = bool(updates) or bool(_durable_cache_state.get("equipment_loaded_from_firestore"))
+    should_persist = True
     persisted = _persist_durable_cache() if should_persist else False
-    monthly_result = {"executed": False, "reason": "storage_disabled"}
+    if _durable_cache_store.enabled and not persisted:
+        if updates:
+            _local_cache.replace(previous_cache)
+        raise RuntimeError("Falha ao publicar indice Rotalog; alteracoes serao repetidas.")
+    monthly_result = {"executed": False, "reason": "daily_archive_responsibility"}
     turn_check_result = {"executed": False, "reason": "storage_disabled"}
     if _durable_cache_store.enabled:
         try:
@@ -731,14 +762,6 @@ def _persistir_somente_json(
         except Exception as exc:
             logger.warning("Falha ao registrar checagem diária dos turnos: %s", exc)
             turn_check_result = {"executed": False, "reason": "error", "error": str(exc)}
-    if _durable_cache_store.enabled:
-        try:
-            monthly_result = _team_file_repository.consolidate_month_once_per_day()
-            if monthly_result.get("executed"):
-                scheduled_file_writes += 3
-        except Exception as exc:
-            logger.warning("Falha na consolidação mensal ROTALOG: %s", exc)
-            monthly_result = {"executed": False, "reason": "error", "error": str(exc)}
 
     t_fim_persistencia = time.perf_counter()
     hora_fim = datetime.datetime.now(LOCAL_TZ)
@@ -797,10 +820,11 @@ def _persistir_somente_json(
         "cacheDuravelPersistidoNesteCiclo": persisted,
         "gravacoesJsonDiario": daily_file_writes,
         "gravacoesRotinasAgendadas": scheduled_file_writes,
-        "gravacoesArquivosEquipe": daily_file_writes + scheduled_file_writes,
+        "gravacoesArquivosEquipe": daily_file_writes + len(updates) + scheduled_file_writes,
         "gravacoesCloudStorageTotal": (
             int(_durable_cache_state.get("writes", 0)) - gcs_writes_before
             + daily_file_writes
+            + len(updates)
             + scheduled_file_writes
         ),
         "consolidacaoMensal": monthly_result,
@@ -830,7 +854,10 @@ def _executar_sincronizacao_rotalog(
     equipment_reads_before = int(_durable_cache_state.get("equipment_firestore_reads", 0))
     equipment_index = _get_equipment_identifier_index(db)
     equipment_firestore_reads = int(_durable_cache_state.get("equipment_firestore_reads", 0)) - equipment_reads_before
-    equipas = extrair_dados_tempo_real(identificador_para_equipe=equipment_index)
+    equipas = extrair_dados_tempo_real(
+        identificador_para_equipe=equipment_index,
+        snapshots_anteriores=_local_cache.snapshot(),
+    )
 
     t_fim_raspagem = time.perf_counter()
     hora_fim_raspagem = datetime.datetime.now(LOCAL_TZ)
@@ -1167,24 +1194,75 @@ def executar_sincronizacao_rotalog(
     equipes_filtro: set[str] | None = None,
 ) -> dict[str, typing.Any]:
     """Garante uma única sincronização por processo, inclusive via endpoint manual."""
+    started_at = datetime.datetime.now(LOCAL_TZ)
+    started_counter = time.perf_counter()
     if not _sync_execution_lock.acquire(blocking=False):
-        return {
+        result = {
             "status": "skipped",
             "reason": "sync_already_running",
             "message": "Já existe uma sincronização do Rotalog em andamento.",
         }
+        _record_execution_log(result, started_at, started_counter)
+        return result
+    lease_token = None
     try:
+        if _durable_cache_store.enabled:
+            lease_token = _durable_cache_store.acquire_sync_lease()
+            if not lease_token:
+                result = {"status": "skipped", "reason": "sync_already_running"}
+                _record_execution_log(result, started_at, started_counter)
+                return result
         normalized_filter = (
             {normalize_team_key(value) for value in equipes_filtro}
             if equipes_filtro else None
         )
-        return _executar_sincronizacao_rotalog(
+        result = _executar_sincronizacao_rotalog(
             empresa=empresa,
             forcar=forcar,
             equipes_filtro=normalized_filter,
         )
+        _record_execution_log(result, started_at, started_counter)
+        return result
+    except Exception as exc:
+        _record_execution_log(
+            {"status": "failed", "errorType": type(exc).__name__, "message": str(exc)[:500]},
+            started_at,
+            started_counter,
+        )
+        raise
     finally:
-        _sync_execution_lock.release()
+        try:
+            if lease_token:
+                _durable_cache_store.release_sync_lease(lease_token)
+        finally:
+            _sync_execution_lock.release()
+
+
+def _record_execution_log(
+    result: dict[str, typing.Any],
+    started_at: datetime.datetime,
+    started_counter: float,
+) -> None:
+    finished_at = datetime.datetime.now(LOCAL_TZ)
+    measured = result.get("afericaoTempo") or {}
+    duration = float(measured.get("duracaoRaspagemSegundos") or (time.perf_counter() - started_counter))
+    details = {
+        "reason": result.get("reason"),
+        "teams": result.get("totalEquipesRotalog"),
+        "scrapeDurationSeconds": measured.get("duracaoRaspagemSegundos"),
+        "persistenceDurationSeconds": measured.get("duracaoPersistenciaSegundos"),
+        "totalDurationSeconds": measured.get("duracaoTotalSegundos"),
+    }
+    try:
+        _execution_log.record(
+            str(result.get("status") or "failed"),
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_seconds=duration,
+            details={key: value for key, value in details.items() if value is not None},
+        )
+    except Exception as exc:
+        logger.warning("Não foi possível gravar log diário da raspagem Rotalog: %s", exc)
 
 
 def get_dynamic_sync_interval_seconds(default_override: int | None = None) -> int:

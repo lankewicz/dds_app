@@ -1420,9 +1420,28 @@ def _rotalog_json_snapshots() -> dict[str, dict[str, Any]]:
 
 def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[str, Any]:
     if not snapshot:
-        return item
+        merged = dict(item)
+        merged["operacional"] = {
+            "fonte": "ROTALOG_JSON",
+            "disponivel": False,
+            "estado": "DESCONHECIDO",
+            "atividade": None,
+            "servicoAtual": None,
+            "atualizadoEm": None,
+        }
+        merged["estado"] = "DESCONHECIDO"
+        merged["estadoOriginal"] = "DESCONHECIDO"
+        merged["ss"] = "-"
+        merged["updatedAt"] = None
+        merged["lastContact"] = None
+        merged["lastContactSource"] = None
+        return merged
     merged = dict(item)
     merged["rotalogSnapshot"] = snapshot
+    original_estado = normalize_estado(item.get("estado"))
+    original_writer = str(item.get("deviceIdLastWriter") or "").upper()
+    original_dt = to_utc_dt(item.get("updatedAt"))
+    original_ms = int(original_dt.timestamp() * 1000) if original_dt else 0
     merged["atividadeStatusRotalog"] = (snapshot.get("atividadeAtual") or {}).get("status")
     merged["monitorStatusRotalog"] = merged["atividadeStatusRotalog"] or snapshot.get("estadoConsolidado")
 
@@ -1432,6 +1451,8 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
         merged["ss"] = protocol
 
     turno = snapshot.get("turno") or {}
+    turno = {**turno, "inicio": turno.get("inicio") or turno.get("inicio_iso"),
+             "fim": turno.get("fim") or turno.get("fim_iso")}
     if turno.get("inicio"):
         merged["turnoInicio"] = turno.get("inicio")
         merged["inicioIso"] = turno.get("inicio")
@@ -1450,10 +1471,45 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
     if snapshot.get("veiculo"):
         merged["veiculo"] = snapshot.get("veiculo")
 
+    # Fonte unica para os dados operacionais exibidos no monitor.
+    activity = snapshot.get("atividadeAtual") or {}
+    snapshot_updated_at = snapshot.get("updatedAtIso")
+    if not snapshot_updated_at and snapshot.get("eventTimestampMs"):
+        try:
+            snapshot_updated_at = datetime.fromtimestamp(
+                int(snapshot["eventTimestampMs"]) / 1000,
+                tz=datetime.timezone.utc,
+            ).isoformat()
+        except (TypeError, ValueError, OSError):
+            snapshot_updated_at = None
+
+    estado_snapshot = normalize_rotalog_turn_state(
+        snapshot.get("estadoConsolidado") or "DESCONHECIDO"
+    )
+    merged["operacional"] = {
+        "fonte": "ROTALOG_JSON",
+        "disponivel": True,
+        "estado": estado_snapshot,
+        "atividade": activity.get("status"),
+        "servicoAtual": activity or None,
+        "atualizadoEm": snapshot_updated_at,
+        "veiculo": snapshot.get("veiculo"),
+        "identificadorEquipamento": snapshot.get("identificadorEquipamento"),
+        "identidadeVerificada": snapshot.get("identidadeVerificada"),
+        "evidenciaIdentidade": snapshot.get("evidenciaIdentidade"),
+    }
+    merged["estado"] = estado_snapshot
+    merged["estadoOriginal"] = estado_snapshot
+    merged["updatedAt"] = snapshot_updated_at
+    merged["lastContact"] = snapshot.get("lastCollectedAt") or snapshot_updated_at
+    merged["lastContactSource"] = "R"
+    merged["origemAtualizacao"] = "ROTALOG_JSON"
+    merged["deviceIdLastWriter"] = "ROTALOG_JSON"
+
     rotalog_ms = int(snapshot.get("eventTimestampMs") or 0)
     current_dt = to_utc_dt(merged.get("updatedAt"))
-    current_ms = int(current_dt.timestamp() * 1000) if current_dt else 0
-    previous_writer = str(merged.get("deviceIdLastWriter") or "").strip().upper()
+    current_ms = original_ms
+    previous_writer = original_writer
     can_apply_state = bool(rotalog_ms) and (
         not current_ms
         or rotalog_ms >= current_ms
@@ -1461,8 +1517,8 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
     )
     estado_rotalog = normalize_rotalog_turn_state(snapshot.get("estadoConsolidado") or "DESCONHECIDO")
 
-    current_estado = normalize_estado(merged.get("estado") or "DESCONHECIDO")
-    closed_at_ms = merged.get("closedAtClientMs") or current_ms
+    current_estado = original_estado
+    closed_at_ms = item.get("closedAtClientMs") or current_ms
     has_active_activity = bool(activity and activity.get("status") in {"DESLOCAMENTO", "EXECUCAO"})
 
     # Se a equipe já está com turno FECHADO no DDS (via app móvel ou encerramento),
@@ -1485,6 +1541,11 @@ def _overlay_rotalog_json(item: dict[str, Any], snapshot: dict[str, Any] | None)
         merged["deviceIdLastWriter"] = "ROTALOG_JSON"
         if estado_rotalog in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}:
             merged["active"] = True
+    else:
+        merged["estado"] = item.get("estado") or "DESCONHECIDO"
+        merged["estadoOriginal"] = item.get("estadoOriginal") or merged["estado"]
+        merged["origemAtualizacao"] = item.get("origemAtualizacao")
+        merged["deviceIdLastWriter"] = item.get("deviceIdLastWriter")
 
     if merged.get("estado") != "DESATUALIZADO":
         merged["critico"] = False

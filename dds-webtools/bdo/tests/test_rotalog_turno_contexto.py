@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from bdo.services.rotalog_tempo_real_service import (
     _parse_rotalog_popups,
@@ -9,10 +10,30 @@ from bdo.services.rotalog_tempo_real_service import (
     intervalo_ativo_por_contexto,
     parse_group_string,
     resolver_equipe_group,
+    _obter_inicio_dia_operacional_ms,
 )
 
 
 class RotalogTurnoContextoTests(unittest.TestCase):
+    def test_dia_operacional_vira_a_meia_noite_de_brasilia(self):
+        instant = datetime.fromisoformat("2026-09-10T01:00:00+00:00")
+        expected = datetime.fromisoformat("2026-09-09T00:00:00-03:00")
+        self.assertEqual(_obter_inicio_dia_operacional_ms(instant), int(expected.timestamp() * 1000))
+
+    def _turno(self, markers, services, *, hours_later=0):
+        # 09h em Brasilia; desloca os antigos valores sinteticos para uma data real.
+        base = datetime(2026, 9, 10, 9, tzinfo=timezone(timedelta(hours=-3)))
+        offset = int(base.timestamp() * 1000)
+        result = consolidar_turno_por_contexto(
+            [{**m, "start": offset + m["start"]} for m in markers],
+            [offset + value for value in services],
+            now=base + timedelta(hours=hours_later, minutes=1),
+        )
+        for field in ("inicio_ms", "fim_ms"):
+            if result.get(field) is not None:
+                result[field] -= offset
+        return result
+
     def test_formata_protocolo_com_prefixo_e_sufixo_rotalog(self):
         self.assertEqual(
             formatar_protocolo_copel("01.20265507121122.1.1"),
@@ -64,14 +85,14 @@ class RotalogTurnoContextoTests(unittest.TestCase):
         self.assertEqual(info["longitude"], -49.2733)
         self.assertEqual(info["geolocalizacao"], {"latitude": -25.4284, "longitude": -49.2733})
     def test_t_antes_da_serie_abre_turno(self):
-        turno = consolidar_turno_por_contexto([{"start": 1000}], [2000, 3000])
+        turno = self._turno([{"start": 1000}], [2000, 3000])
         self.assertEqual(turno["classificacao"], "ABERTO")
         self.assertTrue(turno["aberto"])
         self.assertEqual(turno["inicio_ms"], 1000)
 
     def test_t_depois_da_serie_fecha_turno(self):
-        turno = consolidar_turno_por_contexto(
-            [{"start": 1000}, {"start": 4000}], [2000, 3000]
+        turno = self._turno(
+            [{"start": 1000}, {"start": 4000}], [2000, 3000], hours_later=3
         )
         self.assertEqual(turno["classificacao"], "FECHADO")
         self.assertFalse(turno["aberto"])
@@ -80,13 +101,13 @@ class RotalogTurnoContextoTests(unittest.TestCase):
 
     def test_sem_t_assume_fim_no_ultimo_servico(self):
         # Durante o dia (< 20:00), equipe sem T explícito aguardando novos despachos permanece ABERTA
-        turno = consolidar_turno_por_contexto([], [2000, 3000])
+        turno = self._turno([], [2000, 3000])
         self.assertEqual(turno["classificacao"], "ABERTO")
         self.assertTrue(turno["aberto"])
         self.assertEqual(turno["inicio_ms"], 2000)
 
     def test_ultimo_t_antes_de_nova_serie_reabre(self):
-        turno = consolidar_turno_por_contexto(
+        turno = self._turno(
             [{"start": 1000}, {"start": 4000}, {"start": 5000}],
             [2000, 3000, 6000],
         )

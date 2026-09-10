@@ -140,6 +140,7 @@ fun HomeScreen(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFFE2E8F0))) {
         val isCompactHeight = maxHeight < 550.dp
+        val columnCount = if (maxWidth > maxHeight) 3 else 2
         val spacing = if (isCompactHeight) 8.dp else 16.dp
         val iconSize = if (isCompactHeight) 40.dp else 72.dp
         val fontSize = if (isCompactHeight) 14.sp else 16.sp
@@ -152,48 +153,32 @@ fun HomeScreen(
                 .padding(spacing),
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            // Row 1 (DDS, Turno, Produção)
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing)
-            ) {
-                options.take(3).forEach { option ->
-                    Box(modifier = Modifier.weight(1f)) {
-                        HomeCard(
-                            option = option,
-                            iconSize = iconSize,
-                            fontSize = fontSize,
-                            subtitleSize = subtitleSize,
-                            subtitleMaxLines = 1,
-                            participationDays = if (option.title == "DDS") monthParticipationDays else emptyList(),
-                            isCompactHeight = isCompactHeight
-                        )
+            options.chunked(columnCount).forEach { rowOptions ->
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    rowOptions.forEach { option ->
+                        val isTeamCard = option === options.last()
+                        Box(modifier = Modifier.weight(1f)) {
+                            HomeCard(
+                                option = option,
+                                iconSize = iconSize,
+                                fontSize = fontSize,
+                                subtitleSize = subtitleSize,
+                                subtitleMaxLines = if (isTeamCard) 10 else 1,
+                                participationDays = if (option.title == "DDS") monthParticipationDays else emptyList(),
+                                isCompactHeight = isCompactHeight,
+                                motorista = if (isTeamCard) motorista else null,
+                                coringas = if (isTeamCard) coringas else emptyList()
+                            )
+                        }
                     }
-                }
-            }
 
-            // Row 2 (Mensagens, Abastecimento, Equipe)
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing)
-            ) {
-                options.drop(3).take(3).forEach { option ->
-                    val maxLines = if (option.title == equipe || option.title == "Equipe" || option.title == "Definir equipe") 10 else 1
-                    Box(modifier = Modifier.weight(1f)) {
-                        HomeCard(
-                            option = option,
-                            iconSize = iconSize,
-                            fontSize = fontSize,
-                            subtitleSize = subtitleSize,
-                            subtitleMaxLines = maxLines,
-                            isCompactHeight = isCompactHeight,
-                            motorista = motorista,
-                            coringas = coringas
-                        )
+                    repeat(columnCount - rowOptions.size) {
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }

@@ -24,6 +24,11 @@ class MemoryStore:
     def load_blob(self, name):
         return copy.deepcopy(self.json.get(name, {}))
 
+    def update_blob(self, name, updater):
+        updated = updater(self.load_blob(name))
+        self.save_blob(name, updated)
+        return copy.deepcopy(updated)
+
     def list_blob_names(self, prefix):
         return sorted(name for name in self.json if name.startswith(prefix))
 
@@ -32,6 +37,23 @@ class MemoryStore:
 
 
 class RotalogTeamFileRepositoryTests(unittest.TestCase):
+    def test_reads_only_new_path(self):
+        store = MemoryStore()
+        repo = RotalogTeamFileRepository(store)
+        legacy_path = "_cache/rotalog/teams/current/E3389.json.gz"
+        new_path = "dados/chicoeletro/rotalog/equipes/current/E3389.json.gz"
+        store.save_blob(legacy_path, {"teamKey": "E3389", "source": "legacy"})
+        self.assertEqual({}, repo.load_current("E3389"))
+        store.save_blob(new_path, {"teamKey": "E3389", "source": "new"})
+        self.assertEqual("new", repo.load_current("E3389")["source"])
+
+    def test_writes_only_new_path(self):
+        document = {"teamKey": "E3389", "updatedAtIso": "2026-09-09T10:00:00-03:00"}
+        new_store = MemoryStore()
+        RotalogTeamFileRepository(new_store).save_current(document)
+        self.assertIn("dados/chicoeletro/rotalog/equipes/current/E3389.json.gz", new_store.json)
+        self.assertNotIn("_cache/rotalog/teams/current/E3389.json.gz", new_store.json)
+
     def test_lifecycle_enrichment_keeps_one_service(self):
         base = {
             "teamKey": "E3389", "updatedAtIso": "2026-08-27T15:40:00-03:00",

@@ -172,8 +172,7 @@ function formatEffectiveServiceTime(rawTime, service, item) {
 function latestCommunicationAt(item) {
   const snapshot = item?.rotalogSnapshot || {};
   const candidates = [
-    item?.lastContact,
-    item?.updatedAt,
+    item?.operacional?.atualizadoEm,
     snapshot.updatedAtIso,
     snapshot.eventTimestampMs,
   ];
@@ -715,27 +714,13 @@ function normalizedState(state) {
 function stateLabel(state) { switch (normalizedState(state)) { case "DESLOCAMENTO_ESPECIAL": return "DESLOCAMENTO ESPECIAL"; default: return normalizedState(state); } }
 
 function getOrigemChar(item) {
-  if (!item) return "D";
-  const contactSource = (item.lastContactSource || "").toUpperCase();
-  if (contactSource === "R") return "R";
-  if (contactSource === "D") return "D";
-  if (["E", "T", "A", "M"].includes(contactSource)) return "E";
-  const device = (item.deviceIdLastWriter || item.deviceId || "").toUpperCase();
-  const origem = (item.origemAtualizacao || "").toUpperCase();
-  if (origem === "ROTALOG_MAIS_RECENTE" || device === "ROTALOG_AUTO_SYNC" || item.rotalogSnapshot) {
-    return "R";
-  }
-  if (device && device !== "SYSTEM_AUTO" && device !== "DDS") {
-    return "E";
-  }
-  return "D";
+  return item?.rotalogSnapshot ? "R" : "D";
 }
 
 function getOrigemTitle(item) {
   const char = getOrigemChar(item);
-  if (char === "R") return "Sincronizado via Rotalog Tempo Real (COPEL)";
-  if (char === "E") return "Atualizado pela Equipe em Campo (App Android)";
-  return "Atualizado pelo Sistema DDS";
+  if (char === "R") return "Fonte operacional: JSON/cache do Rotalog";
+  return "Sem snapshot operacional do Rotalog";
 }
 
 function serviceEventTimestampMs(value, referenceIso) {
@@ -754,11 +739,10 @@ function serviceEventTimestampMs(value, referenceIso) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 }
 function getRotalogService(item) {
-  const snapshot = item?.rotalogSnapshot || {};
-  const current = snapshot.atividadeAtual || item?.atividadeAtual || null;
-  const completed = (Array.isArray(snapshot.ssExecutadas) && snapshot.ssExecutadas.length)
-    ? snapshot.ssExecutadas
-    : (Array.isArray(item?.bdoList) ? item.bdoList : []);
+  if (!item?.rotalogSnapshot) return null;
+  const snapshot = item.rotalogSnapshot;
+  const current = snapshot.atividadeAtual || null;
+  const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
   const service = current || (completed.length ? completed[completed.length - 1] : null);
   if (!service) return null;
   const rawStatus = safeUpper(service.status || item?.atividadeStatus || item?.monitorStatus);
@@ -769,13 +753,12 @@ function getRotalogService(item) {
       : rawStatus === 'CONCLUSAO'
         ? 'C'
         : '';
-  const portalSs = hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '';
-  const realProtocol = service.protocolo || service.ssId || item?.nocSs || '';
+  const realProtocol = service.protocolo || service.ssId || '';
   const serviceId = service.protocoloBruto || service.ssId || '';
   const serviceType = service.tipo || '';
   const hasDistinctServiceId = serviceId && String(serviceId) !== String(serviceType);
-  const identifier = portalSs || realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
-  const identifierLabel = (portalSs || realProtocol || hasDistinctServiceId) ? 'SS' : 'Tipo';
+  const identifier = realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
+  const identifierLabel = (realProtocol || hasDistinctServiceId) ? 'SS' : 'Tipo';
   if (!identifier) return null;
   const category = safeUpper(service.categoria || service.category || '');
   const protocol = realProtocol && String(realProtocol) !== String(serviceType)
@@ -994,12 +977,12 @@ function syncKpiSelection() {
 
 function hoverRows(item) {
   const rows = [];
-  rows.push(`<div class="hoverRow"><span>Atualizado</span><strong>${escapeHtml(fmtDateTime(item.lastContact))}</strong></div>`);
+  rows.push(`<div class="hoverRow"><span>Atualizacao Rotalog</span><strong>${escapeHtml(fmtDateTime(latestCommunicationAt(item)))}</strong></div>`);
   const rotalogService = getRotalogService(item);
   if (rotalogService?.effectiveTimeLabel && rotalogService.effectiveStageLabel) {
     rows.push(`<div class="hoverRow"><span>${escapeHtml(rotalogService.effectiveStageLabel)}</span><strong>${escapeHtml(rotalogService.effectiveTimeLabel)}</strong></div>`);
   }
-  if (hasMeaningfulValue(item.ss)) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(detailValue(item.ss))}</strong></div>`);
+  if (rotalogService?.protocol) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(rotalogService.protocol)}</strong></div>`);
   if (normalizedState(item.estado) === 'DESLOCAMENTO_ESPECIAL' && hasMeaningfulValue(item.motivo)) rows.push(`<div class="hoverRow"><span>Motivo</span><strong>${escapeHtml(detailValue(item.motivo))}</strong></div>`);
   return rows.join('');
 }
@@ -1168,9 +1151,9 @@ function formatStatusWithTime(item, shown, art66Active, art66EndAt) {
   const statusLabel = stateLabel(shown);
   const normState = normalizedState(shown);
   const snapshot = item?.rotalogSnapshot || {};
-  const turno = item?.turno || snapshot?.turno || {};
-  const intervalos = Array.isArray(item?.intervalos) ? item.intervalos : (Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : []);
-  const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (item?.intervalo || snapshot?.intervalo || {});
+  const turno = snapshot?.turno || item?.turno || {};
+  const intervalos = Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : [];
+  const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (snapshot?.intervalo || {});
 
   let dateLike = null;
   if (normState === "ABERTO") {
@@ -1228,7 +1211,11 @@ function tile(item) {
   const crit = item.critico === true && shown === "DESATUALIZADO";
   const equipe = detailValue(item.equipe);
   const teamKey = detailValue(item.teamKey || item.equipe);
-  const veiculoLabel = item.veiculo ? String(item.veiculo).trim() : "-";
+  const veiculoOperacional = item?.operacional?.veiculo
+    || item?.rotalogSnapshot?.veiculo
+    || item?.operacional?.identificadorEquipamento
+    || item?.rotalogSnapshot?.identificadorEquipamento;
+  const veiculoLabel = veiculoOperacional ? String(veiculoOperacional).trim() : "-";
   const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
   const details = hoverRows(item);
   const statusLabel = stateLabel(shown);

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Ícone de câmera corporal</title>
+  <desc id="desc">Câmera corporal com lente circular e presilha superior.</desc>
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EAF2FF"/>
+      <stop offset="100%" stop-color="#B7CAE8"/>
+    </linearGradient>
+  </defs>
+  <rect x="35" y="25" width="58" height="82" rx="18" fill="none" stroke="url(#bg2)" stroke-width="6"/>
+  <rect x="48" y="16" width="32" height="15" rx="6" fill="none" stroke="#D8E6FF" stroke-width="4"/>
+  <circle cx="64" cy="58" r="15" fill="none" stroke="#D8E6FF" stroke-width="5"/>
+  <circle cx="64" cy="58" r="5.5" fill="#D8E6FF"/>
+  <rect x="52" y="80" width="24" height="10" rx="5" fill="none" stroke="#D8E6FF" stroke-width="4"/>
+</svg>

@@ -1,0 +1,2 @@
+Projeto gerado para uso interno como ponto de partida técnico.
+Ajuste a licença conforme a política da sua empresa.

@@ -27,6 +27,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.chicoeletro.dds.components.HeaderBar
 import com.chicoeletro.dds.core.LastTeamData
 import com.chicoeletro.dds.data.FormSubmission
@@ -179,6 +180,7 @@ fun MainLayoutContainer() {
     var tempoInicioDDS by remember { mutableStateOf<Long?>(null) }
 
     var showPresenceReport by rememberSaveable { mutableStateOf(false) }
+    var presenceReportTitle by rememberSaveable { mutableStateOf("Controle de Produção") }
     var showDdsWarning by rememberSaveable { mutableStateOf(false) }
     var presenceReportAccessed by rememberSaveable { mutableStateOf(false) }
 
@@ -320,6 +322,33 @@ fun MainLayoutContainer() {
         )
     }
 
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route ?: "home"
+    val selectedDdsTitle = selectedTraining
+        ?.substringAfter("- ", selectedTraining.orEmpty())
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val screenTitle = when {
+        showEditDialog -> "Detalhes da Equipe"
+        showCommunicationDialog -> "Centro de Mensagens"
+        showAbastecimento -> "Controle de Abastecimento"
+        showPresenceReport -> presenceReportTitle
+        selectedDdsTitle != null -> selectedDdsTitle
+        currentRoute == "dds" -> "Diálogo Diário de Segurança"
+        currentRoute == "turno" -> "Monitor de Turnos e BDO"
+        else -> "Gestão Chico Eletro"
+    }
+
+    val closeCurrentScreen: (() -> Unit)? = when {
+        showEditDialog -> { { showEditDialog = false } }
+        showCommunicationDialog -> { { showCommunicationDialog = false } }
+        showAbastecimento -> { { showAbastecimento = false } }
+        showPresenceReport -> { { showPresenceReport = false } }
+        selectedTraining != null -> { { selectedTraining = null } }
+        currentRoute != "home" -> { { navController.popBackStack() } }
+        else -> null
+    }
+
     Box(Modifier.fillMaxSize()) {
         if (isInitializing) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
@@ -330,14 +359,15 @@ fun MainLayoutContainer() {
                 HeaderBar(
                     overlayAlpha = if (showForm) 0.1f else 1f,
                     selectedTraining = selectedTraining,
-                    isInDdsModule = navController.currentDestination?.route?.startsWith("dds") == true,
+                    isInDdsModule = currentRoute.startsWith("dds"),
+                    screenTitle = screenTitle,
                     monthParticipationDays = headerParticipationDays,
                     showTestCameraButton = modoTesteAtivo,
                     onTestCameraClick = { if (modoTesteAtivo) showOnlineTest = true },
                     onCommunicationClick = { showCommunicationDialog = true },
                     bubbleColor = bubbleColor,
-                    onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
-                    isInTurnoModule = navController.currentDestination?.route == "turno"
+                    onBack = closeCurrentScreen,
+                    isInTurnoModule = currentRoute == "turno"
                 )
 
                 NavHost(navController = navController, startDestination = "home", modifier = Modifier.weight(1f)) {
@@ -354,7 +384,10 @@ fun MainLayoutContainer() {
                             onClickEquipe = { showEditDialog = true },
                             onDdsClick = { navController.navigate("dds") },
                             onTurnoClick = { if (equipe.isBlank()) showEditDialog = true else navController.navigate("turno") },
-                            onProducaoClick = { showPresenceReport = true },
+                            onProducaoClick = {
+                                presenceReportTitle = "Controle de Produção"
+                                showPresenceReport = true
+                            },
                             onMensagensClick = { showCommunicationDialog = true },
                             onAbastecimentoClick = { showAbastecimento = true }
                         )
@@ -380,7 +413,10 @@ fun MainLayoutContainer() {
                             eletricistas = eletricistas,
                             isTablet = isTablet,
                             onHome = { navController.navigate("home") },
-                            onPresenceReport = { showPresenceReport = true },
+                            onPresenceReport = {
+                                presenceReportTitle = "Controle de Presença"
+                                showPresenceReport = true
+                            },
                             onClickEquipe = { showEditDialog = true },
                             onClickTurno = { navController.navigate("turno") },
                             turnoEstado = turnoSnap.estado,

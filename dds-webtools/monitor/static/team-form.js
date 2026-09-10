@@ -350,7 +350,7 @@ function normalizeOperationalProtocol(...candidates) {
 
 function latestOperationalCommunicationAt(item) {
   const snapshot = item?.rotalogSnapshot || {};
-  const candidates = [item?.lastContact, item?.updatedAt, snapshot.updatedAtIso, snapshot.eventTimestampMs];
+  const candidates = [item?.operacional?.atualizadoEm, snapshot.updatedAtIso, snapshot.eventTimestampMs];
   let latestMs = null;
   for (const value of candidates) {
     if (value === null || value === undefined || value === '') continue;
@@ -371,9 +371,6 @@ function getOperationalRotalogData(item) {
   const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
   const service = snapshot.atividadeAtual || inProgress[0] || completed[completed.length - 1] || null;
   const activity = service?.status
-    || item?.atividadeStatusRotalog
-    || item?.atividadeStatus
-    || item?.monitorStatusRotalog
     || snapshot.estadoConsolidado
     || '-';
   const category = String(service?.categoria || '').trim();
@@ -385,18 +382,15 @@ function getOperationalRotalogData(item) {
     service?.protocolo,
     service?.protocoloBruto,
     service?.ssId,
-    hasMeaningfulValue(item?.ss) ? detailValue(item.ss) : '',
   );
   const updatedAt = latestOperationalCommunicationAt(item);
   const updatedMs = updatedAt ? Date.parse(updatedAt) : NaN;
   const ageMinutes = Number.isFinite(updatedMs)
     ? Math.max(0, Math.floor((Date.now() - updatedMs) / 60000))
     : item?.minutosDesdeAtualizacao;
-  const fromRotalog = Boolean(item?.rotalogSnapshot)
-    || String(item?.deviceIdLastWriter || '').toUpperCase() === 'ROTALOG_AUTO_SYNC'
-    || String(item?.origemAtualizacao || '').toUpperCase() === 'ROTALOG_MAIS_RECENTE';
+  const fromRotalog = Boolean(item?.rotalogSnapshot);
   return {
-    status: snapshot.estadoConsolidado || item?.estado || '-',
+    status: item?.operacional?.estado || snapshot.estadoConsolidado || '-',
     activity,
     serviceLabel: serviceLabel || 'Nenhum serviço em andamento',
     protocol: protocol || '-',
@@ -994,7 +988,10 @@ async function loadAndRenderTeamTimeline(teamKey, item) {
 
   if (!teamKey) return;
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
     const resp = await fetch(`/api/rotalog/teams/${encodeURIComponent(teamKey)}/daily?date=${today}`, { cache: 'no-store' });
     if (resp.ok) {
       const data = await resp.json();

@@ -1,0 +1,447 @@
+<!--
+============================================================
+FILE: templates/dds_reports.html
+FUNCTION: Redesigned premium reports screen for DDS Admin.
+============================================================
+-->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* Import Montserrat / Inter font style */
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  .reports-wrapper {
+    font-family: 'Outfit', sans-serif;
+    color: var(--text);
+    margin-top: 15px;
+    animation: fadeIn 0.4s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Glowing Title Section */
+  .premium-header {
+    text-align: center;
+    margin-bottom: 35px;
+    position: relative;
+  }
+  .premium-header h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #a5b4fc, #3b82f6, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+  }
+  .premium-header p {
+    color: var(--muted);
+    font-size: 1.1rem;
+    font-weight: 400;
+  }
+
+  /* Card Selector for Report Types */
+  .type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-bottom: 35px;
+  }
+
+  .type-card {
+    background: rgba(17, 26, 51, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(38, 51, 92, 0.6);
+    border-radius: 18px;
+    padding: 24px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 160px;
+  }
+
+  .type-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(59, 130, 246, 0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .type-card:hover {
+    transform: translateY(-5px) scale(1.02);
+    border-color: rgba(99, 102, 241, 0.8);
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.15);
+  }
+
+  .type-card:hover::before {
+    opacity: 1;
+  }
+
+  .type-card.active {
+    border-color: var(--btn-primary);
+    background: rgba(47, 111, 237, 0.12);
+    box-shadow: 0 10px 25px rgba(47, 111, 237, 0.25), inset 0 0 12px rgba(47, 111, 237, 0.1);
+  }
+
+  .type-card-icon {
+    font-size: 2.2rem;
+    margin-bottom: 12px;
+    z-index: 2;
+  }
+
+  .type-card-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    z-index: 2;
+  }
+
+  .type-card-desc {
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.35;
+    z-index: 2;
+  }
+
+  .type-card-badge {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+  }
+
+  .type-card.active .type-card-badge {
+    border-color: var(--btn-primary);
+    background: var(--btn-primary);
+  }
+
+  .type-card.active .type-card-badge::after {
+    content: '✓';
+    color: #fff;
+    font-size: 11px;
+    font-weight: bold;
+  }
+
+  /* Form Container styles */
+  .config-panel {
+    background: rgba(17, 26, 51, 0.45);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  }
+
+  .config-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: #fff;
+    border-left: 4px solid var(--btn-primary);
+    padding-left: 12px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 25px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .field-group label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .field-group input, .field-group select {
+    background: rgba(7, 11, 23, 0.8);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: #fff;
+    font-size: 1rem;
+    transition: all 0.25s ease;
+    width: 100%;
+  }
+
+  .field-group input:focus, .field-group select:focus {
+    border-color: var(--btn-primary);
+    box-shadow: 0 0 10px rgba(47, 111, 237, 0.35);
+  }
+
+  /* Custom Toggle Switch for Force Regeneration */
+  .switch-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    user-select: none;
+  }
+  
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+  }
+
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--line);
+    transition: .3s;
+    border-radius: 34px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #fff;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
+
+  input:checked + .slider {
+    background-color: var(--btn-primary);
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(24px);
+  }
+
+  .switch-label {
+    font-weight: 500;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  /* Actions Bar */
+  .button-bar {
+    display: flex;
+    gap: 15px;
+    justify-content: flex-end;
+    align-items: center;
+    border-top: 1px solid var(--line);
+    padding-top: 25px;
+    margin-top: 25px;
+  }
+
+  .btn-premium {
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn-premium-primary {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border: none;
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+  }
+
+  .btn-premium-primary:hover {
+    background: linear-gradient(135deg, #2563eb, #4f46e5);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.45);
+  }
+
+  .btn-premium-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+
+  .btn-premium-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    transform: translateY(-2px);
+  }
+
+  .info-bar {
+    font-size: 0.85rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 15px;
+  }
+</style>
+
+<div class="reports-wrapper">
+  <div class="premium-header">
+    <h1>Relatórios</h1>
+    <p>Gere e visualize relatórios operacionais consolidados e detalhados</p>
+  </div>
+
+  <a class="type-card" href="{{ url_for('admin.equipment_reports') }}" style="display:block;margin-bottom:24px;text-decoration:none;color:inherit"><div class="type-card-title">Equipamentos</div><div class="type-card-desc">Tablets e câmeras por equipe, pendências de cadastro e histórico de alterações. Consulte e exporte em CSV.</div></a>
+
+  <form method="get" action="{{ url_for('admin.dds_reports_progress') }}" id="reportForm">
+    <!-- Hidden input to store selected report type -->
+    <input type="hidden" name="type" id="selectedType" value="{{ rtype }}" />
+
+    <!-- Visual Type Selection Cards -->
+    <div class="type-grid">
+      <div class="type-card {% if rtype == 'fotos' %}active{% endif %}" onclick="selectReportType('fotos')">
+        <span class="type-card-badge"></span>
+        <div class="type-card-icon">📸</div>
+        <div>
+          <div class="type-card-title">Relatório com Fotos</div>
+          <div class="type-card-desc">Visualização completa acompanhada das fotos coletadas pelas equipes em campo.</div>
+        </div>
+      </div>
+
+      <div class="type-card {% if rtype == 'detalhado' %}active{% endif %}" onclick="selectReportType('detalhado')">
+        <span class="type-card-badge"></span>
+        <div class="type-card-icon">📄</div>
+        <div>
+          <div class="type-card-title">Relatório Detalhado</div>
+          <div class="type-card-desc">Detalhes analíticos, horários, assinaturas e status de conformidade operacional.</div>
+        </div>
+      </div>
+
+      <div class="type-card {% if rtype == 'presenca' %}active{% endif %}" onclick="selectReportType('presenca')">
+        <span class="type-card-badge"></span>
+        <div class="type-card-icon">📊</div>
+        <div>
+          <div class="type-card-title">Painel de Presença</div>
+          <div class="type-card-desc">Matriz interativa que consolida a presença diária e os dados gerais de engajamento.</div>
+        </div>
+      </div>
+
+      <div class="type-card {% if rtype == 'ranking' %}active{% endif %}" onclick="selectReportType('ranking')">
+        <span class="type-card-badge"></span>
+        <div class="type-card-icon">🏆</div>
+        <div>
+          <div class="type-card-title">Ranking de Presença</div>
+          <div class="type-card-desc">Classificação das equipes baseada no índice total de participação e presença nos turnos.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="config-panel">
+      <div class="config-title">Configurações e Filtros</div>
+      
+      <div class="form-grid">
+        <div class="field-group">
+          <label for="start_date">Data Inicial</label>
+          <input type="date" id="start_date" name="start_date" value="{{ start_date }}" required />
+        </div>
+
+        <div class="field-group">
+          <label for="end_date">Data Final</label>
+          <input type="date" id="end_date" name="end_date" value="{{ end_date }}" required />
+        </div>
+
+        <div class="field-group">
+          <label for="team">Equipe</label>
+          <select id="team" name="team">
+            <option value="">Todas as equipes</option>
+            {% for t in teams %}
+              <option value="{{ t.key }}" {% if selected_team == t.key %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label for="team_type">Tipo de equipe</label>
+          <select id="team_type" name="team_type">
+            <option value="">Todos os tipos</option>
+            {% for val, label in team_types %}
+              <option value="{{ val }}" {% if selected_team_type == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="switch-container">
+        <label class="switch">
+          <input type="checkbox" name="force" value="1" />
+          <span class="slider"></span>
+        </label>
+        <span class="switch-label">Ignorar cache e forçar regeneração completa do relatório</span>
+      </div>
+
+      <div class="button-bar">
+        <a class="btn btn-premium btn-premium-secondary" href="{{ url_for('admin.dashboard') }}">
+          ← Voltar ao Início
+        </a>
+        <button class="btn btn-premium btn-premium-primary" type="submit">
+          ⚙️ Gerar Relatório Selecionado
+        </button>
+      </div>
+
+      <div class="info-bar">
+        <span>⚡</span>
+        <span><b>Cache Inteligente ativo:</b> Os dias já concluídos usam cache armazenado no Storage. Apenas hoje e ontem são recalculados por padrão.</span>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+  function selectReportType(type) {
+    // Update hidden field
+    document.getElementById('selectedType').value = type;
+
+    // Reset active class on all cards
+    const cards = document.querySelectorAll('.type-card');
+    cards.forEach(card => card.classList.remove('active'));
+
+    // Find card that was clicked and activate it
+    event.currentTarget.classList.add('active');
+  }
+</script>
+{% endblock %}
+

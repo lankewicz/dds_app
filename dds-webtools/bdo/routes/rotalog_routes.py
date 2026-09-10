@@ -12,6 +12,9 @@ from fastapi.responses import JSONResponse
 from bdo.services.rotalog_tempo_real_service import extrair_dados_tempo_real
 from bdo.services.rotalog_sync_task import (
     executar_sincronizacao_rotalog,
+    get_rotalog_execution_log,
+    get_rotalog_live_snapshot,
+    get_rotalog_live_snapshots,
     get_rotalog_team_current,
     get_rotalog_team_daily,
     get_rotalog_team_daily_today,
@@ -27,7 +30,7 @@ async def get_rotalog_tempo_real():
     Retorna o status capturado em tempo real de todas as equipes no Rotalog.
     """
     try:
-        dados = extrair_dados_tempo_real()
+        dados = list(get_rotalog_live_snapshots().values())
         return JSONResponse(content={"ok": True, "totalEquipes": len(dados), "equipes": dados})
     except Exception as e:
         logger.error(f"Erro ao capturar Rotalog Tempo Real: {e}")
@@ -35,7 +38,7 @@ async def get_rotalog_tempo_real():
 
 
 @router.post("/sync-now")
-async def trigger_rotalog_sync(empresa: str = "ChicoEletro"):
+def trigger_rotalog_sync(empresa: str = "ChicoEletro"):
     """
     Força a sincronização imediata dos status do Rotalog com o Firestore.
     """
@@ -45,6 +48,20 @@ async def trigger_rotalog_sync(empresa: str = "ChicoEletro"):
     except Exception as e:
         logger.error(f"Erro ao executar sincronização Rotalog: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sync-log")
+async def get_sync_log(date: str | None = None):
+    """Retorna o log diário das tentativas de raspagem; sem data, usa hoje em Brasília."""
+    try:
+        document = get_rotalog_execution_log(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida; use YYYY-MM-DD.")
+    if not document:
+        raise HTTPException(status_code=404, detail="Log de raspagem não encontrado.")
+    return {"ok": True, "log": document}
+
+
 @router.get("/teams/{team_key}/current")
 async def team_current(team_key: str):
     document = get_rotalog_team_current(team_key)

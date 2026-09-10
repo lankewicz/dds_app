@@ -1,0 +1,5 @@
+DDS_TIMEZONE: "America/Sao_Paulo"
+DDS_BUCKET_NAME: "dds-treinamentos.firebasestorage.app"
+DDS_BASE_PREFIX: "DDSv2"
+DDS_REPORTS_CACHE_PREFIX: "DDSv2/_cache/reports"
+SIGNING_SERVICE_ACCOUNT: "dds-admin-sa@dds-treinamentos.iam.gserviceaccount.com"

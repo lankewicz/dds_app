@@ -13,6 +13,8 @@ import os
 import tempfile
 import threading
 import typing
+import uuid
+import time
 
 
 def _json_cache_default(value: typing.Any) -> typing.Any:
@@ -28,6 +30,11 @@ def _decode_json_object(payload: bytes) -> dict[str, typing.Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 TRACKED_FIELDS = (
+    "isOnline",
+    "statusConexao",
+    "identificadorEquipamento",
+    "veiculo",
+    "colaborador",
     "estadoConsolidado",
     "turno",
     "intervalo",
@@ -60,9 +67,19 @@ def changed_fields(
     for field in TRACKED_FIELDS:
         old_value = previous.get(field)
         new_value = current.get(field)
-        if old_value != new_value:
+        if _operational_value(old_value) != _operational_value(new_value):
             changes[field] = {"anterior": old_value, "novo": new_value}
     return changes
+
+
+def _operational_value(value):
+    if isinstance(value, dict):
+        return {k: _operational_value(v) for k, v in value.items()
+                if k not in {"eventIdx", "fonteProtocolo", "validacaoProtocolo", "observadoEm"}}
+    if isinstance(value, list):
+        return sorted((_operational_value(v) for v in value),
+                      key=lambda v: json.dumps(v, sort_keys=True, default=str))
+    return value
 
 
 class RotalogLocalCache:
@@ -148,6 +165,9 @@ class RotalogGcsSnapshotStore:
         return bool(self.bucket_name and self.blob_name)
 
     def _blob_named(self, blob_name: str):
+        if (not blob_name or blob_name.startswith("/") or "\\" in blob_name
+                or any(part in ("", ".", "..") for part in blob_name.split("/"))):
+            raise ValueError("Destino GCS invalido")
         if not self.enabled:
             raise RuntimeError("Cache GCS do ROTALOG não configurado.")
         if self._client is None:
@@ -161,6 +181,22 @@ class RotalogGcsSnapshotStore:
 
     def _blob(self):
         return self._blob_named(self.blob_name)
+
+    def acquire_sync_lease(self):
+        token = uuid.uuid4().hex
+        now = time.time()
+        path = self.blob_name.rsplit("/", 1)[0] + "/sync-lease.json.gz"
+        def acquire(previous):
+            if float(previous.get("expiresAt", 0)) > now:
+                return previous
+            return {"owner": token, "expiresAt": now + 1800}
+        result = self.update_blob(path, acquire)
+        return token if result.get("owner") == token else None
+
+    def release_sync_lease(self, token):
+        path = self.blob_name.rsplit("/", 1)[0] + "/sync-lease.json.gz"
+        self.update_blob(path, lambda previous:
+                         {} if previous.get("owner") == token else previous)
 
     def load(self) -> dict[str, typing.Any]:
         with self._lock:
@@ -185,6 +221,33 @@ class RotalogGcsSnapshotStore:
                     return {}
                 raise
             return _decode_json_object(compressed)
+
+    def update_blob(self, blob_name, transform):
+        """Compare-and-swap: recalcula o merge se outro processo gravar."""
+        for tentativa in range(5):
+            blob = self._blob_named(blob_name)
+            try:
+                blob.reload()
+                generation = int(blob.generation)
+                previous = _decode_json_object(blob.download_as_bytes(raw_download=True, if_generation_match=generation))
+            except Exception as exc:
+                if getattr(exc, "code", None) == 404:
+                    generation, previous = 0, {}
+                elif getattr(exc, "code", None) == 412:
+                    continue
+                else:
+                    raise
+            merged = transform(previous)
+            raw = json.dumps(merged, ensure_ascii=False, default=_json_cache_default).encode("utf-8")
+            try:
+                blob.content_encoding = "gzip"
+                blob.upload_from_string(gzip.compress(raw), content_type="application/json",
+                                        if_generation_match=generation)
+                return merged
+            except Exception as exc:
+                if getattr(exc, "code", None) != 412:
+                    raise
+        raise RuntimeError("Conflito concorrente persistente no JSON RTL")
 
     def save_blob(self, blob_name: str, payload: dict[str, typing.Any]) -> None:
         with self._lock:

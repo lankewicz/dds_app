@@ -78,6 +78,7 @@ fun HeaderBar(
     overlayAlpha: Float,
     selectedTraining: String?,
     isInDdsModule: Boolean,
+    screenTitle: String? = null,
     monthParticipationDays: List<MonthParticipationDay> = emptyList(),
     showTestCameraButton: Boolean = false,
     onTestCameraClick: (() -> Unit)? = null,
@@ -92,7 +93,7 @@ fun HeaderBar(
     val hasSelection = !selectedTraining.isNullOrBlank()
 
     val date = if (hasSelection) raw.substringBefore(" -").trim() else ""
-    val title = if (hasSelection) {
+    val title = screenTitle ?: if (hasSelection) {
         raw.substringAfter("- ")
             .trim()
             .takeUnless { it.isBlank() }
@@ -111,10 +112,7 @@ fun HeaderBar(
     val context = LocalContext.current
 
     HeaderBarState.datePart = date
-    // Evita loop de atualização se não tiver selection
-    if (hasSelection || isInDdsModule) {
-        HeaderBarState.titlePart = title
-    }
+    HeaderBarState.titlePart = title
 
     Row(
         modifier = Modifier

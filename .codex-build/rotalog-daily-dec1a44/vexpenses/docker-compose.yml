@@ -1,0 +1,11 @@
+# Finalidade: serviços auxiliares para desenvolvimento local.
+version: "3.9"
+
+services:
+  # Não há mais dependências de banco local (Firestore é usado no Cloud)
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env

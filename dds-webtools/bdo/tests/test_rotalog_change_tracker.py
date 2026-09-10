@@ -243,6 +243,7 @@ class RotalogChangeTrackerTests(unittest.TestCase):
                 mock.patch("bdo.services.rotalog_sync_task._get_equipment_identifier_index", return_value={}),
                 mock.patch("bdo.services.rotalog_sync_task.extrair_dados_tempo_real", return_value=[equipe]),
                 mock.patch("bdo.services.rotalog_sync_task._persist_durable_cache", return_value=True),
+                mock.patch("bdo.services.rotalog_sync_task._team_file_repository"),
             ):
                 result = _executar_sincronizacao_rotalog()
 

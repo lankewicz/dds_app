@@ -259,6 +259,11 @@ def _firebase_web_api_key() -> str:
 
 
 def _is_public_path(path: str) -> bool:
+    if (
+        path == "/api/rotalog/sync-now"
+        and os.getenv("ROTALOG_SYNC_ENDPOINT_IAM_ONLY", "false").strip().lower() == "true"
+    ):
+        return True
     exact_paths = {
         "/login", "/api/login", "/request-access", "/api/request-access", "/favicon.ico"
     }

@@ -1,0 +1,118 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "DDS",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "headerDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "DDS",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "equipe", "order": "ASCENDING" },
+        { "fieldPath": "data_consolidado", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "realtime",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "setor", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toSetor", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromEquipe", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "threadId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toSetor", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromEquipe", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mensagens_comunicacao",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "threadId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "boletins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "Contrato", "order": "ASCENDING" },
+        { "fieldPath": "DATA", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "boletins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "Funcionário", "order": "ASCENDING" },
+        { "fieldPath": "DATA", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ponto",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "CPF", "order": "ASCENDING" },
+        { "fieldPath": "Data", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ponto",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "PIS", "order": "ASCENDING" },
+        { "fieldPath": "Data", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ponto",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "Nome", "order": "ASCENDING" },
+        { "fieldPath": "Data", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

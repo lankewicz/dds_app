@@ -2,6 +2,7 @@ package com.chicoeletro.dds.features.turno
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageReference
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 import com.google.gson.JsonObject
@@ -76,11 +77,16 @@ private fun JsonObject.textOrNull(key: String): String? =
     get(key)?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.isNotBlank() }
 
 object RotalogMobileRepository {
+    private const val ROTALOG_TEAMS_ROOT = "dados/chicoeletro/rotalog/equipes"
+    private const val MAX_TEAM_FILE_BYTES = 5L * 1024 * 1024
     private val etagMap = ConcurrentHashMap<String, String>()
 
     private val storage: FirebaseStorage by lazy {
         FirebaseStorage.getInstance()
     }
+
+    private fun teamFileRef(relativePath: String): StorageReference =
+        storage.reference.child("$ROTALOG_TEAMS_ROOT/$relativePath")
 
     private val api: RotalogMobileApi by lazy {
         val client = OkHttpClient.Builder()
@@ -299,8 +305,8 @@ object RotalogMobileRepository {
         // 2. Garante autenticação Firebase para acesso ao Storage
         ensureAuth()
 
-        val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$dateIso/$normalizedKey.json.gz")
-        val currentRef = storage.reference.child("_cache/rotalog/teams/current/$normalizedKey.json.gz")
+        val dailyRef = teamFileRef("daily/$dateIso/$normalizedKey.json.gz")
+        val currentRef = teamFileRef("current/$normalizedKey.json.gz")
 
         // 3. Se for o dia de hoje: verifica se o hash do arquivo remoto é idêntico
         if (isToday) {
@@ -323,11 +329,8 @@ object RotalogMobileRepository {
 
             // Baixa diretamente do Storage (dailyRef ou currentRef)
             val downloaded = runCatching {
-                val bytes = runCatching {
-                    dailyRef.getBytes(5 * 1024 * 1024).await()
-                }.getOrElse {
-                    currentRef.getBytes(5 * 1024 * 1024).await()
-                }
+                val bytes = runCatching { dailyRef.getBytes(MAX_TEAM_FILE_BYTES).await() }
+                    .getOrElse { currentRef.getBytes(MAX_TEAM_FILE_BYTES).await() }
                 val rawStr = decodeBytesToString(bytes)
                 saveLocalCache(context, normalizedKey, dateIso, rawStr, remoteHash)
                 android.util.Log.i("RotalogRepo", "fetchDailyWithCache [$normalizedKey $dateIso]: baixado com sucesso do Storage (${bytes.size} bytes)")
@@ -340,7 +343,7 @@ object RotalogMobileRepository {
         } else {
             // Dia anterior: não encontrado no cache local, baixa do Firebase Storage daily e salva no cache
             val downloaded = runCatching {
-                val bytes = dailyRef.getBytes(5 * 1024 * 1024).await()
+                val bytes = dailyRef.getBytes(MAX_TEAM_FILE_BYTES).await()
                 val rawStr = decodeBytesToString(bytes)
                 val meta = runCatching { dailyRef.metadata.await() }.getOrNull()
                 val hash = meta?.md5Hash ?: meta?.updatedTimeMillis?.toString()
@@ -399,17 +402,17 @@ object RotalogMobileRepository {
             }.format(Date())
             val requestedDate = dateIso ?: todayIso
 
-            val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$requestedDate/$teamKey.json.gz")
-            android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando dailyRef ${dailyRef.path}")
+            val dailyRef = teamFileRef("daily/$requestedDate/$teamKey.json.gz")
+            android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando ${dailyRef.path}")
             val bytes = runCatching {
-                dailyRef.getBytes(5 * 1024 * 1024).await()
+                dailyRef.getBytes(MAX_TEAM_FILE_BYTES).await()
             }.onFailure { e ->
-                android.util.Log.w("RotalogRepo", "fetchTeamFromStorage: falha em ${dailyRef.path}: ${e.message}")
+                android.util.Log.w("RotalogRepo", "fetchTeamFromStorage: falha nos arquivos daily: ${e.message}")
             }.getOrElse { error ->
                 if (!allowCurrentFallback) throw error
-                val currentRef = storage.reference.child("_cache/rotalog/teams/current/$teamKey.json.gz")
-                android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando currentRef ${currentRef.path}")
-                currentRef.getBytes(5 * 1024 * 1024).await()
+                val currentRef = teamFileRef("current/$teamKey.json.gz")
+                android.util.Log.d("RotalogRepo", "fetchTeamFromStorage: tentando ${currentRef.path}")
+                currentRef.getBytes(MAX_TEAM_FILE_BYTES).await()
             }
 
             val rawStr = decodeBytesToString(bytes)
@@ -436,10 +439,10 @@ object RotalogMobileRepository {
         val prettyGson = GsonBuilder().setPrettyPrinting().create()
         val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-        // 1. Tenta baixar diretamente do Storage (_cache/rotalog/teams/daily/YYYY-MM-DD/EQUIPE.json.gz)
+        // 1. Tenta o repositório permanente.
         val directStorageResult = runCatching {
-            val dailyRef = storage.reference.child("_cache/rotalog/teams/daily/$todayIso/$normalizedKey.json.gz")
-            val bytes = dailyRef.getBytes(5 * 1024 * 1024).await()
+            val bytes = teamFileRef("daily/$todayIso/$normalizedKey.json.gz")
+                .getBytes(MAX_TEAM_FILE_BYTES).await()
             val rawStr = decodeBytesToString(bytes)
             val parsed = runCatching { JsonParser.parseString(rawStr) }.getOrNull()
             if (parsed != null) prettyGson.toJson(parsed) else rawStr
@@ -449,10 +452,10 @@ object RotalogMobileRepository {
             return directStorageResult
         }
 
-        // 1b. Tenta baixar do Storage o arquivo current (_cache/rotalog/teams/current/EQUIPE.json.gz)
+        // 1b. Tenta baixar do Storage o arquivo current.
         val currentStorageResult = runCatching {
-            val currentRef = storage.reference.child("_cache/rotalog/teams/current/$normalizedKey.json.gz")
-            val bytes = currentRef.getBytes(5 * 1024 * 1024).await()
+            val bytes = teamFileRef("current/$normalizedKey.json.gz")
+                .getBytes(MAX_TEAM_FILE_BYTES).await()
             val rawStr = decodeBytesToString(bytes)
             val parsed = runCatching { JsonParser.parseString(rawStr) }.getOrNull()
             if (parsed != null) prettyGson.toJson(parsed) else rawStr

@@ -21,6 +21,10 @@ class FakeBlob:
             "contentEncoding": self.content_encoding,
         }
 
+    def download_as_bytes(self, raw_download=False):
+        payload = self.uploads[self.path]["payload"]
+        return gzip.compress(json.dumps(payload).encode("utf-8"))
+
 
 class FakeBucket:
     def __init__(self, uploads):
@@ -59,22 +63,54 @@ class DailyArchiveTests(unittest.TestCase):
     def test_salva_dois_jsons_com_caminhos_diarios(self):
         uploads = {}
         archive = DailyRotalogArchive(
+            "ChicoEletro",
             "bucket",
             client_factory=lambda: FakeClient(uploads),
             crawler_factory=FakeCrawler,
         )
-        result = archive.collect(datetime.date(2026, 9, 8))
+        result = archive.collect(
+            datetime.date(2026, 9, 8),
+            now=datetime.datetime(2026, 9, 9, 4, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))),
+        )
 
         self.assertEqual(1, result["teams"])
         self.assertEqual(1, result["events"])
         self.assertEqual({
-            "_cache/rotalog/coletas/2026-09-08/equipes.json.gz",
-            "_cache/rotalog/coletas/2026-09-08/eventos.json.gz",
+            "dados/chicoeletro/rotalog/diario/2026-09-08/equipes.json.gz",
+            "dados/chicoeletro/rotalog/diario/2026-09-08/eventos.json.gz",
         }, set(uploads))
         self.assertEqual("application/json", uploads[result["teamsPath"]]["contentType"])
         self.assertEqual("gzip", uploads[result["eventsPath"]]["contentEncoding"])
         self.assertEqual("E1", uploads[result["teamsPath"]]["payload"]["records"][0]["Equipe"])
         self.assertIsNone(uploads[result["eventsPath"]]["payload"]["records"][0]["Vazio"])
+        self.assertEqual("ChicoEletro", uploads[result["teamsPath"]]["payload"]["company"])
+        self.assertEqual("chicoeletro", archive.load("2026-09-08", "equipes")["companyKey"])
+
+    def test_grava_somente_no_novo_repositorio(self):
+        uploads = {}
+        archive = DailyRotalogArchive(
+            "ChicoEletro",
+            "bucket",
+            client_factory=lambda: FakeClient(uploads),
+            crawler_factory=FakeCrawler,
+        )
+        result = archive.collect(
+            datetime.date(2026, 9, 8),
+            now=datetime.datetime(2026, 10, 1, 4, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))),
+        )
+        self.assertEqual({
+            "dados/chicoeletro/rotalog/diario/2026-09-08/equipes.json.gz",
+            "dados/chicoeletro/rotalog/diario/2026-09-08/eventos.json.gz",
+        }, set(uploads))
+
+    def test_empresa_e_tipo_sao_obrigatorios(self):
+        with self.assertRaises(RuntimeError):
+            DailyRotalogArchive("", "bucket")
+        archive = DailyRotalogArchive("Chico Elétrico", "bucket")
+        self.assertEqual("dados/chico-eletrico/rotalog/diario/2026-09-08/eventos.json.gz",
+                         archive.path("2026-09-08", "eventos"))
+        with self.assertRaises(ValueError):
+            archive.path("2026-09-08", "outro")
 
 
 if __name__ == "__main__":

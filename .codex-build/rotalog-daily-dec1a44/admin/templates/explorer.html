@@ -1,0 +1,660 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="header">
+    <div class="header-title">
+      <h1>Explorador de Arquivos (Storage)</h1>
+      <p>Visão completa de todas as pastas no bucket <code>{{ base_prefix }}</code></p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost" id="btnRebuildIndex" title="Limpar lista.json (futuros + 5 últimos)">
+        <span>🧹</span> Limpar Índice
+      </button>
+      <a class="btn btn-ghost" href="{{ url_for('admin.dashboard') }}">
+        <span>⬅️</span> Voltar ao App
+      </a>
+    </div>
+  </div>
+
+  <div class="info-alert">
+    <span>ℹ️</span> 
+    Esta tela mostra todas as pastas físicas no Storage. Itens <strong>Arquivados</strong> existem no servidor mas não aparecem no aplicativo móvel.
+  </div>
+
+  <!-- Storage Control Section -->
+  <details class="filters-section storage-control-section" id="storageControlSection" style="margin-bottom: 24px;">
+    <summary>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">📦</span> 
+        <span>Controle de Armazenamento</span>
+        <span id="storageHeaderBadge" style="font-size: 10px; background: rgba(34, 197, 94, 0.15); color: #86efac; padding: 3px 8px; border-radius: 12px; margin-left: 4px; display: none;">Carregado</span>
+      </div>
+    </summary>
+    <div class="storage-control-wrapper" style="padding: 20px; position: relative;">
+      <!-- Loading Overlay -->
+      <div id="storageLoadingOverlay" class="storage-loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p style="margin: 8px 0 0 0; font-size: 0.9em; color: var(--muted); font-weight: 600;">Processando arquivos do Bucket...</p>
+      </div>
+
+      <div class="storage-control-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--line);">
+        <div style="font-size: 0.9em; color: var(--muted);">
+          <span>📅 Última atualização: </span>
+          <strong id="storageLastUpdated" style="color: var(--text);">Carregando...</strong>
+        </div>
+        <button class="btn btn-secondary" id="btnSyncStorage" style="padding: 6px 12px; font-size: 0.85em;">
+          <span>🔄</span> Atualizar Dados
+        </button>
+      </div>
+
+      <div id="storageCardsGrid" class="storage-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 10px;">
+        <!-- Card 1: DDS_Fotos -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">DDS_Fotos</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_DDS_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_DDS_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_DDS_Fotos')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+
+        <!-- Card 2: ChicoEletro -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">ChicoEletro</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_ChicoEletro" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_ChicoEletro" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_ChicoEletro')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+
+        <!-- Card 3: Fotos -->
+        <div class="storage-card" style="background: rgba(7, 11, 23, 0.4); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px;">
+            <span style="font-size: 18px;">📂</span>
+            <strong style="color: var(--text);">Fotos</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+            <span class="muted">Total de Arquivos:</span>
+            <strong id="files_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px;">
+            <span class="muted">Tamanho Total:</span>
+            <strong id="size_Fotos" style="color: var(--text);">-</strong>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleDetails('detail_Fotos')" style="padding: 4px 8px; font-size: 0.75em; width: 100%; justify-content: center;">
+            👁️ Ver Detalhes por Mês
+          </button>
+        </div>
+      </div>
+
+      <!-- Detail Tables (Hidden by default) -->
+      <div id="detail_DDS_Fotos" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: DDS_Fotos
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_DDS_Fotos">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="detail_ChicoEletro" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: ChicoEletro
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_ChicoEletro">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="detail_Fotos" class="storage-details-panel" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line);">
+        <h4 style="margin: 0 0 10px 0; color: var(--btn-primary); display: flex; align-items: center; gap: 6px;">
+          📊 Detalhes por Mês: Fotos
+        </h4>
+        <div class="table-wrapper">
+          <table class="table" style="font-size: 0.85em; margin-top: 5px;">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th style="text-align: right;">Quantidade de Arquivos</th>
+                <th style="text-align: right;">Tamanho Total</th>
+                <th style="text-align: right; width: 120px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="body_Fotos">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- Filters -->
+  <details class="filters-section" {% if month or status %}open{% endif %}>
+    <summary>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">🎯</span> 
+        <span>Filtros</span>
+        {% if month or status %}
+          <span style="font-size: 10px; background: rgba(47, 111, 237, 0.15); color: var(--btn-primary); padding: 3px 8px; border-radius: 12px; margin-left: 4px;">Ativos</span>
+        {% endif %}
+      </div>
+    </summary>
+    <div class="filters-wrapper">
+      <form method="get" action="{{ url_for('admin.explorer') }}" class="filters-grid">
+        <div class="filter-group">
+          <label>Mês</label>
+          <input type="month" name="month" value="{{ month }}" placeholder="2026-01" />
+        </div>
+        <div class="filter-group">
+          <label>Status no App</label>
+          <select name="status">
+            <option value="" {% if not status %}selected{% endif %}>Todos</option>
+            <option value="publicado" {% if status=='publicado' %}selected{% endif %}>Publicado</option>
+            <option value="arquivado" {% if status=='arquivado' %}selected{% endif %}>Arquivado</option>
+          </select>
+        </div>
+        <button class="btn btn-filter" type="submit">🔍 Filtrar</button>
+        <a class="btn btn-clear" href="{{ url_for('admin.explorer') }}">Limpar</a>
+      </form>
+    </div>
+  </details>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <span class="stat-label">Agendados</span>
+      <span class="stat-value">{{ stats.agendado }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Concluídos</span>
+      <span class="stat-value">{{ stats.concluido }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Arquivados</span>
+      <span class="stat-value">{{ stats.arquivado }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Online</span>
+      <span class="stat-value">{{ stats.online }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Normal</span>
+      <span class="stat-value">{{ stats.normal }}</span>
+    </div>
+    <div class="stat-card total">
+      <span class="stat-label">Total</span>
+      <span class="stat-value">{{ stats.total }}</span>
+    </div>
+  </div>
+
+  <div class="table-wrapper" style="margin-top: 20px; background: var(--card); border: 1px solid var(--line);">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:120px;">Data</th>
+          <th>Treinamento (Pasta no Storage)</th>
+          <th style="width:120px;">Tipo</th>
+          <th style="width:150px;">Status no App</th>
+          <th style="width:140px; text-align:right;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in folders %}
+          <tr>
+            <td><strong style="color: var(--text);">{{ f.date }}</strong></td>
+            <td>
+              <div style="display:flex; flex-direction:column;">
+                <span style="font-weight:600; color: var(--text);">{{ f.subject }}</span>
+                <small style="color: var(--muted); font-family: monospace; font-size: 0.85em;">{{ f.folderId }}</small>
+              </div>
+            </td>
+            <td>
+              {% if f.type == 'online' %}
+                <span class="badge badge-online">Online</span>
+              {% else %}
+                <span class="badge badge-normal">Normal</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if f.is_published %}
+                <span class="badge badge-concluido" style="background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3);">🟢 Publicado</span>
+              {% else %}
+                <span class="badge" style="background: rgba(167, 179, 214, 0.1); color: var(--muted); border: 1px solid rgba(167, 179, 214, 0.2);">⚪ Arquivado</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right;">
+               <div style="display:flex; justify-content: flex-end; gap: 8px;">
+                 <button class="btn-icon" title="Visualizar Apresentação" onclick="openPreview('{{ f.folderId }}', '{{ f.subject }}')">👁️</button>
+                 <a class="btn-icon" href="{{ url_for('admin.explorer_download', folderId=f.folderId) }}" title="Baixar Treinamento">📥</a>
+                 
+                 <form method="post" action="{{ url_for('admin.session_delete') }}" style="display:inline;" onsubmit="return confirm('Excluir esta pasta permanentemente do Storage?')">
+                    <input type="hidden" name="type" value="{{ f.type }}">
+                    <input type="hidden" name="folderId" value="{{ f.folderId }}">
+                    <input type="hidden" name="redirect" value="explorer">
+                    <button class="btn-icon danger" type="submit" title="Excluir do Storage">🗑️</button>
+                 </form>
+               </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5" style="text-align:center; padding: 40px; color: var(--muted);">
+              Nenhuma pasta encontrada no Storage.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% include 'partial_preview_modal.html' %}
+
+  <script>
+    document.getElementById('btnRebuildIndex')?.addEventListener('click', async () => {
+      if (!confirm('Deseja reconstruir o índice lista.json agora? \nSerão mantidos todos os futuros e apenas os últimos 5 passados.')) return;
+      
+      const btn = document.getElementById('btnRebuildIndex');
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Processando...';
+      
+      try {
+        const resp = await fetch("{{ url_for('admin.maintenance_rebuild_index') }}", { method: 'POST' });
+        const result = await resp.json();
+        if (result.ok) {
+          alert('Sucesso!\nPastas mantidas: ' + result.details.total_folders + '\nArquivos no índice: ' + result.details.total_files);
+          window.location.reload();
+        } else {
+          alert('Erro: ' + result.error);
+        }
+      } catch (e) {
+        alert('Erro de rede: ' + e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    });
+
+    // Helper to format bytes to human readable sizes
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Helper to format ISO date string to BR format (DD/MM/YYYY HH:MM:SS)
+    function formatIsoToBr(isoStr) {
+      if (!isoStr) return '-';
+      try {
+        const dt = new Date(isoStr);
+        return dt.toLocaleString('pt-BR');
+      } catch (e) {
+        return isoStr;
+      }
+    }
+
+    // Toggle monthly details display
+    function toggleDetails(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        const isHidden = el.style.display === 'none';
+        // Close all first to ensure clean layout
+        document.querySelectorAll('.storage-details-panel').forEach(panel => {
+          panel.style.display = 'none';
+        });
+        if (isHidden) {
+          el.style.display = 'block';
+          // Smooth scroll to details
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
+
+    // Render storage stats into DOM
+    function renderStorageStats(data) {
+      if (!data) {
+        document.getElementById('storageLastUpdated').textContent = 'Nenhum dado cacheado. Clique em "Atualizar Dados".';
+        return;
+      }
+
+      document.getElementById('storageLastUpdated').textContent = formatIsoToBr(data.last_updated);
+      document.getElementById('storageHeaderBadge').style.display = 'inline-block';
+
+      const folders = ['DDS_Fotos', 'ChicoEletro', 'Fotos'];
+      folders.forEach(folder => {
+        const months = data.folders[folder] || [];
+        
+        let totalCount = 0;
+        let totalBytes = 0;
+        let tbodyHtml = '';
+
+        months.forEach(m => {
+          totalCount += m.count;
+          totalBytes += m.size_bytes;
+          tbodyHtml += `
+            <tr>
+              <td><strong style="color: var(--text);">${m.month}</strong></td>
+              <td style="text-align: right;">${m.count}</td>
+              <td style="text-align: right;">${formatBytes(m.size_bytes)}</td>
+              <td style="text-align: right;">
+                ${m.count > 0 ? `
+                  <button class="btn btn-danger" onclick="cleanupPhotos('${folder}', '${m.month}', '${formatBytes(m.size_bytes)}')" style="padding: 4px 8px; font-size: 0.8em; margin: 0;" title="Apagar fotos grandes deste mês">
+                    🧹 Limpar Fotos
+                  </button>
+                ` : '-'}
+              </td>
+            </tr>
+          `;
+        });
+
+        document.getElementById(`files_${folder}`).textContent = totalCount;
+        document.getElementById(`size_${folder}`).textContent = formatBytes(totalBytes);
+        
+        const tbody = document.getElementById(`body_${folder}`);
+        if (tbody) {
+          tbody.innerHTML = tbodyHtml || `<tr><td colspan="4" style="text-align:center; color: var(--muted); padding: 12px;">Nenhum arquivo armazenado.</td></tr>`;
+        }
+      });
+    }
+
+    // Handle monthly GCS cleanup
+    async function cleanupPhotos(folder, month, sizeStr) {
+      const warningMsg = `ATENÇÃO: Você está prestes a apagar as FOTOS GRANDES (originais) da pasta "${folder}" referentes ao mês de ${month} (tamanho aproximado: ${sizeStr}).\n\n` +
+                         `IMPORTANTE:\n` +
+                         `1. Esta ação é IRREVERSÍVEL e as imagens originais serão PERDIDAS PARA SEMPRE.\n` +
+                         `2. As miniaturas (thumbnails) serão mantidas, garantindo que relatórios e painéis continuem exibindo as imagens em formato reduzido.\n\n` +
+                         `Para confirmar, digite o código do mês "${month}" no campo abaixo:`;
+                         
+      const confirmation = prompt(warningMsg);
+      if (confirmation !== month) {
+        if (confirmation !== null) {
+          alert("Confirmação incorreta. Limpeza cancelada.");
+        }
+        return;
+      }
+      
+      const loader = document.getElementById('storageLoadingOverlay');
+      if (loader) loader.style.display = 'flex';
+      
+      try {
+        const resp = await fetch("{{ url_for('admin.cleanup_storage_photos') }}", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ folder: folder, month: month })
+        });
+        const res = await resp.json();
+        if (res.ok) {
+          alert(`Limpeza concluída com sucesso!\n\nFotos apagadas: ${res.details.deleted_count}\nDocumentos atualizados no Firestore: ${res.details.updated_docs}`);
+          if (res.stats) {
+            renderStorageStats(res.stats);
+          } else {
+            window.location.reload();
+          }
+        } else {
+          alert('Erro ao executar limpeza: ' + (res.error || 'Erro desconhecido'));
+        }
+      } catch (e) {
+        alert('Erro de rede: ' + e);
+      } finally {
+        if (loader) loader.style.display = 'none';
+      }
+    }
+
+    // Load initial stats from Firestore cache
+    async function loadStorageStats() {
+      try {
+        const resp = await fetch("{{ url_for('admin.get_storage_stats') }}");
+        const res = await resp.json();
+        if (res.ok && res.stats) {
+          renderStorageStats(res.stats);
+        } else {
+          document.getElementById('storageLastUpdated').textContent = 'Sem dados de cache. Clique para atualizar.';
+        }
+      } catch (e) {
+        console.error('Erro ao ler estatísticas do storage:', e);
+        document.getElementById('storageLastUpdated').textContent = 'Erro ao carregar dados.';
+      }
+    }
+
+    // Handle recalculate sync
+    document.getElementById('btnSyncStorage')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSyncStorage');
+      const loader = document.getElementById('storageLoadingOverlay');
+      
+      if (!confirm('Deseja varrer o bucket de armazenamento no GCS agora? \nEssa operação pode demorar cerca de 15 a 20 segundos devido à quantidade de fotos.')) return;
+      
+      btn.disabled = true;
+      loader.style.display = 'flex';
+      
+      try {
+        const resp = await fetch("{{ url_for('admin.recalculate_storage_stats') }}", { method: 'POST' });
+        const res = await resp.json();
+        if (res.ok && res.stats) {
+          renderStorageStats(res.stats);
+          alert('Estatísticas de armazenamento atualizadas com sucesso!');
+        } else {
+          alert('Erro ao atualizar: ' + (res.error || 'Erro desconhecido'));
+        }
+      } catch (e) {
+        alert('Erro na requisição: ' + e);
+      } finally {
+        loader.style.display = 'none';
+        btn.disabled = false;
+      }
+    });
+
+    // Run on startup
+    loadStorageStats();
+  </script>
+
+  <style>
+    /* CSS para controle de armazenamento */
+    .storage-loading-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(11, 16, 32, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+    }
+    .storage-details-panel {
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 992px) {
+      .storage-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+
+    .info-alert {
+      background: rgba(47, 111, 237, 0.05);
+      border: 1px solid rgba(47, 111, 237, 0.2);
+      padding: 12px 16px;
+      border-radius: 10px;
+      color: #93c5fd;
+      font-size: 0.9em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .btn-sim {
+      background: rgba(255, 255, 255, 0.05) !important;
+      border: 1px solid var(--line) !important;
+      color: var(--muted) !important;
+    }
+    .btn-sim.active {
+      background: var(--btn-primary) !important;
+      border-color: var(--btn-primary) !important;
+      color: white !important;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top:0; left:0; right:0; bottom:0;
+      background: rgba(6, 9, 18, 0.92);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-container {
+      background: var(--card);
+      width: 95%;
+      max-width: 1100px;
+      max-height: 95vh;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(7, 11, 23, 0.4);
+    }
+    .modal-close { font-size: 28px; cursor: pointer; color: var(--muted); }
+    .modal-close:hover { color: var(--text); }
+
+    .simulator-controls {
+        padding: 14px 24px;
+        background: rgba(7, 11, 23, 0.2);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .modal-body {
+        padding: 30px;
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: radial-gradient(circle at center, #16203a 0%, #0b1020 100%);
+    }
+
+    .simulator-frame {
+        position: relative;
+        background: #000;
+        border: 14px solid #1e293b;
+        border-radius: 24px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.05);
+        transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Proporção Paisagem (Landscape) */
+    .size-10 { width: 920px; height: 575px; }
+    .size-7  { width: 640px; height: 400px; }
+    .size-5  { width: 420px; height: 260px; }
+
+    .simulator-frame img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+
+    .slide-nav {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: linear-gradient(0deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+        padding: 30px 15px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: white;
+    }
+    .nav-btn {
+        background: rgba(255,255,255,0.1);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: white;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 18px;
+        transition: all 0.2s;
+    }
+    .nav-btn:hover { background: var(--btn-primary); border-color: var(--btn-primary); }
+
+    .spinner {
+        width: 40px; height: 40px;
+        border: 3px solid rgba(47, 111, 237, 0.1);
+        border-top: 3px solid var(--btn-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 15px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+{% endblock %}
