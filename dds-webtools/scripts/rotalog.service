@@ -1,0 +1,38 @@
+[Unit]
+Description=Rotalog Tempo Real - Daemon de Raspagem e Sincronizacao (Orange Pi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Altere para o usuario do seu Orange Pi (ex: orangepi, root, etc.)
+User=orangepi
+Group=orangepi
+
+# Diretorio raiz do dds-webtools no seu Orange Pi
+WorkingDirectory=/home/orangepi/DDS/dds-webtools
+
+# Variaveis de ambiente carregadas do .env
+EnvironmentFile=/home/orangepi/DDS/dds-webtools/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=ROTALOG_UPLOAD_FIREBASE=true
+
+# Comando de inicializacao usando o virtualenv Python
+# Ajuste o caminho do executavel python conforme sua instalacao
+ExecStart=/home/orangepi/DDS/dds-webtools/venv/bin/python scripts/run_rotalog_local.py --firebase --interval-seconds 120 --output-dir /home/orangepi/DDS/dds-webtools/dados-local
+
+# Politica de reinicio automatico resiliente a quedas de rede e reboots
+Restart=always
+RestartSec=10
+
+# Protecao de memoria e prioridade de I/O
+Nice=-5
+MemoryMax=512M
+LimitNOFILE=65535
+
+# Logs direcionados para o systemd journal (journalctl -u rotalog -f)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
