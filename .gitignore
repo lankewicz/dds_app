@@ -58,6 +58,7 @@ dds_token_server/
 
 # --- Ignorar se não fizer parte do repositório dds_app ---
 dds-turnos-monitor/
+dds-coletor-rtl/
 backup_app_src_*.zip
 '@ | Set-Content .gitignore
 # segredos e credenciais
