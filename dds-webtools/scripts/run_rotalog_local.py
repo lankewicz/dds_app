@@ -71,21 +71,29 @@ def _init_firebase_storage():
     try:
         import firebase_admin
         from firebase_admin import credentials
+        from google.cloud import storage
 
-        if not firebase_admin._apps:
-            cred_candidates = [
-                os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-                os.getenv("FIREBASE_CREDENTIALS"),
-                str(ROOT / "serviceAccountKey.json"),
-                str(ROOT / "firebase_credentials.json"),
-                str(ROOT.parent / "serviceAccountKey.json"),
-            ]
-            cred_path = next((p for p in cred_candidates if p and os.path.isfile(p)), None)
-            if cred_path:
+        cred_candidates = [
+            os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+            os.getenv("FIREBASE_CREDENTIALS"),
+            str(ROOT / "firebase_config.json"),
+            str(ROOT / "serviceAccountKey.json"),
+            str(ROOT / "firebase_credentials.json"),
+            str(ROOT.parent / "firebase_config.json"),
+            str(ROOT.parent / "serviceAccountKey.json"),
+        ]
+        cred_path = next((p for p in cred_candidates if p and os.path.isfile(p)), None)
+
+        client_factory = None
+        if cred_path:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+            client_factory = lambda: storage.Client.from_service_account_json(cred_path)
+            if not firebase_admin._apps:
                 cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
                 LOG.info("Firebase inicializado via credencial de arquivo: %s", cred_path)
-            else:
+        else:
+            if not firebase_admin._apps:
                 firebase_admin.initialize_app()
                 LOG.info("Firebase inicializado com credenciais padrão do ambiente")
 
@@ -94,7 +102,7 @@ def _init_firebase_storage():
             "ROTALOG_GCS_CACHE_BLOB",
             "dados/chicoeletro/rotalog/equipes/current/index.json.gz",
         )
-        store = RotalogGcsSnapshotStore(bucket_name, blob_name)
+        store = RotalogGcsSnapshotStore(bucket_name, blob_name, client_factory=client_factory)
         team_repo = RotalogTeamFileRepository(store)
         exec_log = RotalogExecutionLog(store)
         return store, team_repo, exec_log
@@ -187,8 +195,8 @@ class LocalRotalogRunner:
                     # 2. Grava no Firebase Storage (GCS) se ativado
                     if self.firebase_enabled and self.team_repo:
                         try:
-                            self.team_repo.save_current(team_key, document)
-                            self.team_repo.save_daily(team_key, day, merged_daily)
+                            self.team_repo.save_current(document)
+                            self.team_repo.merge_and_save_daily(document, day)
                         except Exception as exc:
                             LOG.error("Erro ao sincronizar equipe %s no Storage: %s", team_key, exc)
 

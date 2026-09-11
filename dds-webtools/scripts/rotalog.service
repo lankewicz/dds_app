@@ -5,21 +5,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Altere para o usuario do seu Orange Pi (ex: orangepi, root, etc.)
 User=orangepi
 Group=orangepi
 
-# Diretorio raiz do dds-webtools no seu Orange Pi
-WorkingDirectory=/home/orangepi/DDS/dds-webtools
+# Diretorio exato conforme seu terminal (/home/orangepi/dds/dds-webtools)
+WorkingDirectory=/home/orangepi/dds/dds-webtools
 
 # Variaveis de ambiente carregadas do .env
-EnvironmentFile=/home/orangepi/DDS/dds-webtools/.env
+EnvironmentFile=/home/orangepi/dds/dds-webtools/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=ROTALOG_UPLOAD_FIREBASE=true
 
-# Comando de inicializacao usando o virtualenv Python
-# Ajuste o caminho do executavel python conforme sua instalacao
-ExecStart=/home/orangepi/DDS/dds-webtools/venv/bin/python scripts/run_rotalog_local.py --firebase --interval-seconds 120 --output-dir /home/orangepi/DDS/dds-webtools/dados-local
+# Executavel python do virtualenv (.venv)
+ExecStart=/home/orangepi/dds/dds-webtools/.venv/bin/python scripts/run_rotalog_local.py --firebase --interval-seconds 120 --output-dir /home/orangepi/dds/dds-webtools/dados-local
 
 # Politica de reinicio automatico resiliente a quedas de rede e reboots
 Restart=always
