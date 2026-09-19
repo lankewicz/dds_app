@@ -438,9 +438,68 @@ class RotalogTeamFileRepository:
         self.store.save_blob(self.index_path(), index)
 
     def load_daily(self, team_key: str, day: str) -> dict[str, typing.Any]:
-        cache_key = (day, _safe_team_key(team_key))
+        safe_key = _safe_team_key(team_key)
+        cache_key = (day, safe_key)
         with self._lock:
-            self._daily_cache[cache_key] = self.store.load_blob(self.daily_path(day, team_key))
+            cached = self._daily_cache.get(cache_key)
+            if cached is not None:
+                return dict(cached)
+
+            daily_data = {}
+            # 1. Tenta carregar do Storage (GCS)
+            if self.store.enabled:
+                try:
+                    daily_data = self.store.load_blob(self.daily_path(day, safe_key))
+                except Exception as exc:
+                    logger.debug("Falha ao carregar diário do GCS para %s: %s", safe_key, exc)
+
+            # 2. Fallback local se não encontrado no GCS
+            if not daily_data:
+                import gzip
+                import json
+                from pathlib import Path
+                local_candidates = [
+                    os.path.join(os.getenv("ROTALOG_LOCAL_DATA_DIR", ""), "rotalog", "equipes", "daily", day, f"{safe_key}.json.gz"),
+                    os.path.join("dados-local", "rotalog", "equipes", "daily", day, f"{safe_key}.json.gz"),
+                    rf"D:\programas\dds-coletor-rtl\dados-local\rotalog\equipes\daily\{day}\{safe_key}.json.gz",
+                    rf"D:\programas\dds-coletor-rtl\dados-local\rotalog\equipes\current\{safe_key}.json.gz",
+                    f"/home/orangepi/dds-coletor-rtl/dados-local/rotalog/equipes/daily/{day}/{safe_key}.json.gz",
+                ]
+                for p_str in local_candidates:
+                    if p_str and os.path.isfile(p_str):
+                        try:
+                            payload = Path(p_str).read_bytes()
+                            raw = gzip.decompress(payload) if payload.startswith(b"\x1f\x8b") else payload
+                            loaded = json.loads(raw.decode("utf-8-sig"))
+                            if isinstance(loaded, dict) and loaded:
+                                daily_data = loaded
+                                break
+                        except Exception as exc:
+                            logger.debug("Falha ao ler diário local %s: %s", p_str, exc)
+
+            # 3. Normalização para Schema v2 garantindo interoperabilidade com a timeline
+            if daily_data and ("ordensServico" in daily_data or daily_data.get("schemaVersion") == 2):
+                os_sec = daily_data.get("ordensServico") or {}
+                historico = os_sec.get("historico") or []
+                atual = os_sec.get("atual")
+                services = list(historico)
+                if atual and isinstance(atual, dict):
+                    services.append(atual)
+                daily_data.setdefault("services", services)
+
+                jornada = daily_data.get("jornada") or {}
+                turno = jornada.get("turno") or {}
+                turno_intervalos = jornada.get("intervalos") or []
+                daily_data.setdefault("turno", {
+                    **turno,
+                    "intervalos": turno_intervalos,
+                })
+                daily_data.setdefault("current", {
+                    "turnStatus": turno.get("status"),
+                    "service": atual,
+                })
+
+            self._daily_cache[cache_key] = daily_data or {}
             return dict(self._daily_cache[cache_key])
 
     def consolidate_month(self, month: str) -> dict[str, typing.Any]:

@@ -12,7 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.chicoeletro.dds.data.StorageTrainingRepository
 import com.chicoeletro.dds.data.Training
 import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
-import com.chicoeletro.dds.storage.ExecCacheEntry
+import com.chicoeletro.dds.features.training.TrainingExecutionDailySync
 import com.chicoeletro.dds.storage.LocalTrainingIndex
 import com.chicoeletro.dds.storage.TrainingExecLocalStore
 import com.chicoeletro.dds.storage.TrainingExecSyncState
@@ -76,25 +76,13 @@ class TrainingViewModel @Inject constructor(
                 }
         }
 
-        // Remote listener
+        // Atualiza a Torre de Controle uma vez ao dia por equipe/mês.
+        // Nas demais aberturas, o fluxo acima usa exclusivamente o cache local.
         viewModelScope.launch {
-             execRepo.listenMonth(
-                teamName = equipe,
-                ym = month,
-                onUpdate = { map ->
-                    val cache = map.mapValues { (_, st) ->
-                        ExecCacheEntry(
-                            st.dataConclusao,
-                            st.horaConclusao,
-                            st.duracao,
-                            TrainingExecSyncState.SYNCED
-                        )
-                    }
-                    viewModelScope.launch {
-                        TrainingExecLocalStore.mergeRemoteMonth(application, teamKey, monthId, cache)
-                    }
-                }
-            )
+            runCatching {
+                TrainingExecutionDailySync.syncIfNeeded(application, equipe, month, execRepo)
+            }
+                .onFailure { Log.w("TrainingVM", "Torre DDS mensal indisponível; usando cache local.", it) }
         }
     }
 

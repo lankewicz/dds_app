@@ -8,7 +8,6 @@
 package com.chicoeletro.dds.sync
 
 import android.content.Context
-import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.chicoeletro.dds.data.local.PendingDdsStore
@@ -32,7 +31,6 @@ class DdsSyncWorker(
     override suspend fun doWork(): Result {
         val store = PendingDdsStore(applicationContext)
         val uploader = RemoteDdsUploader(FirebaseStorage.getInstance(), FirebaseFirestore.getInstance())
-        val execRepo = TeamTrainingExecutionRepository()
 
         val collectionName = inputData.getString("collectionName") ?: "DDS"
         val pastaFotos = inputData.getString("pastaFotos") ?: "DDS_Fotos"
@@ -63,8 +61,6 @@ class DdsSyncWorker(
                     uploader.upload(submissionSegura, collectionName, pastaFotos, duracaoEfetiva)
                     
                     val ym = trainingIsoDateFromId(s.trainingName)?.let { YearMonth.from(it) } ?: YearMonth.now()
-                    execRepo.markExecuted(s.equipe, ym, s.trainingName, s.dataConclusao, s.horaConclusao, duracaoEfetiva, Build.MODEL)
-                    
                     val teamKey = TeamTrainingExecutionRepository.teamKeyOf(s.equipe)
                     TrainingExecLocalStore.upsert(
                         applicationContext, teamKey, ym.toString(), s.trainingName,
@@ -90,16 +86,6 @@ class DdsSyncWorker(
                 uploader.upload(s, collectionName, pastaFotos, duracaoEfetiva)
 
                 val ym = trainingIsoDateFromId(s.trainingName)?.let { YearMonth.from(it) } ?: YearMonth.now()
-                execRepo.markExecuted(
-                    teamName = s.equipe,
-                    ym = ym,
-                    trainingId = s.trainingName,
-                    dataConclusao = s.dataConclusao,
-                    horaConclusao = s.horaConclusao,
-                    duracao = duracaoEfetiva,
-                    deviceModel = Build.MODEL
-                )
-
                 val teamKey = TeamTrainingExecutionRepository.teamKeyOf(s.equipe)
                 TrainingExecLocalStore.upsert(
                     context = applicationContext,

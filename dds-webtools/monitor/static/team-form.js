@@ -473,6 +473,10 @@ function extractTeamServices(item) {
   let rawServices = [];
   if (Array.isArray(snapshot.services) && snapshot.services.length > 0) {
     rawServices = snapshot.services.map(s => ({ ...s }));
+  } else if (snapshot.ordensServico) {
+    const historico = Array.isArray(snapshot.ordensServico.historico) ? snapshot.ordensServico.historico : [];
+    const atual = snapshot.ordensServico.atual ? [snapshot.ordensServico.atual] : [];
+    rawServices = [...historico, ...atual].filter(Boolean).map(s => ({ ...s }));
   } else {
     const executadas = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
     const emAndamento = Array.isArray(snapshot.ssEmAndamento)
@@ -519,13 +523,16 @@ function extractTeamServices(item) {
   });
 
   // 2. Intervalos de Refeição / Pausa do Turno
-  const turno = snapshot.turno || {};
-  const rawIntervalos = Array.isArray(turno.intervalos) ? turno.intervalos : (Array.isArray(snapshot.intervalos) ? snapshot.intervalos : []);
+  const jornada = snapshot.jornada || {};
+  const turno = jornada.turno || snapshot.turno || {};
+  const rawIntervalos = Array.isArray(jornada.intervalos)
+    ? jornada.intervalos
+    : (Array.isArray(turno.intervalos) ? turno.intervalos : (Array.isArray(snapshot.intervalos) ? snapshot.intervalos : []));
   if (rawIntervalos.length === 0 && snapshot.intervalo && (snapshot.intervalo.inicio_iso || snapshot.intervalo.inicioIso || snapshot.intervalo.inicio || snapshot.intervalo.inicio_ms)) {
     rawIntervalos.push(snapshot.intervalo);
   }
 
-  const isEmIntervalo = String(snapshot.turnStatus || snapshot.estadoConsolidado || snapshot.estado || (snapshot.current && snapshot.current.turnStatus) || '').toUpperCase() === 'INTERVALO';
+  const isEmIntervalo = Boolean(jornada.emIntervalo) || String(snapshot.turnStatus || snapshot.estadoConsolidado || snapshot.estado || (snapshot.current && snapshot.current.turnStatus) || '').toUpperCase() === 'INTERVALO';
 
   const intervalEvents = rawIntervalos.map((it, idx) => {
     let inicio = it.inicio || it.inicio_iso || it.inicioIso;
@@ -954,6 +961,9 @@ function renderTeamTimeline(item) {
               ` : (isInterval ? `
                 <span class="timelineProtocolInline"><strong class="timelineProtocolValue" style="color: #94a3b8; font-size: 11px; font-weight: 500;">Intervalo da Equipe</strong></span>
               ` : ''))}
+              ${(srv.latitude && srv.longitude) ? `
+                <a href="https://maps.google.com/?q=${encodeURIComponent(srv.latitude)},${encodeURIComponent(srv.longitude)}" target="_blank" rel="noopener noreferrer" class="timelineGpsLink" title="Abrir localização no Google Maps">📍 Ver no mapa</a>
+              ` : ''}
             </div>
             <span class="timelineStatusBadge ${isRunning ? 'timelineStatusBadge--running' : 'timelineStatusBadge--done'} ${isRedirected ? 'timelineStatusBadge--redirected' : ''}">
               ${statusText}
@@ -1031,7 +1041,11 @@ function updateLiveSummary(item) {
     : '-';
 
   const snapshot = (item && item.rotalogSnapshot) || item;
-  if (snapshot && Array.isArray(snapshot.services) && snapshot.services.length > 0) {
+  if (snapshot && (
+    (Array.isArray(snapshot.services) && snapshot.services.length > 0) ||
+    snapshot.ordensServico ||
+    snapshot.jornada
+  )) {
     renderTeamTimeline(item);
   }
 }

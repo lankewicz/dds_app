@@ -1,0 +1,149 @@
+/* -----------------------------------------------------------------------------
+ * Arquivo : monitor/static/css/activity_feed.css
+ * Objetivo: Painel lateral de feed de atividades e timeline de eventos.
+ * -------------------------------------------------------------------------- */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAINEL DE ÚLTIMA ATIVIDADE NO CABEÇALHO
+   ═══════════════════════════════════════════════════════════════════════════ */
+.topbarActivity {
+  min-width: 160px;
+  max-width: 280px;
+  width: min(20vw, 280px);
+  align-self: center;
+  justify-self: start;
+  position: relative;
+  z-index: 4;
+}
+
+.activityFeedPanel {
+  position: relative;
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.62));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.activityFeedPanelHeader {
+  min-height: unset;
+}
+
+.activityFeedSummary {
+  min-height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+  z-index: 2;
+}
+
+.activityFeedList {
+  display: grid;
+  gap: 3px;
+  padding: 7px 10px 9px 10px;
+  height: 123px; /* cinco mudanças visíveis; o resumo permanece fixo acima */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.3) transparent;
+}
+
+.activityFeedList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.activityFeedList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activityFeedList::-webkit-scrollbar-thumb {
+  background-color: rgba(96, 165, 250, 0.3);
+  border-radius: 4px;
+}
+
+.activityFeedItem {
+  display: grid;
+  grid-template-columns: 36px 8px 52px 8px minmax(0, 1fr);
+  gap: 3px;
+  align-items: center;
+  min-height: 19px;
+  font-size: 11px;
+  line-height: 1.15;
+  color: #e5eefc;
+  white-space: nowrap;
+}
+
+.activityFeedTime {
+  font-weight: 700;
+  color: #93c5fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.activityFeedSep {
+  color: rgba(148, 163, 184, 0.4);
+  text-align: center;
+  user-select: none;
+}
+
+.activityFeedTeam {
+  font-weight: 800;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityFeedLabel {
+  color: rgba(226, 232, 240, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityFeedEmpty,
+.activityFeedError {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.activityFeedError {
+  color: #fecaca;
+}
+
+@media (max-width: 1420px) {
+  .topbarActivity {
+    width: min(18vw, 240px);
+    min-width: 140px;
+  }
+
+  .activityFeedItem {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 6px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .topbarActivity {
+    display: none;
+  }
+}
+

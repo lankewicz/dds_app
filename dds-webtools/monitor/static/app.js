@@ -49,7 +49,19 @@ const activityFeedSummary = document.getElementById("activityFeedSummary");
 
 let cfg = null;
 let pollingSeconds = 600;
-const WEB_CARD_REFRESH_SECONDS = 60;
+
+function getAdaptivePollingSeconds() {
+  const hour = new Date().getHours();
+  if (hour >= 7 && hour < 18) {
+    return 300; // 5 min (07:00 às 18:00)
+  } else if (hour >= 18 && hour < 22) {
+    return 900; // 15 min (18:00 às 22:00)
+  } else {
+    return 1800; // 30 min (22:00 às 07:00)
+  }
+}
+
+const WEB_CARD_REFRESH_SECONDS = 300;
 let pollingTimer = null;
 let countdownTimer = null;
 let nextTickAtMs = null;
@@ -173,8 +185,11 @@ function latestCommunicationAt(item) {
   const snapshot = item?.rotalogSnapshot || {};
   const candidates = [
     item?.operacional?.atualizadoEm,
+    snapshot.updatedAt,
     snapshot.updatedAtIso,
     snapshot.eventTimestampMs,
+    item?.updatedAt,
+    item?.lastContact,
   ];
   let latestMs = null;
   for (const value of candidates) {
@@ -225,6 +240,8 @@ function isUsefulActivityFeedItem(item) {
   if (!label || label === 'ROTALOG') return false;
   if (label.includes(' - FILA:')) return false;
   if (label.includes('DADOS OPERACIONAIS ATUALIZADOS')) return false;
+  if (label.includes('INATIVADA') || label.includes('INATIVADO')) return false;
+  if (label.includes('ATIVADA') || label.includes('ATIVADO')) return false;
   return true;
 }
 function mergeActivityFeedItems(localItems, newItems) {
@@ -257,7 +274,7 @@ function mergeActivityFeedItems(localItems, newItems) {
     return strB.localeCompare(strA);
   });
 
-  return mergedList.slice(0, 30);
+  return mergedList.slice(0, 1000);
 }
 
 function renderActivityFeed(items = [], summary = null) {
@@ -266,24 +283,36 @@ function renderActivityFeed(items = [], summary = null) {
     const abertas = Number(summary.abertas || 0);
     const comerciais = Number(summary.comerciais || 0);
     const emergenciais = Number(summary.emergenciais || 0);
-    activityFeedSummary.textContent = `${abertas} Abertas · ${comerciais} Comerciais · ${emergenciais} Emergenciais`;
+    activityFeedSummary.textContent = `${abertas} Ativas · ${comerciais} Comerciais · ${emergenciais} Emergências`;
   }
   const visible = items
     .filter(isUsefulActivityFeedItem)
-    .slice(0, 30);
+    .slice(0, 1000);
   if (!visible.length) {
     activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem mudanças recentes</div>';
     return;
   }
   activityFeedList.innerHTML = visible.map((item) => {
     const time = escapeHtml(item.time || fmtHourMinute(item.activityAt));
-    const team = String(item.teamKey || item.equipe || '-').trim().toUpperCase();
-    const rawLabel = String(item.label || 'Mudança operacional').trim();
-    const normalizedLabel = rawLabel.replace(/Em andamento:\s*[1-9]\d*\s*→\s*0/i, 'SEM EXECUÇÃO');
-    const alreadyIdentified = team !== '-' && normalizedLabel.toUpperCase().startsWith(`${team} -`);
-    const label = escapeHtml(alreadyIdentified ? normalizedLabel : `${team} - ${normalizedLabel}`);
+    const team = escapeHtml(String(item.teamKey || item.equipe || '-').trim().toUpperCase());
+    let rawLabel = String(item.label || 'Mudança operacional').trim();
+
+    // Se vier no formato antigo 'TEAM - Label', limpa o prefixo repetido
+    if (rawLabel.toUpperCase().startsWith(`${team} - `)) {
+      rawLabel = rawLabel.substring(team.length + 3).trim();
+    } else if (rawLabel.toUpperCase().startsWith(`${team} `)) {
+      rawLabel = rawLabel.substring(team.length + 1).trim();
+    }
+
+    const label = escapeHtml(rawLabel);
     const source = escapeHtml(item.source || '');
-    return `<div class="activityFeedItem" data-source="${source}"><span class="activityFeedTime">${time}</span><span class="activityFeedLabel">${label}</span></div>`;
+    return `<div class="activityFeedItem" data-source="${source}">` +
+      `<span class="activityFeedTime">${time}</span>` +
+      `<span class="activityFeedSep">|</span>` +
+      `<span class="activityFeedTeam">${team}</span>` +
+      `<span class="activityFeedSep">|</span>` +
+      `<span class="activityFeedLabel">${label}</span>` +
+    `</div>`;
   }).join('');
 }
 
@@ -298,7 +327,7 @@ async function loadActivityFeed() {
 
   const qs = new URLSearchParams();
   if (empresa) qs.set('empresa', empresa);
-  qs.set('limit', '5');
+  qs.set('limit', '1000');
   try {
     const r = await fetch(`/api/activity-feed?${qs.toString()}`, { cache: 'no-store' });
     const data = await r.json();
@@ -709,7 +738,9 @@ async function saveConfigModal() {
 
 function normalizedState(state) {
   const raw = safeUpper(state);
-  if (raw === "ESPECIAL" || raw === "DESLOCAMENTO") return "DESLOCAMENTO_ESPECIAL"; return raw;
+  if (raw === "EXECUCAO") return "ABERTO";
+  if (raw === "ESPECIAL" || raw === "DESLOCAMENTO") return "DESLOCAMENTO_ESPECIAL";
+  return raw;
 }
 function stateLabel(state) { switch (normalizedState(state)) { case "DESLOCAMENTO_ESPECIAL": return "DESLOCAMENTO ESPECIAL"; default: return normalizedState(state); } }
 
@@ -741,11 +772,13 @@ function serviceEventTimestampMs(value, referenceIso) {
 function getRotalogService(item) {
   if (!item?.rotalogSnapshot) return null;
   const snapshot = item.rotalogSnapshot;
-  const current = snapshot.atividadeAtual || null;
-  const completed = Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : [];
+  const current = snapshot.ordensServico?.atual || snapshot.atividadeAtual || null;
+  const completed = Array.isArray(snapshot.ordensServico?.historico)
+    ? snapshot.ordensServico.historico
+    : (Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : []);
   const service = current || (completed.length ? completed[completed.length - 1] : null);
   if (!service) return null;
-  const rawStatus = safeUpper(service.status || item?.atividadeStatus || item?.monitorStatus);
+  const rawStatus = safeUpper(service.statusAtual || service.status || item?.atividadeStatus || item?.monitorStatus);
   const statusChar = rawStatus === 'DESLOCAMENTO'
     ? 'D'
     : rawStatus === 'EXECUCAO'
@@ -767,12 +800,13 @@ function getRotalogService(item) {
   const conclusionAtMs = rawStatus === 'CONCLUSAO'
     ? serviceEventTimestampMs(
         service.retornoIso || service.fimIso || service.terminoIso || service.retorno || service.termino,
-        snapshot.updatedAtIso || item?.lastContact || item?.updatedAt
+        snapshot.updatedAt || snapshot.updatedAtIso || item?.lastContact || item?.updatedAt
       )
     : null;
   const conclusionOlderThanTenMinutes = Boolean(
     conclusionAtMs && Date.now() - conclusionAtMs > 10 * 60 * 1000
-  );  const statusLabel = rawStatus === 'DESLOCAMENTO'
+  );
+  const statusLabel = rawStatus === 'DESLOCAMENTO'
     ? 'Deslocamento'
     : rawStatus === 'EXECUCAO'
       ? 'Execução'
@@ -833,6 +867,9 @@ function getRotalogService(item) {
     timeTooltip = `${effectiveStageLabel}: ${effectiveTimeLabel}${extraStr}`;
   }
 
+  const latitude = service.latitude ?? item.latitude ?? null;
+  const longitude = service.longitude ?? item.longitude ?? null;
+
   return {
     identifier: String(identifier), identifierLabel, statusChar, statusLabel, rawStatus,
     category,
@@ -843,6 +880,8 @@ function getRotalogService(item) {
     effectiveStageLabel,
     effectiveTimeLabel,
     timeTooltip,
+    latitude,
+    longitude,
   };
 }
 function operationalTimestamp(value) {
@@ -867,15 +906,15 @@ function operationalTimeLabel(value) {
 function getTurnSummary(item, shown) {
   if (shown !== 'FECHADO' && shown !== 'INTERVALO') return null;
   const snapshot = item?.rotalogSnapshot || {};
-  const turno = snapshot.turno || {};
+  const turno = snapshot?.jornada?.turno || snapshot?.turno || item?.turno || {};
   const intervals = Array.isArray(snapshot.intervalos) ? snapshot.intervalos : [];
   const latestInterval = intervals.length ? intervals[intervals.length - 1] : (snapshot.intervalo || {});
-  const openedAt = turno.inicio_iso || turno.inicioIso || turno.inicio_ms || turno.inicio || item?.openedAtClientMs;
-  const closedAt = turno.fim_iso || turno.fimIso || turno.fim_ms || turno.fim || item?.closedAtClientMs || item?.updatedAt;
+  const openedAt = turno.inicio_iso || turno.inicioIso || turno.inicio_ms || turno.inicio || item?.turnoInicio || item?.openedAtClientMs;
+  const closedAt = turno.fim_iso || turno.fimIso || turno.fim_ms || turno.fim || item?.turnoFim || item?.closedAtClientMs || item?.updatedAt;
   const intervalAt = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio_ms || latestInterval.inicio || item?.updatedAt;
   const executedServices = Array.isArray(snapshot.ssExecutadas)
     ? snapshot.ssExecutadas.length
-    : Number(snapshot.ssExecutadasCount || item?.ssExecutadasCount || 0);
+    : Number(snapshot?.ordensServico?.totalConcluidos ?? item?.totalConcluidos ?? snapshot.ssExecutadasCount ?? item?.ssExecutadasCount ?? 0);
   return {
     title: shown === 'FECHADO' ? 'ÚLTIMO TURNO' : 'TURNO ATUAL',
     openedAt: operationalTimeLabel(openedAt),
@@ -983,6 +1022,19 @@ function hoverRows(item) {
     rows.push(`<div class="hoverRow"><span>${escapeHtml(rotalogService.effectiveStageLabel)}</span><strong>${escapeHtml(rotalogService.effectiveTimeLabel)}</strong></div>`);
   }
   if (rotalogService?.protocol) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(rotalogService.protocol)}</strong></div>`);
+  const totalConcluidos = item.totalConcluidos ?? item.rotalogSnapshot?.ordensServico?.totalConcluidos;
+  if (totalConcluidos !== undefined && totalConcluidos !== null) {
+    rows.push(`<div class="hoverRow"><span>Serviços Concluídos (Hoje)</span><strong>${escapeHtml(String(totalConcluidos))}</strong></div>`);
+  }
+  const colab = item.colaborador ?? item.rotalogSnapshot?.conexao?.colaborador;
+  if (colab) {
+    rows.push(`<div class="hoverRow"><span>Colaborador</span><strong>${escapeHtml(colab)}</strong></div>`);
+  }
+  const lat = item.latitude ?? rotalogService?.latitude;
+  const lon = item.longitude ?? rotalogService?.longitude;
+  if (lat && lon) {
+    rows.push(`<div class="hoverRow"><span>GPS</span><strong><a class="gpsMapLink" href="https://maps.google.com/?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}" target="_blank" rel="noopener noreferrer">📍 Ver no Mapa</a></strong></div>`);
+  }
   if (normalizedState(item.estado) === 'DESLOCAMENTO_ESPECIAL' && hasMeaningfulValue(item.motivo)) rows.push(`<div class="hoverRow"><span>Motivo</span><strong>${escapeHtml(detailValue(item.motivo))}</strong></div>`);
   return rows.join('');
 }
@@ -1151,12 +1203,12 @@ function formatStatusWithTime(item, shown, art66Active, art66EndAt) {
   const statusLabel = stateLabel(shown);
   const normState = normalizedState(shown);
   const snapshot = item?.rotalogSnapshot || {};
-  const turno = snapshot?.turno || item?.turno || {};
+  const turno = snapshot?.jornada?.turno || snapshot?.turno || item?.turno || {};
   const intervalos = Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : [];
   const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (snapshot?.intervalo || {});
 
   let dateLike = null;
-  if (normState === "ABERTO") {
+  if (normState === "ABERTO" || normState === "EXECUCAO" || normState === "DESLOCAMENTO" || normState === "DESLOCAMENTO_ESPECIAL") {
     dateLike = turno.inicio_iso || turno.inicioIso || turno.inicio || item?.turnoInicio || item?.inicioIso || item?.openedAtClientMs || item?.updatedAt;
   } else if (normState === "FECHADO") {
     dateLike = turno.fim_iso || turno.fimIso || turno.fim || item?.turnoFim || item?.fimIso || item?.closedAtClientMs || item?.updatedAt;
@@ -1213,8 +1265,10 @@ function tile(item) {
   const teamKey = detailValue(item.teamKey || item.equipe);
   const veiculoOperacional = item?.operacional?.veiculo
     || item?.rotalogSnapshot?.veiculo
+    || item?.rotalogSnapshot?.conexao?.veiculo
     || item?.operacional?.identificadorEquipamento
-    || item?.rotalogSnapshot?.identificadorEquipamento;
+    || item?.rotalogSnapshot?.identificadorEquipamento
+    || item?.rotalogSnapshot?.conexao?.identificadorEquipamento;
   const veiculoLabel = veiculoOperacional ? String(veiculoOperacional).trim() : "-";
   const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
   const details = hoverRows(item);
@@ -1321,14 +1375,8 @@ function tile(item) {
   };
 
   let teamTypeIconHtml = '';
-  if (item.teamType) {
-    if (typeIcons[item.teamType]) {
-      teamTypeIconHtml = `<img class="teamTypeBadgeIcon" src="${typeIcons[item.teamType]}" loading="lazy" alt="${escapeHtml(item.teamType)}" />`;
-    } else {
-      teamTypeIconHtml = `<div class="teamTypeBadgeIcon emojiIcon" title="Sem Definição">🚫</div>`;
-    }
-  } else {
-    teamTypeIconHtml = `<div class="teamTypeBadgeIcon emojiIcon" title="Sem Definição">🚫</div>`;
+  if (item.teamType && typeIcons[item.teamType]) {
+    teamTypeIconHtml = `<img class="teamTypeBadgeIcon" src="${typeIcons[item.teamType]}" loading="lazy" alt="${escapeHtml(item.teamType)}" />`;
   }
 
   return `<article class="tile ${stateCard} ${border} ${isTrash ? 'isTrashTile' : ''}" tabindex="0" role="button" data-team="${escapeHtml(teamKey)}" aria-label="Equipe ${escapeHtml(equipe)}, status ${escapeHtml(statusLabel)}">
@@ -1594,9 +1642,9 @@ function startPolling() {
 
   const useHttpPolling = !db || String(lastData?.persistenceMode || 'json').toLowerCase() !== 'firestore';
   if (useHttpPolling) {
-    // JSON/GCS: atualização via API, sem listeners Firestore
+    // JSON/GCS: atualização via API com intervalo adaptativo
     nextRefresh.textContent = "Polling Ativo ⏳";
-    const safeSeconds = WEB_CARD_REFRESH_SECONDS;
+    const safeSeconds = getAdaptivePollingSeconds();
     pollingTimer = setInterval(() => {
       load({ silent: true });
     }, safeSeconds * 1000);
@@ -1835,7 +1883,7 @@ async function load(options = {}) {
 
     const safeSeconds = String(lastData?.persistenceMode || 'json').toLowerCase() === 'firestore'
       ? Math.max(15, pollingSeconds)
-      : WEB_CARD_REFRESH_SECONDS;
+      : getAdaptivePollingSeconds();
     nextTickAtMs = Date.now() + safeSeconds * 1000;
     setRefreshInfo();
   }
@@ -2153,6 +2201,7 @@ searchInput.addEventListener('input', () => syncRealtimeData());
 teamSelect?.addEventListener('change', () => syncRealtimeData());
 
 grid.addEventListener('click', (event) => {
+  if (event.target.closest('a, button, input, select, textarea')) return;
   const tileEl = event.target.closest('.tile');
   if (!tileEl || getViewMode() === 'trash') return;
   window.teamForm?.openTeamForm?.(tileEl.dataset.team || '');
@@ -2420,6 +2469,15 @@ document.addEventListener("click", (event) => {
   }
 });
 
+// Atalho de teclado: F5 aciona atualização manual imediata em qualquer horário
+window.addEventListener("keydown", (event) => {
+  if (event.key === "F5" || event.keyCode === 116) {
+    event.preventDefault();
+    load({ forceRefresh: true });
+    startPolling();
+  }
+});
+
 (async () => {
   try {
     await loadConfig();
@@ -2428,6 +2486,18 @@ document.addEventListener("click", (event) => {
     cfg = cfg || { defaultEmpresa: empresaInput?.value || '', pollingSeconds, rules: {} };
   }
   initNavigation(); // Inicializa a navegação SPA
-  await load();
+
+  // Se a página foi aberta via recarregamento do navegador (F5 físico ou botão de reload),
+  // força a sincronização imediata sem cache
+  const isPageReload = (() => {
+    try {
+      const nav = performance.getEntriesByType('navigation')[0];
+      if (nav && nav.type === 'reload') return true;
+      if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) return true;
+    } catch (_) {}
+    return false;
+  })();
+
+  await load({ forceRefresh: isPageReload });
   startPolling();
 })();

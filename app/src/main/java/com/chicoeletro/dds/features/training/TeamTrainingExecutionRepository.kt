@@ -33,13 +33,18 @@ import com.chicoeletro.dds.domain.DdsSubmissionWindowException
 import com.chicoeletro.dds.ui.training.isWithinTrainingConclusionWindow
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.SetOptions
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.text.Normalizer
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.zip.GZIPInputStream
 
 /**
  * Fonte de verdade (Firestore) para "treinamentos executados pela equipe".
@@ -52,12 +57,15 @@ import java.time.YearMonth
 class TeamTrainingExecutionRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    private val storage: FirebaseStorage = FirebaseStorage.getInstance(),
 ) {
     companion object {
         private const val ROOT = "dds_training_exec"
+        private const val CONTROL_ROOT = "dados/chicoeletro/dds/controle"
+        private const val MAX_PROJECTION_BYTES = 1024L * 1024L
 
         fun teamKeyOf(teamName: String): String {
-            val raw = teamName.trim().uppercase()
+            val raw = teamName.trim().uppercase().replace("\\(\\d+\\)\\s*$".toRegex(), "")
             val noAccents = Normalizer.normalize(raw, Normalizer.Form.NFD)
                 .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
             return noAccents
@@ -86,33 +94,38 @@ class TeamTrainingExecutionRepository(
 
     suspend fun getExecutedTrainingsForMonth(teamName: String, ym: java.time.YearMonth): Map<String, ExecStatus> {
         val teamKey = teamKeyOf(teamName)
-        val snap = monthDoc(teamKey, ym).get().await()
-        if (!snap.exists()) return emptyMap()
-        return parseExecutedTrainings(snap)
-    }
-
-    /**
-     * Listener em tempo real (offline-first via cache do Firestore).
-     * Retorna um ListenerRegistration para ser removido no onDispose().
-     */
-    fun listenMonth(
-        teamName: String,
-        ym: YearMonth,
-        onUpdate: (Map<String, ExecStatus>) -> Unit,
-        onError: (Throwable) -> Unit = {},
-    ): ListenerRegistration {
-        val teamKey = teamKeyOf(teamName)
-        return monthDoc(teamKey, ym).addSnapshotListener { snap, err ->
-            if (err != null) {
-                onError(err)
-                return@addSnapshotListener
-            }
-            if (snap == null || !snap.exists()) {
-                onUpdate(emptyMap())
-                return@addSnapshotListener
-            }
-            onUpdate(parseExecutedTrainings(snap))
+        ensureAuth()
+        val bytes = storage.reference
+            .child("$CONTROL_ROOT/monthly/${ym}/$teamKey.json.gz")
+            .getBytes(MAX_PROJECTION_BYTES)
+            .await()
+        val decoded = if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
+            GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            bytes.toString(Charsets.UTF_8)
         }
+        val root = JSONObject(decoded)
+        val executions = root.optJSONObject("executions") ?: return emptyMap()
+        val output = mutableMapOf<String, ExecStatus>()
+        val keys = executions.keys()
+        while (keys.hasNext()) {
+            val trainingId = keys.next()
+            val item = executions.optJSONObject(trainingId) ?: continue
+            val completedAt = item.optString("completedAt", "")
+            val local = runCatching {
+                OffsetDateTime.parse(completedAt).atZoneSameInstant(ZoneId.of("America/Sao_Paulo"))
+            }.getOrNull()
+            val headerDate = runCatching {
+                LocalDate.parse(item.optString("headerDate", ""))
+                    .format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+            }.getOrNull()
+            val date = headerDate
+                ?: local?.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+                ?: ""
+            val time = local?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "00:00"
+            if (date.isNotBlank()) output[trainingId] = ExecStatus(date, time, "")
+        }
+        return output
     }
 
     /**

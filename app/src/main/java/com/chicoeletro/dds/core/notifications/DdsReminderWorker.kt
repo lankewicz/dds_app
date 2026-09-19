@@ -11,10 +11,12 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.chicoeletro.dds.core.LastTeamStore
-import com.chicoeletro.dds.features.turno.TurnoController
+import com.chicoeletro.dds.features.training.TeamTrainingExecutionRepository
+import com.chicoeletro.dds.features.training.TrainingExecutionDailySync
 import com.chicoeletro.dds.storage.TrainingExecLocalStore
 import kotlinx.coroutines.flow.firstOrNull
 import java.time.LocalDateTime
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -36,16 +38,23 @@ class DdsReminderWorker(
         if (teamName.isBlank()) return Result.success()
 
         val today = now.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val teamKey = "team_${teamName.lowercase().trim()}"
+        val completionDay = now.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+        val teamKey = TeamTrainingExecutionRepository.teamKeyOf(teamName)
         val monthId = today.substring(0, 7)
 
+        runCatching {
+            TrainingExecutionDailySync.syncIfNeeded(
+                applicationContext,
+                teamName,
+                YearMonth.parse(monthId)
+            )
+        }
+
         val localRecords = TrainingExecLocalStore.flowMonth(applicationContext, teamKey, monthId).firstOrNull() ?: emptyMap()
-        val alreadyDone = localRecords.values.any { it.dataConclusao == today }
+        val alreadyDone = localRecords.values.any { it.dataConclusao == completionDay }
         
         if (!alreadyDone) {
-            val turnoController = TurnoController(applicationContext, teamName)
-            val snap = turnoController.current()
-            NotificationHelper.showDdsNotification(applicationContext, snap.estado.name)
+            NotificationHelper.showDdsNotification(applicationContext)
         }
 
         return Result.success()

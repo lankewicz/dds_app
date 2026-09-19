@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import typing
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -67,44 +68,194 @@ _ROTALOG_PERSISTENCE_MODE = os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip(
 _json_activity_feed: list[dict[str, typing.Any]] = []
 
 
-def get_rotalog_live_snapshots() -> dict[str, dict[str, typing.Any]]:
-    """Retorna a base ROTALOG em memória, hidratada uma vez pelo JSON/GCS."""
-    _hydrate_durable_cache_once()
+def get_rotalog_live_snapshots(force: bool = False) -> dict[str, dict[str, typing.Any]]:
+    """Retorna a base ROTALOG em memória, hidratada com TTL adaptativo ou forçada via F5."""
+    _hydrate_durable_cache_once(force=force)
     return _local_cache.snapshot()
 
 
-def get_rotalog_activity_feed(limit: int = 30) -> dict[str, typing.Any]:
+def get_rotalog_activity_feed(limit: int = 1000) -> dict[str, typing.Any]:
     _hydrate_durable_cache_once()
     snapshots = _local_cache.snapshot()
-    abertas = sum(
-        1
-        for snapshot in snapshots.values()
-        if bool((snapshot.get("turno") or {}).get("aberto"))
-        or str(snapshot.get("estadoConsolidado") or "").upper() in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}
-    )
-    comerciais = sum(int(snapshot.get("ssPendentesComercialCount") or 0) for snapshot in snapshots.values())
-    emergenciais = sum(int(snapshot.get("ssPendentesEmergenciaCount") or 0) for snapshot in snapshots.values())
     now_local = datetime.datetime.now(LOCAL_TZ)
-    formatted_items = []
-    for item in _json_activity_feed:
-        label = str(item.get("label") or "").upper()
-        if " - FILA:" in label or "DADOS OPERACIONAIS ATUALIZADOS" in label:
-            continue
-        hora = item.get("time") or ""
-        dt = None
-        if item.get("activityAt"):
-            try:
-                dt = datetime.datetime.fromisoformat(str(item["activityAt"]).replace("Z", "+00:00")).astimezone(LOCAL_TZ)
-                if dt > now_local + datetime.timedelta(minutes=1):
-                    continue
-                if not hora:
-                    hora = dt.strftime("%H:%M")
-            except Exception:
-                pass
-        formatted_items.append({**item, "time": hora or now_local.strftime("%H:%M")})
+    today_str = now_local.date().isoformat()
 
+    abertas = 0
+    comerciais = 0
+    emergenciais = 0
+
+    events: list[dict[str, typing.Any]] = []
+
+    for team_key, snapshot in snapshots.items():
+        if not isinstance(snapshot, dict):
+            continue
+
+        is_v2 = "conexao" in snapshot or "jornada" in snapshot or "ordensServico" in snapshot
+        jornada = snapshot.get("jornada") if isinstance(snapshot.get("jornada"), dict) else {}
+        turno = jornada.get("turno") if is_v2 else (snapshot.get("turno") or {})
+        if not isinstance(turno, dict):
+            turno = {}
+
+        ordens = snapshot.get("ordensServico") if isinstance(snapshot.get("ordensServico"), dict) else {}
+        atual = ordens.get("atual") if is_v2 else (snapshot.get("atividadeAtual") or {})
+        if not isinstance(atual, dict):
+            atual = {}
+
+        # 1. Status do turno e regras de fechamento automático inteligente (> 12h aberto e > 6h sem sinal)
+        turno_status = str(turno.get("status") or snapshot.get("turnStatus") or snapshot.get("estadoConsolidado") or "").upper()
+        turno_ini_str = turno.get("inicio") or turno.get("inicio_iso") or turno.get("inicioIso")
+        turno_fim_str = turno.get("fim") or turno.get("fim_iso") or turno.get("fimIso")
+
+        # Parsing de datas auxiliares
+        def _parse_ts(val: typing.Any) -> datetime.datetime | None:
+            if not val or str(val).strip() in ("", "-"):
+                return None
+            val_str = str(val).strip()
+            if len(val_str) == 5 and val_str[2] == ":":
+                try:
+                    return datetime.datetime.fromisoformat(f"{today_str}T{val_str}:00").replace(tzinfo=LOCAL_TZ)
+                except ValueError:
+                    return None
+            try:
+                p = datetime.datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+                if p.tzinfo is None:
+                    p = p.replace(tzinfo=LOCAL_TZ)
+                return p.astimezone(LOCAL_TZ)
+            except Exception:
+                return None
+
+        dt_ini_local = _parse_ts(turno_ini_str)
+        updated_str = snapshot.get("updatedAt") or snapshot.get("updatedAtIso") or snapshot.get("lastCollectedAt")
+        updated_local = _parse_ts(updated_str)
+        horas_aberto = (now_local - dt_ini_local).total_seconds() / 3600.0 if dt_ini_local else 0.0
+        horas_sem_sinal = (now_local - updated_local).total_seconds() / 3600.0 if updated_local else 999.0
+
+        is_online = bool(snapshot.get("conexao", {}).get("isOnline") if "conexao" in snapshot else snapshot.get("isOnline", True))
+        status_conexao = str(snapshot.get("conexao", {}).get("status") or snapshot.get("statusConexao") or "").strip()
+        sinal_antigo = bool(status_conexao == "> 1h" and horas_sem_sinal >= 6.0)
+
+        activity_status = str(atual.get("statusAtual") or atual.get("status") or "").upper()
+        has_active_order = bool(activity_status in ("EXECUCAO", "DESLOCAMENTO"))
+
+        # Fechamento automático: aberto > 12h E sem comunicar > 6h (ou dia anterior offline)
+        if turno_status == "ABERTO":
+            if horas_aberto >= 12.0 and (sinal_antigo or (dt_ini_local and dt_ini_local.date() < now_local.date() and not is_online)):
+                turno_status = "FECHADO"
+                has_active_order = False
+            elif dt_ini_local and dt_ini_local.date() < now_local.date() and not has_active_order:
+                turno_status = "FECHADO"
+
+        is_turno_aberto = (
+            turno_status in {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}
+            or bool(turno.get("aberto"))
+        )
+
+        # Considera ativa apenas se o turno estiver aberto hoje ou com atividade ativa recente
+        if is_turno_aberto or has_active_order:
+            abertas += 1
+
+            # 2. Contadores de Serviços (Opção C: Em Andamento + Fila Pendente)
+            # A) Ordem em andamento agora:
+            cat_atual = str(atual.get("categoria") or atual.get("category") or "").upper()
+            if "EMERG" in cat_atual:
+                emergenciais += 1
+            elif "COMERC" in cat_atual:
+                comerciais += 1
+
+            # B) Fila pendente na equipe (ordens pendentes ou fila na abertura)
+            fila_abertura = turno.get("filaNaAbertura") if isinstance(turno.get("filaNaAbertura"), dict) else {}
+            comerciais += int(fila_abertura.get("comercial") or snapshot.get("ssPendentesComercialCount") or 0)
+            emergenciais += int(fila_abertura.get("emergencia") or snapshot.get("ssPendentesEmergenciaCount") or 0)
+
+        dt_turno_ini = _parse_ts(turno_ini_str)
+        if dt_turno_ini and dt_turno_ini.date() == now_local.date():
+            events.append({
+                "activityAt": dt_turno_ini.isoformat(),
+                "time": dt_turno_ini.strftime("%H:%M"),
+                "teamKey": team_key,
+                "label": "Turno Aberto",
+                "source": "turno",
+                "actionType": "TURNO_ABERTO",
+            })
+
+        dt_turno_fim = _parse_ts(turno_fim_str)
+        if dt_turno_fim and dt_turno_fim.date() == now_local.date():
+            events.append({
+                "activityAt": dt_turno_fim.isoformat(),
+                "time": dt_turno_fim.strftime("%H:%M"),
+                "teamKey": team_key,
+                "label": "Turno Encerrado",
+                "source": "turno",
+                "actionType": "TURNO_ENCERRADO",
+            })
+
+        # 4. Extração dos Marcos de Ordem de Serviço
+        # Coleta todas as ordens (atual + histórico)
+        service_list: list[dict[str, typing.Any]] = []
+        if atual:
+            service_list.append(atual)
+        historico_ordens = ordens.get("historico") if is_v2 else snapshot.get("ssExecutadas")
+        if isinstance(historico_ordens, list):
+            for s in historico_ordens:
+                if isinstance(s, dict):
+                    service_list.append(s)
+
+        for s in service_list:
+            tipo = str(s.get("tipo") or s.get("serviceType") or "").strip()
+            tipo_label = f" ({tipo})" if tipo else ""
+
+            # Deslocamento
+            dt_desloc = _parse_ts(s.get("inicioDeslocamento"))
+            if dt_desloc and dt_desloc.date() == now_local.date():
+                events.append({
+                    "activityAt": dt_desloc.isoformat(),
+                    "time": dt_desloc.strftime("%H:%M"),
+                    "teamKey": team_key,
+                    "label": f"Deslocamento{tipo_label}",
+                    "source": "servico",
+                    "actionType": "DESLOCAMENTO",
+                })
+
+            # Execução
+            dt_exec = _parse_ts(s.get("inicioExecucao"))
+            if dt_exec and dt_exec.date() == now_local.date():
+                events.append({
+                    "activityAt": dt_exec.isoformat(),
+                    "time": dt_exec.strftime("%H:%M"),
+                    "teamKey": team_key,
+                    "label": f"Execucao{tipo_label}",
+                    "source": "servico",
+                    "actionType": "EXECUCAO",
+                })
+
+            # Conclusão
+            concl_val = s.get("fimExecucao") or s.get("retorno") or s.get("termino") or s.get("fimIso")
+            dt_concl = _parse_ts(concl_val)
+            if dt_concl and dt_concl.date() == now_local.date():
+                events.append({
+                    "activityAt": dt_concl.isoformat(),
+                    "time": dt_concl.strftime("%H:%M"),
+                    "teamKey": team_key,
+                    "label": f"Conclusao{tipo_label}",
+                    "source": "servico",
+                    "actionType": "CONCLUSAO",
+                })
+
+    # Ordenação decrescente: mais recentes primeiro
+    events.sort(key=lambda ev: ev["activityAt"], reverse=True)
+
+    # Deduplicação exata (mesmo horário, mesma equipe e mesmo label)
+    deduped: list[dict[str, typing.Any]] = []
+    seen = set()
+    for ev in events:
+        key = (ev["activityAt"], ev["teamKey"], ev["label"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(ev)
+
+    max_items = max(1, min(int(limit or 1000), 1000))
     return {
-        "items": formatted_items[: max(1, min(int(limit or 30), 100))],
+        "items": deduped[:max_items],
         "summary": {"abertas": abertas, "comerciais": comerciais, "emergenciais": emergenciais},
         "source": "json",
     }
@@ -140,29 +291,95 @@ def get_rotalog_execution_log(day: str | None = None) -> dict[str, typing.Any]:
     datetime.date.fromisoformat(selected_day)
     return _execution_log.load(selected_day)
 
-def _hydrate_durable_cache_once() -> None:
-    """Hidrata snapshots e índice uma vez; falhas no GCS não interrompem a raspagem."""
+def get_adaptive_rotalog_cache_ttl_seconds() -> int:
+    """Calcula o TTL do cache baseado na grade horária operacional:
+    - 07:00 às 18:00: 5 minutos (300s)
+    - 18:00 às 22:00: 15 minutos (900s)
+    - 22:00 às 07:00: 30 minutos (1800s)
+    """
+    now_hour = datetime.datetime.now(LOCAL_TZ).hour
+    if 7 <= now_hour < 18:
+        return 300
+    elif 18 <= now_hour < 22:
+        return 900
+    else:
+        return 1800
+
+
+def _hydrate_durable_cache_once(force: bool = False) -> None:
+    """Hidrata snapshots e índice; suporta Schema v2 (equipes), v1 (snapshots), TTL adaptativo e force para F5."""
     with _durable_cache_lock:
-        if (_durable_cache_state["hydrated"]
-                and time.monotonic() - _durable_cache_state.get("loaded_at", 0) < 30):
+        ttl = get_adaptive_rotalog_cache_ttl_seconds()
+        if (not force
+                and _durable_cache_state["hydrated"]
+                and time.monotonic() - _durable_cache_state.get("loaded_at", 0) < ttl):
             return
         local_snapshot = _local_cache.snapshot()
-        if not _durable_cache_store.enabled:
-            _durable_cache_state.update({"hydrated": True, "source": "local" if local_snapshot else "disabled"})
+        remote_payload = None
+
+        # Tentativa 1: GCS / Firebase Storage
+        if _durable_cache_store.enabled:
+            try:
+                remote_payload = _durable_cache_store.load()
+                _durable_cache_state["reads"] += 1
+            except Exception as exc:
+                logger.warning("Não foi possível hidratar o cache ROTALOG no GCS: %s", exc)
+
+        # Tentativa 2: Fallback local se GCS vazio ou desabilitado
+        if not remote_payload:
+            from pathlib import Path
+            import gzip
+            candidate_paths = [
+                os.getenv("ROTALOG_INDEX_PATH"),
+                os.path.join(os.getenv("ROTALOG_LOCAL_DATA_DIR", ""), "rotalog", "equipes", "current", "index.json.gz"),
+                os.path.join("dados-local", "rotalog", "equipes", "current", "index.json.gz"),
+                r"D:\programas\dds-coletor-rtl\dados-local\rotalog\equipes\current\index.json.gz",
+                "/home/orangepi/dds-coletor-rtl/dados-local/rotalog/equipes/current/index.json.gz",
+            ]
+            for p_str in candidate_paths:
+                if p_str and os.path.isfile(p_str):
+                    try:
+                        p = Path(p_str)
+                        payload_bytes = p.read_bytes()
+                        raw = gzip.decompress(payload_bytes) if payload_bytes.startswith(b"\x1f\x8b") else payload_bytes
+                        loaded = json.loads(raw.decode("utf-8-sig"))
+                        if isinstance(loaded, dict) and loaded:
+                            remote_payload = loaded
+                            logger.info("Cache ROTALOG hidratado a partir do arquivo local: %s", p_str)
+                            break
+                    except Exception as exc:
+                        logger.debug("Falha ao ler cache local de %s: %s", p_str, exc)
+
+        if not remote_payload:
+            _durable_cache_state.update({
+                "hydrated": True,
+                "source": "local" if local_snapshot else "empty",
+                "loaded_at": time.monotonic(),
+            })
             return
+
         try:
-            remote_payload = _durable_cache_store.load()
-            _durable_cache_state["reads"] += 1
-            remote_snapshots = remote_payload.get("snapshots") if isinstance(remote_payload.get("snapshots"), dict) else None
+            # Schema v2: equipes | Schema v1: snapshots
+            remote_snapshots = remote_payload.get("equipes") if isinstance(remote_payload.get("equipes"), dict) else None
             if remote_snapshots is None:
-                # Compatibilidade com o primeiro formato, que continha somente snapshots.
+                remote_snapshots = remote_payload.get("snapshots") if isinstance(remote_payload.get("snapshots"), dict) else None
+            if remote_snapshots is None:
+                # Compatibilidade com o formato legado direto
                 remote_snapshots = remote_payload
-            if remote_snapshots is not None:
-                collected_at = remote_payload.get("updatedAtIso")
-                for snapshot in remote_snapshots.values():
-                    if isinstance(snapshot, dict) and collected_at:
-                        snapshot["lastCollectedAt"] = collected_at
+
+            if isinstance(remote_snapshots, dict) and remote_snapshots:
+                collected_at = (
+                    remote_payload.get("lastCollectedAt")
+                    or remote_payload.get("updatedAtIso")
+                    or remote_payload.get("collectedAt")
+                )
+                for team_code, snapshot in remote_snapshots.items():
+                    if isinstance(snapshot, dict):
+                        if collected_at:
+                            snapshot.setdefault("lastCollectedAt", collected_at)
+                        snapshot.setdefault("teamKey", team_code)
                 _local_cache.replace(remote_snapshots)
+
             equipment_index = remote_payload.get("equipmentIndex")
             team_docs = remote_payload.get("teamDocs")
             remote_feed = remote_payload.get("activityFeed")
@@ -172,11 +389,12 @@ def _hydrate_durable_cache_once() -> None:
                 _equipment_index_cache["data"] = equipment_index
                 _equipment_index_cache["team_docs"] = team_docs if isinstance(team_docs, dict) else {}
                 _equipment_index_cache["loaded_at"] = time.monotonic()
-            source = "gcs" if remote_payload else "gcs_empty"
+            source = "gcs" if _durable_cache_store.enabled and remote_payload else "local_file"
             _durable_cache_state.update({"hydrated": True, "source": source, "loaded_at": time.monotonic()})
         except Exception as exc:
-            logger.warning("Não foi possível hidratar o cache ROTALOG no GCS: %s", exc)
-            _durable_cache_state.update({"hydrated": False, "source": "gcs_error"})
+            logger.warning("Erro ao processar payload do cache ROTALOG: %s", exc)
+            _durable_cache_state.update({"hydrated": False, "source": "error"})
+
 
 def _persist_durable_cache() -> bool:
     if not _durable_cache_store.enabled:

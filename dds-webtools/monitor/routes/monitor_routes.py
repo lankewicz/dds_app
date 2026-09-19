@@ -126,7 +126,7 @@ def turnos(
     
     if manual_refresh:
         # Se for manual, força a sincronização completa com o Firestore Realtime
-        return JSONResponse(jsonable_encoder(update_realtime_view(empresa=empresa, manual_refresh=True, setor=setor)))
+        return JSONResponse(jsonable_encoder(update_realtime_view(empresa=empresa, active=active_bool, manual_refresh=True, setor=setor)))
     
     kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": False}
     if setor:
@@ -154,7 +154,7 @@ def turnos_dds(
 
     manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
     if manual_refresh:
-        kwargs = {"empresa": empresa, "manual_refresh": True}
+        kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": True}
         if setor:
             kwargs["setor"] = setor
         update_realtime_view(**kwargs)
@@ -165,7 +165,7 @@ def turnos_dds(
 @router.get("/api/activity-feed")
 def activity_feed(
     empresa: str = Query(DEFAULT_EMPRESA),
-    limit: int = Query(5, ge=1, le=20),
+    limit: int = Query(1000, ge=1, le=1000),
 ):
     return JSONResponse(jsonable_encoder(get_activity_feed(empresa=empresa, limit=limit)))
 

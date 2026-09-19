@@ -28,6 +28,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 
@@ -51,6 +52,9 @@ object TrainingExecLocalStore {
 
     private fun key(teamKey: String, month: String): Preferences.Key<String> =
         stringPreferencesKey("exec_${teamKey}_${month}") // month: yyyy-MM
+
+    private fun remoteSyncKey(teamKey: String, month: String): Preferences.Key<String> =
+        stringPreferencesKey("remote_sync_${teamKey}_${month}")
 
     /**
      * Retorna um Flow com o mapa trainingId -> ExecCacheEntry do cache local.
@@ -99,6 +103,41 @@ object TrainingExecLocalStore {
             prefs[prefKey] = toJson(map)
         }
     }
+
+    /**
+     * Substitui o espelho remoto do mês, preservando por cima apenas registros
+     * locais que ainda não tiveram o envio confirmado.
+     */
+    suspend fun replaceRemoteMonthPreservingPending(
+        context: Context,
+        teamKey: String,
+        month: String,
+        remoteMap: Map<String, ExecCacheEntry>,
+        syncedOn: String
+    ) {
+        val prefKey = key(teamKey, month)
+        val syncKey = remoteSyncKey(teamKey, month)
+        context.trainingExecDataStore.edit { prefs ->
+            val current = prefs[prefKey]
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::parse)
+                .orEmpty()
+            val pending = current.filterValues { it.syncState != TrainingExecSyncState.SYNCED }
+            val replacement = remoteMap
+                .mapValues { (_, entry) -> entry.copy(syncState = TrainingExecSyncState.SYNCED) }
+                .toMutableMap()
+                .apply { putAll(pending) }
+            prefs[prefKey] = toJson(replacement)
+            prefs[syncKey] = syncedOn
+        }
+    }
+
+    suspend fun wasRemoteSyncedOn(
+        context: Context,
+        teamKey: String,
+        month: String,
+        dateIso: String
+    ): Boolean = context.trainingExecDataStore.data.first()[remoteSyncKey(teamKey, month)] == dateIso
 
     /**
      * Atualiza/insere um único trainingId no cache local (write otimista).

@@ -53,7 +53,7 @@ object NotificationHelper {
         }
     }
 
-    fun showDdsNotification(context: Context, statusTurno: String) {
+    fun showDdsNotification(context: Context) {
         val intent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context, 0, intent,
@@ -63,7 +63,7 @@ object NotificationHelper {
         val notification = NotificationCompat.Builder(context, NotificationConfig.CHANNEL_DDS_ID)
             .setSmallIcon(R.drawable.dds) // Garantir que este ícone existe
             .setContentTitle("DDS Pendente!")
-            .setContentText("Status do Turno: $statusTurno. Realize o treinamento de segurança de hoje!")
+            .setContentText("Realize o treinamento de segurança de hoje!")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
