@@ -36,6 +36,10 @@ from monitor.services.dds_presence_service import (
     _has_dds_in_recent_map,
     _load_today_dds_teams,
 )
+from monitor.services.dds_control_projection import (
+    get_team_dds_presence,
+    sync_recent_daily_projections,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +304,9 @@ def _build_pure_torre_items(
     now: datetime,
     teams_map: dict[str, dict[str, Any]] | None = None,
     recent_7d_dds: dict[str, dict[str, Any]] | None = None,
+    *,
+    manual_refresh: bool = False,
+    daily_projections: tuple[list[str], dict[str, dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Constrói os cards de equipes com telemetria a partir do snapshot consolidado da Torre de Controle.
@@ -309,6 +316,10 @@ def _build_pure_torre_items(
     today_iso = now_local.date().isoformat()
     teams_map = teams_map or {}
     recent_7d_dds = recent_7d_dds or {}
+
+    if daily_projections is None:
+        daily_projections = sync_recent_daily_projections(limit_days=25, manual_refresh=manual_refresh)
+    available_days, projections_by_day = daily_projections
 
     for team_key, snapshot in rotalog_snapshots.items():
         if not isinstance(snapshot, dict):
@@ -449,6 +460,8 @@ def _build_pure_torre_items(
                     last_contact = dds_recent_ts
                     last_contact_source = "D"
 
+        dds_presence = get_team_dds_presence(safe_key, available_days, projections_by_day, today_iso)
+
         item = {
             "teamKey": safe_key,
             "equipe": equipe_nome,
@@ -498,10 +511,10 @@ def _build_pure_torre_items(
                 "latitude": activity.get("latitude"),
                 "longitude": activity.get("longitude"),
             },
-            "ddsHistory": [],
-            "ddsToday": "neutral",
-            "ddsDays": [],
-            "ddsTimes": {},
+            "ddsHistory": dds_presence["ddsHistory"],
+            "ddsToday": dds_presence["ddsToday"],
+            "ddsDays": dds_presence["ddsDays"],
+            "ddsTimes": dds_presence["ddsTimes"],
             "ddsPhotos": {},
             "unreadMessages": 0,
             "unreadMap": {},
@@ -522,6 +535,7 @@ def _build_dds_controlled_items(
     *,
     manual_refresh: bool = False,
     today_dds_teams: dict[str, dict[str, Any]] | None = None,
+    daily_projections: tuple[list[str], dict[str, dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Constrói os cards de equipes sem telemetria controladas exclusivamente via JSON do DDS.
@@ -530,6 +544,10 @@ def _build_dds_controlled_items(
     today_iso = now_local.date().isoformat()
     is_after_18 = (now_local.hour >= 18)
     recent_7d_dds = recent_7d_dds or {}
+
+    if daily_projections is None:
+        daily_projections = sync_recent_daily_projections(limit_days=25, manual_refresh=manual_refresh)
+    available_days, projections_by_day = daily_projections
 
     if teams_map is None:
         try:
@@ -628,6 +646,25 @@ def _build_dds_controlled_items(
         tablet = team_data.get("tablet") or team_data.get("identificadorEquipamento") or safe_key
         veiculo = team_data.get("veiculo") or None
 
+        dds_presence = get_team_dds_presence(safe_key, available_days, projections_by_day, today_iso)
+        if dds_presence.get("ddsToday") == "ok":
+            has_dds_today = True
+
+        dds_days = list(dds_presence.get("ddsDays") or [])
+        dds_history = list(dds_presence.get("ddsHistory") or [])
+        dds_times = dict(dds_presence.get("ddsTimes") or {})
+        if has_dds_today:
+            dds_today_val = "ok"
+            if today_iso not in dds_days:
+                dds_days.append(today_iso)
+                dds_history.append("ok")
+            elif dds_days and dds_days[-1] == today_iso and dds_history:
+                dds_history[-1] = "ok"
+            if today_iso not in dds_times and dt_ini and DDS_TIMEZONE:
+                dds_times[today_iso] = dt_ini.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M")
+        else:
+            dds_today_val = "ok" if dds_presence.get("ddsToday") == "ok" else "neutral"
+
         item = {
             "teamKey": safe_key,
             "equipe": equipe_nome,
@@ -677,10 +714,10 @@ def _build_dds_controlled_items(
                 "latitude": None,
                 "longitude": None,
             },
-            "ddsHistory": [],
-            "ddsToday": "ok" if has_dds_today else "neutral",
-            "ddsDays": [],
-            "ddsTimes": {today_iso: dt_ini.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M")} if (dt_ini and DDS_TIMEZONE) else {},
+            "ddsHistory": dds_history,
+            "ddsToday": dds_today_val,
+            "ddsDays": dds_days,
+            "ddsTimes": dds_times,
             "ddsPhotos": {},
             "unreadMessages": 0,
             "unreadMap": {},

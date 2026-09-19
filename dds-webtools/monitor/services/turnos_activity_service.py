@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 
 from google.cloud import firestore
 from services.firestore_client import db
-from bdo.services.rotalog_tempo_real_service import formatar_protocolo_copel
 
 from monitor.services.turnos_common import (
     AUTO_REASON_INACTIVE_UNKNOWN,
@@ -23,6 +22,7 @@ from monitor.services.turnos_common import (
     DEFAULT_EMPRESA,
     WEBTOOLS_MONITOR_DOC,
     WEBTOOLS_ROOT_COLLECTION,
+    formatar_protocolo_copel,
     _local_day_key,
     _normalize_text,
     _parse_iso_datetime,

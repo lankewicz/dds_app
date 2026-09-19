@@ -286,3 +286,18 @@ def _storage_write_json(blob_name: str, payload: dict[str, Any]) -> None:
         )
     except Exception:
         pass
+
+
+def limpar_protocolo(protocolo_raw: str | None) -> str:
+    """Remove o sufixo .x.y do protocolo (ex: '20265422950239.2.1' -> '20265422950239')."""
+    if not protocolo_raw:
+        return ""
+    prot = str(protocolo_raw).strip()
+    return re.sub(r"\.\d+(\.\d+)?$", "", prot)
+
+
+def formatar_protocolo_copel(protocolo_raw: str | None) -> str | None:
+    """Normaliza o protocolo Copel formatado."""
+    limpo = limpar_protocolo(protocolo_raw)
+    return limpo or None
+

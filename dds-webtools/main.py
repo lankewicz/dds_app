@@ -126,10 +126,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error starting background listener: {e}")
 
-    rotalog_execution_mode = os.getenv("ROTALOG_EXECUTION_MODE", "embedded").strip().lower()
+    rotalog_execution_mode = os.getenv("ROTALOG_EXECUTION_MODE", "external").strip().lower()
     rotalog_enabled = (
         rotalog_execution_mode == "embedded"
-        and os.getenv("ROTALOG_SCHEDULER_ENABLED", "true").strip().lower() in {
+        and os.getenv("ROTALOG_SCHEDULER_ENABLED", "false").strip().lower() in {
             "1", "true", "yes", "on"
         }
     )

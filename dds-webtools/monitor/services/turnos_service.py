@@ -242,7 +242,17 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
     recent_7d_dds = _load_recent_7d_dds_teams(now_local, manual_refresh=manual_refresh)
     today_dds_teams = _load_today_dds_teams(today_iso, manual_refresh=manual_refresh)
 
-    pure_items = _build_pure_torre_items(rotalog_snapshots, now, teams_map=teams_map, recent_7d_dds=recent_7d_dds) if rotalog_snapshots else []
+    from monitor.services.dds_control_projection import sync_recent_daily_projections
+    daily_projections = sync_recent_daily_projections(limit_days=25, manual_refresh=manual_refresh)
+
+    pure_items = _build_pure_torre_items(
+        rotalog_snapshots,
+        now,
+        teams_map=teams_map,
+        recent_7d_dds=recent_7d_dds,
+        manual_refresh=manual_refresh,
+        daily_projections=daily_projections,
+    ) if rotalog_snapshots else []
     telemetry_keys = {str(it.get("teamKey") or "").strip().upper() for it in pure_items}
     dds_items = _build_dds_controlled_items(
         telemetry_keys,
@@ -251,6 +261,7 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
         recent_7d_dds=recent_7d_dds,
         manual_refresh=manual_refresh,
         today_dds_teams=today_dds_teams,
+        daily_projections=daily_projections,
     )
     all_items = pure_items + dds_items
 
@@ -265,6 +276,8 @@ def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: boo
         "items": all_items,
         "dataSource": "torre_controle",
     }
+    _write_monitor_view_cache(empresa, full_result)
+
     items = all_items if active is None else [it for it in all_items if bool(it.get("active")) is active]
     return {
         **full_result,
@@ -289,12 +302,13 @@ def list_turnos_dds(empresa: str, active: bool | None = None) -> dict[str, Any]:
     Usado pelo endpoint GET /api/turnos/dds para carga lazy no frontend.
     """
     cache = _read_monitor_view_cache(empresa)
-    if not cache:
-        return {"empresa": empresa, "items": [], "cached": False}
-
-    all_items = cache.get("items") or []
-    if active is not None:
-        all_items = [it for it in all_items if bool(it.get("active")) is active]
+    if not cache or not cache.get("items"):
+        res = list_turnos(empresa=empresa, active=active)
+        all_items = res.get("items") or []
+    else:
+        all_items = cache.get("items") or []
+        if active is not None:
+            all_items = [it for it in all_items if bool(it.get("active")) is active]
 
     dds_items = [
         {

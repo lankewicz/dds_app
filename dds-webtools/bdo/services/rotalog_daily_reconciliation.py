@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 from bdo.services.rotalog_team_file_repository import LOCAL_TZ, _eh_protocolo_valido
-from bdo.services.rotalog_tempo_real_service import formatar_protocolo_copel
+from monitor.services.turnos_common import formatar_protocolo_copel
 
 
 def _columns(row):
