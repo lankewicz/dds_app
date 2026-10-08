@@ -429,6 +429,27 @@ function parseToDate(isoOrTime) {
   return null;
 }
 
+function serviceDisplayStart(service, item, status) {
+  const rawStart = status === 'DESLOCAMENTO' ? service.inicioDeslocamento : service.inicioExecucao;
+  if (!rawStart || !['EXECUCAO', 'DESLOCAMENTO'].includes(status)) return rawStart;
+
+  const startDate = parseToDate(rawStart) || new Date(rawStart);
+  const snapshot = item?.rotalogSnapshot || {};
+  const communicationRaw = item?.operacional?.atualizadoEm
+    || snapshot.updatedAtIso
+    || snapshot.eventTimestampMs
+    || item?.updatedAt;
+  const communicationDate = parseToDate(communicationRaw) || new Date(communicationRaw);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(communicationDate.getTime())) return rawStart;
+
+  const localDay = (date) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+  }).format(date);
+  const isOldDay = localDay(startDate) !== localDay(communicationDate);
+  const isFuture = startDate.getTime() > communicationDate.getTime();
+  return isOldDay || isFuture ? communicationRaw : rawStart;
+}
+
 function getDiffMinutes(startIso, endIso) {
   const d1 = parseToDate(startIso);
   const d2 = parseToDate(endIso);
@@ -488,11 +509,12 @@ function extractTeamServices(item) {
   // Identificar serviços regulares vs Relocados vs Retirados pelo COD
   const services = rawServices.map(s => {
     const isRunning = ['EXECUCAO', 'DESLOCAMENTO'].includes(String(s.statusAtual || s.status || '').toUpperCase());
+    const statusUpper = String(s.statusAtual || s.status || '').toUpperCase();
     const durExec = (s.inicioExecucao && (s.fimExecucao || s.termino))
       ? getDiffMinutes(s.inicioExecucao, s.fimExecucao || s.termino)
       : null;
-    
-    const statusUpper = String(s.statusAtual || s.status || s.semExecucaoType || '').toUpperCase();
+
+    const displayStart = serviceDisplayStart(s, item, statusUpper);
     const isRelocado = statusUpper.includes('RELOC');
     const isRetiradoCod = statusUpper.includes('RETIRADO') || statusUpper.includes('REDIR');
     const isSpecialRedirect = isRelocado || isRetiradoCod || (!isRunning && Boolean(s.inicioDeslocamento) && (!s.inicioExecucao || durExec === 0 || durExec === null));
@@ -513,6 +535,8 @@ function extractTeamServices(item) {
 
     return {
       ...s,
+      ...(statusUpper === 'EXECUCAO' && displayStart ? { inicioExecucao: displayStart } : {}),
+      ...(statusUpper === 'DESLOCAMENTO' && displayStart ? { inicioDeslocamento: displayStart } : {}),
       isInterval: false,
       isGap: false,
       isRedirected: isSpecialRedirect,
@@ -1602,7 +1626,7 @@ async function openTeamForm(teamKey) {
   const empresa = state().getEmpresa ? state().getEmpresa() : '';
 
   try {
-    const response = await fetch(`/api/team-form?empresa=${encodeURIComponent(empresa)}&teamKey=${encodeURIComponent(teamKey)}`, { cache: 'no-store' });
+    const response = await fetch(`/api/teams/${encodeURIComponent(teamKey)}/details?empresa=${encodeURIComponent(empresa)}`, { cache: 'no-store' });
     const data = await response.json();
     if (!response.ok) throw new Error(data?.detail || 'Falha ao carregar formulário.');
     if (requestId !== loadToken) return;

@@ -43,7 +43,16 @@ def limpar_protocolo(protocolo_raw: str | None) -> str:
     if not protocolo_raw:
         return ""
     prot = str(protocolo_raw).strip()
-    return re.sub(r"\.\d+(\.\d+)?$", "", prot)
+    prot = re.sub(r"\.\d+(\.\d+)?$", "", prot)
+    if "." in prot:
+        parts = [part for part in prot.split(".") if part]
+        if parts and all(part.isdigit() for part in parts):
+            for part in reversed(parts):
+                if len(part) >= 7:
+                    return part
+            if len(parts) > 1 and len(parts[0]) <= 3:
+                return "".join(parts[1:])
+    return prot
 
 
 def formatar_protocolo_copel(protocolo_raw: str | None) -> str | None:

@@ -441,9 +441,10 @@ class RotalogTeamFileRepository:
         safe_key = _safe_team_key(team_key)
         cache_key = (day, safe_key)
         with self._lock:
-            cached = self._daily_cache.get(cache_key)
-            if cached is not None:
-                return dict(cached)
+            if not self.store.enabled and cache_key in self._daily_cache:
+                cached = self._daily_cache.get(cache_key)
+                if cached is not None:
+                    return dict(cached)
 
             daily_data = {}
             # 1. Tenta carregar do Storage (GCS)

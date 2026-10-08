@@ -293,17 +293,13 @@ def get_rotalog_execution_log(day: str | None = None) -> dict[str, typing.Any]:
 
 def get_adaptive_rotalog_cache_ttl_seconds() -> int:
     """Calcula o TTL do cache baseado na grade horária operacional:
-    - 07:00 às 18:00: 5 minutos (300s)
-    - 18:00 às 22:00: 15 minutos (900s)
-    - 22:00 às 07:00: 30 minutos (1800s)
+    - 07:00 às 18:00: 3 minutos (180s)
+    - 18:00 às 07:00: 30 minutos (1800s)
     """
     now_hour = datetime.datetime.now(LOCAL_TZ).hour
     if 7 <= now_hour < 18:
-        return 300
-    elif 18 <= now_hour < 22:
-        return 900
-    else:
-        return 1800
+        return 180
+    return 1800
 
 
 def _hydrate_durable_cache_once(force: bool = False) -> None:
@@ -316,14 +312,21 @@ def _hydrate_durable_cache_once(force: bool = False) -> None:
             return
         local_snapshot = _local_cache.snapshot()
         remote_payload = None
+        remote_source = "empty"
 
-        # Tentativa 1: GCS / Firebase Storage
-        if _durable_cache_store.enabled:
-            try:
-                remote_payload = _durable_cache_store.load()
+        # Orange privado primeiro; Firebase Storage se falhar ou não configurado.
+        try:
+            from bdo.services.rotalog_monitor_source import load_monitor_index
+
+            def load_firebase():
+                if not _durable_cache_store.enabled:
+                    return {}
                 _durable_cache_state["reads"] += 1
-            except Exception as exc:
-                logger.warning("Não foi possível hidratar o cache ROTALOG no GCS: %s", exc)
+                return _durable_cache_store.load()
+
+            remote_payload, remote_source = load_monitor_index(load_firebase)
+        except Exception as exc:
+            logger.warning("Não foi possível hidratar o índice de turnos: %s", type(exc).__name__)
 
         # Tentativa 2: Fallback local se GCS vazio ou desabilitado
         if not remote_payload:
@@ -331,24 +334,30 @@ def _hydrate_durable_cache_once(force: bool = False) -> None:
             import gzip
             candidate_paths = [
                 os.getenv("ROTALOG_INDEX_PATH"),
+                os.path.join(os.getenv("ROTALOG_LOCAL_DATA_DIR", ""), "rotalog", "equipes", "current", "index.json"),
                 os.path.join(os.getenv("ROTALOG_LOCAL_DATA_DIR", ""), "rotalog", "equipes", "current", "index.json.gz"),
+                os.path.join("dados-local", "rotalog", "equipes", "current", "index.json"),
                 os.path.join("dados-local", "rotalog", "equipes", "current", "index.json.gz"),
+                r"D:\programas\dds-coletor-rtl\dados-local\rotalog\equipes\current\index.json",
                 r"D:\programas\dds-coletor-rtl\dados-local\rotalog\equipes\current\index.json.gz",
+                "/home/orangepi/dds-coletor-rtl/dados-local/rotalog/equipes/current/index.json",
                 "/home/orangepi/dds-coletor-rtl/dados-local/rotalog/equipes/current/index.json.gz",
             ]
             for p_str in candidate_paths:
-                if p_str and os.path.isfile(p_str):
-                    try:
-                        p = Path(p_str)
-                        payload_bytes = p.read_bytes()
-                        raw = gzip.decompress(payload_bytes) if payload_bytes.startswith(b"\x1f\x8b") else payload_bytes
-                        loaded = json.loads(raw.decode("utf-8-sig"))
-                        if isinstance(loaded, dict) and loaded:
-                            remote_payload = loaded
-                            logger.info("Cache ROTALOG hidratado a partir do arquivo local: %s", p_str)
-                            break
-                    except Exception as exc:
-                        logger.debug("Falha ao ler cache local de %s: %s", p_str, exc)
+                if not p_str or not os.path.isfile(p_str):
+                    continue
+                try:
+                    p = Path(p_str)
+                    payload_bytes = p.read_bytes()
+                    raw = gzip.decompress(payload_bytes) if payload_bytes.startswith(b"\x1f\x8b") else payload_bytes
+                    loaded = json.loads(raw.decode("utf-8-sig"))
+                    if isinstance(loaded, dict) and loaded:
+                        remote_payload = loaded
+                        remote_source = "local_file"
+                        logger.info("Cache ROTALOG hidratado a partir do arquivo local: %s", p_str)
+                        break
+                except Exception as exc:
+                    logger.debug("Falha ao ler cache local de %s: %s", p_str, exc)
 
         if not remote_payload:
             _durable_cache_state.update({
@@ -367,7 +376,7 @@ def _hydrate_durable_cache_once(force: bool = False) -> None:
                 # Compatibilidade com o formato legado direto
                 remote_snapshots = remote_payload
 
-            if isinstance(remote_snapshots, dict) and remote_snapshots:
+            if isinstance(remote_snapshots, dict):
                 collected_at = (
                     remote_payload.get("lastCollectedAt")
                     or remote_payload.get("updatedAtIso")
@@ -389,7 +398,7 @@ def _hydrate_durable_cache_once(force: bool = False) -> None:
                 _equipment_index_cache["data"] = equipment_index
                 _equipment_index_cache["team_docs"] = team_docs if isinstance(team_docs, dict) else {}
                 _equipment_index_cache["loaded_at"] = time.monotonic()
-            source = "gcs" if _durable_cache_store.enabled and remote_payload else "local_file"
+            source = remote_source
             _durable_cache_state.update({"hydrated": True, "source": source, "loaded_at": time.monotonic()})
         except Exception as exc:
             logger.warning("Erro ao processar payload do cache ROTALOG: %s", exc)

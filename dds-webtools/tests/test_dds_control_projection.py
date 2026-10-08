@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitor"))
 
 from monitor.services.dds_control_projection import load_daily_projection
+from monitor.services.dds_presence_service import _load_day_dds_teams
 from monitor.services.turnos_service import _deserialize_day_cache
 
 
@@ -50,6 +51,14 @@ class DdsControlProjectionTests(unittest.TestCase):
         self.assertEqual(entry["present"], {"E3T01", "E3T02"})
         self.assertEqual(entry["team_timestamps"]["E3T01"].hour, 10)
         self.assertFalse(entry["team_photos"])
+
+    def test_json_mode_does_not_fallback_to_firestore_when_projection_is_missing(self):
+        with patch("monitor.services.dds_presence_service.DDS_PRESENCE_MODE", "json"), \
+             patch("monitor.services.dds_control_projection.load_daily_projection", return_value=None), \
+             patch("monitor.services.dds_presence_service._load_day_presence_with_cache") as firestore_fallback:
+            self.assertEqual(_load_day_dds_teams("2026-09-15"), {})
+
+        firestore_fallback.assert_not_called()
 
 
 if __name__ == "__main__":

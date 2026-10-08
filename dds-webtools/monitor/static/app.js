@@ -1,16 +1,22 @@
 // -----------------------------------------------------------------------------
 // Arquivo : static/app.js
-// Objetivo: Renderizar o grid do monitor, aplicar filtros/polling, separar a
-//           visualização entre equipes ativas/inativas e delegar a abertura do
-//           formulário de equipe ao modal específico.
+// Objetivo: Orquestrador principal do monitor: sincronização Firebase em tempo real,
+//           fallback de polling HTTP, ciclo de vida de renderização incremental,
+//           navegação SPA e eventos globais do usuário.
 // -----------------------------------------------------------------------------
 
 const grid = document.getElementById("grid");
 const empresaLabel = document.getElementById("empresaLabel");
 const lastSync = document.getElementById("lastSync");
 const nextRefresh = document.getElementById("nextRefresh");
-const teamCount = document.getElementById("teamCount");
 const skeletonGrid = document.getElementById("skeletonGrid");
+const empresaInput = document.getElementById("empresaInput");
+const searchInput = document.getElementById("searchInput");
+const teamSelect = document.getElementById("teamSelect");
+const kpis = document.getElementById("kpis");
+const refreshBtn = document.getElementById("refreshBtn");
+const configBtn = document.getElementById("configBtn");
+const sectorSelector = document.getElementById('sectorSelector');
 
 function showSkeleton() {
   if (skeletonGrid) skeletonGrid.classList.remove('hidden');
@@ -20,63 +26,58 @@ function showSkeleton() {
   }
 }
 
-const empresaInput = document.getElementById("empresaInput");
-const searchInput = document.getElementById("searchInput");
-const teamSelect = document.getElementById("teamSelect");
-const kpis = document.getElementById("kpis");
-const refreshBtn = document.getElementById("refreshBtn");
-const configBtn = document.getElementById("configBtn");
-const configModal = document.getElementById("configModal");
-const configModalBackdrop = document.getElementById("configModalBackdrop");
-const configModalClose = document.getElementById("configModalClose");
-const configModalCancel = document.getElementById("configModalCancel");
-const configModalSave = document.getElementById("configModalSave");
-const configModalMeta = document.getElementById("configModalMeta");
-const configNotice = document.getElementById("configNotice");
-const configSummary = document.getElementById("configSummary");
-const cfgAlertaAmareloMin = document.getElementById("cfgAlertaAmareloMin");
-const cfgAlertaVermelhoMin = document.getElementById("cfgAlertaVermelhoMin");
-const cfgAlertaPiscoMin = document.getElementById("cfgAlertaPiscoMin");
-const cfgFechadoViraDesatualizadoHoras = document.getElementById("cfgFechadoViraDesatualizadoHoras");
-const cfgDesatualizadoCriticoHoras = document.getElementById("cfgDesatualizadoCriticoHoras");
-const cfgAutoCloseOpenHours = document.getElementById("cfgAutoCloseOpenHours");
-const cfgAutoInactivateHours = document.getElementById("cfgAutoInactivateHours");
-const cfgPollingSeconds = document.getElementById("cfgPollingSeconds");
-const activityFeedPanel = document.getElementById("activityFeedPanel");
-const activityFeedList = document.getElementById("activityFeedList");
-const activityFeedSummary = document.getElementById("activityFeedSummary");
-
-
 let cfg = null;
 let pollingSeconds = 600;
-
-function getAdaptivePollingSeconds() {
-  const hour = new Date().getHours();
-  if (hour >= 7 && hour < 18) {
-    return 300; // 5 min (07:00 às 18:00)
-  } else if (hour >= 18 && hour < 22) {
-    return 900; // 15 min (18:00 às 22:00)
-  } else {
-    return 1800; // 30 min (22:00 às 07:00)
-  }
-}
-
-const WEB_CARD_REFRESH_SECONDS = 300;
 let pollingTimer = null;
+let pollingEnabled = false;
 let countdownTimer = null;
+let alertTimer = null;
 let nextTickAtMs = null;
 let currentItems = [];
-let allRealtimeItems = []; // Guarda todos os items do onSnapshot
-let activeKpiFilter = "";
-let configSaveInFlight = false;
-
+let allRealtimeItems = [];
 let lastData = null;
-let ddsDataLoaded = false; // Flag: DDS lazy-load já foi executado para o ciclo atual
+let ddsDataLoaded = false;
+
+function getPollingSeconds() {
+  const seconds = Number(pollingSeconds);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.max(15, seconds) : 600;
+}
+
+function scheduleNextPoll() {
+  if (pollingTimer) clearTimeout(pollingTimer);
+  pollingTimer = null;
+  nextTickAtMs = null;
+  if (pollingEnabled) {
+    const delayMs = getPollingSeconds() * 1000;
+    nextTickAtMs = Date.now() + delayMs;
+    pollingTimer = setTimeout(() => {
+      pollingTimer = null;
+      nextTickAtMs = null;
+      load({ silent: true });
+    }, delayMs);
+  }
+  setRefreshInfo();
+}
+
+function setRefreshInfo() {
+  if (!nextRefresh) return;
+  let nextText = "-";
+  if (nextTickAtMs) {
+    const diffSec = Math.ceil((nextTickAtMs - Date.now()) / 1000);
+    nextText = (window.monitorUtils?.fmtMMSS || fmtMMSS)(diffSec);
+  }
+  nextRefresh.textContent = `Próxima: ${nextText}`;
+}
+
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  setRefreshInfo();
+  countdownTimer = setInterval(setRefreshInfo, 1000);
+}
 
 // ==========================================
 // CONFIGURAÇÃO DO FIREBASE WEB SDK
 // ==========================================
-// IMPORTANTE: Insira sua apiKey real aqui para o onSnapshot funcionar
 const firebaseConfig = {
   apiKey: "AIzaSyCbeHwFUdFNwlKgX1yiqqgRhlGdExiYTSQ",
   authDomain: "dds-treinamentos.firebaseapp.com",
@@ -97,1470 +98,12 @@ let unsubMonitor = null;
 let unsubActivityFeed = null;
 // ==========================================
 
-function safeUpper(v) { return (v || "").toString().trim().toUpperCase(); }
-function escapeHtml(value) { return (value ?? "").toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
-function fmtDateTime(iso) {
-  if (!iso) return "-"; const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-"; return d.toLocaleString("pt-BR");
-}
-function fmtTimeOnly(iso) {
-  if (!iso) return "-"; const d = new Date(iso); if (Number.isNaN(d.getTime())) return "-"; return d.toLocaleTimeString("pt-BR");
-}
-function isDateToday(d) {
-  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.getDate() === now.getDate() &&
-         d.getMonth() === now.getMonth() &&
-         d.getFullYear() === now.getFullYear();
-}
-
-function fmtLastContact(iso, source) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  const time = d.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
-  const srcSuffix = source ? ` (${source})` : "";
-  if (isDateToday(d)) {
-    return `${time}${srcSuffix}`;
-  }
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month} - ${time}${srcSuffix}`;
-}
-
-function parseServiceDate(value, service, item) {
-  if (!value) return null;
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
-  if (typeof value === 'number' || /^\d{10,13}$/.test(String(value).trim())) {
-    const num = Number(value);
-    const ms = num > 100000000000 ? num : num * 1000;
-    const d = new Date(ms);
-    if (!isNaN(d.getTime())) return d;
-  }
-  const str = String(value).trim();
-  if (!str) return null;
-  if (str.includes('-') && (str.includes('T') || str.includes(' '))) {
-    const d = new Date(str.replace(' ', 'T'));
-    if (!isNaN(d.getTime())) return d;
-  }
-  const matchTime = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (matchTime) {
-    const h = parseInt(matchTime[1], 10);
-    const m = parseInt(matchTime[2], 10);
-    const s = matchTime[3] ? parseInt(matchTime[3], 10) : 0;
-    const refIso = service?.inicioIso || service?.fimIso || service?.baseDay || item?.rotalogSnapshot?.updatedAtIso || item?.lastContact || item?.updatedAt;
-    let baseDate = new Date();
-    if (refIso) {
-      if (typeof refIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(refIso.trim())) {
-        const parts = refIso.trim().split('-');
-        baseDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-      } else {
-        const parsedRef = new Date(refIso);
-        if (!isNaN(parsedRef.getTime())) baseDate = parsedRef;
-      }
-    }
-    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), h, m, s);
-  }
-  const d = new Date(str);
-  return !isNaN(d.getTime()) ? d : null;
-}
-
-function formatEffectiveServiceTime(rawTime, service, item) {
-  if (!rawTime) return null;
-  const d = parseServiceDate(rawTime, service, item);
-  if (!d) {
-    if (/^\d{2}:\d{2}$/.test(String(rawTime).trim())) return String(rawTime).trim();
-    return null;
-  }
-  const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  if (isDateToday(d)) {
-    return timeStr;
-  }
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mon = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mon} - ${timeStr}`;
-}
-
-function latestCommunicationAt(item) {
-  const snapshot = item?.rotalogSnapshot || {};
-  const candidates = [
-    item?.operacional?.atualizadoEm,
-    snapshot.updatedAt,
-    snapshot.updatedAtIso,
-    snapshot.eventTimestampMs,
-    item?.updatedAt,
-    item?.lastContact,
-  ];
-  let latestMs = null;
-  for (const value of candidates) {
-    if (value === null || value === undefined || value === '') continue;
-    let parsedMs;
-    if (typeof value === 'number' || /^\d+$/.test(String(value).trim())) {
-      const numeric = Number(value);
-      parsedMs = numeric > 100000000000 ? numeric : numeric * 1000;
-    } else {
-      parsedMs = new Date(value).getTime();
-    }
-    if (Number.isFinite(parsedMs) && (latestMs === null || parsedMs > latestMs)) latestMs = parsedMs;
-  }
-  return latestMs === null ? null : new Date(latestMs).toISOString();
-}
-function isIsoNewer(candidateIso, currentIso) {
-  if (!candidateIso) return false;
-  const candidate = new Date(candidateIso);
-  if (Number.isNaN(candidate.getTime())) return false;
-  if (!currentIso) return true;
-  const current = new Date(currentIso);
-  if (Number.isNaN(current.getTime())) return true;
-  return candidate.getTime() > current.getTime();
-}
-
-const getLocalFeedCacheKey = (empresa) => `dds_activity_feed_local_cache_${empresa || 'default'}`;
-
-function getLocalFeedCache(empresa) {
-  try {
-    const raw = localStorage.getItem(getLocalFeedCacheKey(empresa));
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.warn("Erro ao ler cache local de atividades:", e);
-    return [];
-  }
-}
-
-function saveLocalFeedCache(empresa, items) {
-  try {
-    localStorage.setItem(getLocalFeedCacheKey(empresa), JSON.stringify(items));
-  } catch (e) {
-    console.warn("Erro ao salvar cache local de atividades:", e);
-  }
-}
-
-function isUsefulActivityFeedItem(item) {
-  const label = String(item?.label || '').trim().toUpperCase();
-  if (!label || label === 'ROTALOG') return false;
-  if (label.includes(' - FILA:')) return false;
-  if (label.includes('DADOS OPERACIONAIS ATUALIZADOS')) return false;
-  if (label.includes('INATIVADA') || label.includes('INATIVADO')) return false;
-  if (label.includes('ATIVADA') || label.includes('ATIVADO')) return false;
-  return true;
-}
-function mergeActivityFeedItems(localItems, newItems) {
-  const mergedMap = new Map();
-  const getUniqueKey = (item) => {
-    if (item.eventId) return item.eventId;
-    const timeKey = item.activityAt || item.time || '';
-    const team = item.teamKey || item.equipe || '';
-    const label = item.label || item.source || '';
-    return `${timeKey}_${team}_${label}`;
-  };
-
-  (localItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
-    const key = getUniqueKey(item);
-    if (key) mergedMap.set(key, item);
-  });
-
-  (newItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
-    const key = getUniqueKey(item);
-    if (key) mergedMap.set(key, item);
-  });
-
-  const mergedList = Array.from(mergedMap.values());
-  mergedList.sort((a, b) => {
-    const dateA = a.activityAt ? new Date(a.activityAt).getTime() : 0;
-    const dateB = b.activityAt ? new Date(b.activityAt).getTime() : 0;
-    if (dateA && dateB) return dateB - dateA;
-    const strA = a.activityAt || a.time || '';
-    const strB = b.activityAt || b.time || '';
-    return strB.localeCompare(strA);
-  });
-
-  return mergedList.slice(0, 1000);
-}
-
-function renderActivityFeed(items = [], summary = null) {
-  if (!activityFeedPanel || !activityFeedList) return;
-  if (activityFeedSummary && summary) {
-    const abertas = Number(summary.abertas || 0);
-    const comerciais = Number(summary.comerciais || 0);
-    const emergenciais = Number(summary.emergenciais || 0);
-    activityFeedSummary.textContent = `${abertas} Ativas · ${comerciais} Comerciais · ${emergenciais} Emergências`;
-  }
-  const visible = items
-    .filter(isUsefulActivityFeedItem)
-    .slice(0, 1000);
-  if (!visible.length) {
-    activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem mudanças recentes</div>';
-    return;
-  }
-  activityFeedList.innerHTML = visible.map((item) => {
-    const time = escapeHtml(item.time || fmtHourMinute(item.activityAt));
-    const team = escapeHtml(String(item.teamKey || item.equipe || '-').trim().toUpperCase());
-    let rawLabel = String(item.label || 'Mudança operacional').trim();
-
-    // Se vier no formato antigo 'TEAM - Label', limpa o prefixo repetido
-    if (rawLabel.toUpperCase().startsWith(`${team} - `)) {
-      rawLabel = rawLabel.substring(team.length + 3).trim();
-    } else if (rawLabel.toUpperCase().startsWith(`${team} `)) {
-      rawLabel = rawLabel.substring(team.length + 1).trim();
-    }
-
-    const label = escapeHtml(rawLabel);
-    const source = escapeHtml(item.source || '');
-    return `<div class="activityFeedItem" data-source="${source}">` +
-      `<span class="activityFeedTime">${time}</span>` +
-      `<span class="activityFeedSep">|</span>` +
-      `<span class="activityFeedTeam">${team}</span>` +
-      `<span class="activityFeedSep">|</span>` +
-      `<span class="activityFeedLabel">${label}</span>` +
-    `</div>`;
-  }).join('');
-}
-
-async function loadActivityFeed() {
-  if (!activityFeedPanel || getViewMode() === 'trash') return;
-  const empresa = getEmpresaValue();
-
-  const initialCached = getLocalFeedCache(empresa);
-  if (initialCached.length > 0) {
-    renderActivityFeed(initialCached);
-  }
-
-  const qs = new URLSearchParams();
-  if (empresa) qs.set('empresa', empresa);
-  qs.set('limit', '1000');
-  try {
-    const r = await fetch(`/api/activity-feed?${qs.toString()}`, { cache: 'no-store' });
-    const data = await r.json();
-    if (!r.ok || !Array.isArray(data.items)) {
-      if (initialCached.length === 0) {
-        renderActivityFeed([]);
-      }
-      return;
-    }
-    const updatedCache = mergeActivityFeedItems(initialCached, data.items);
-    saveLocalFeedCache(empresa, updatedCache);
-    renderActivityFeed(updatedCache, data.summary || null);
-  } catch (error) {
-    console.warn('Erro ao carregar feed de atividades:', error);
-    if (initialCached.length === 0) {
-      renderActivityFeed([]);
-    }
-  }
-}
-
-function addHours(dateLike, hours) {
-  if (!dateLike) return null;
-  const dt = dateLike instanceof Date ? new Date(dateLike.getTime()) : new Date(dateLike);
-  if (Number.isNaN(dt.getTime())) return null;
-  dt.setHours(dt.getHours() + hours);
-  return dt;
-}
-
-function getArt66EndAt(item, shown) {
-  if (normalizedState(shown) !== "FECHADO") return null;
-  const closedTime = item?.turnoFim || item?.turno?.fim || item?.fimIso || item?.updatedAt;
-  if (!closedTime) return null;
-  const hours = item.lastWasDescansoSemanal ? 24 : 11;
-  return addHours(closedTime, hours);
-}
-
-function isArt66Active(item, shown) {
-  const endAt = getArt66EndAt(item, shown);
-  if (!endAt) return false;
-  return endAt.getTime() > Date.now();
-}
-
-function fmtHourMinute(dateLike) {
-  if (!dateLike) return "-";
-  const dt = dateLike instanceof Date ? dateLike : new Date(dateLike);
-  if (Number.isNaN(dt.getTime())) return "-";
-  return dt.toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function fmtMMSS(totalSeconds) { const s = Math.max(0, Math.floor(totalSeconds)); const mm = String(Math.floor(s / 60)).padStart(2, "0"); const ss = String(s % 60).padStart(2, "0"); return `${mm}:${ss}`; }
-function fmtAgeFromMinutes(mins) { if (!Number.isFinite(mins) || mins < 0) return "-"; if (mins < 60) return `${mins} min`; const hours = Math.floor(mins / 60); const remMin = mins % 60; if (hours < 24) return `${hours}h ${String(remMin).padStart(2, "0")}m`; const days = Math.floor(hours / 24); const remHours = hours % 24; return `${days}d ${remHours}h`; }
-
-
-function setRefreshInfo() {
-  if (!nextRefresh) return;
-  let nextText = "-";
-  if (nextTickAtMs) {
-    const diffSec = Math.ceil((nextTickAtMs - Date.now()) / 1000);
-    nextText = fmtMMSS(diffSec);
-  }
-  nextRefresh.textContent = `Próxima: ${nextText}`;
-}
-function startCountdown() {
-  if (countdownTimer) clearInterval(countdownTimer); setRefreshInfo(); countdownTimer = setInterval(setRefreshInfo, 1000);
-}
-
-function setConfigModalHidden(hidden) {
-  if (!configModal) return;
-  configModal.hidden = hidden;
-  document.body.classList.toggle('modalOpen', !hidden || !document.getElementById('teamFormModal')?.hidden);
-}
-
-function setConfigNotice(message = '', type = '') {
-  if (!configNotice) return;
-  const text = (message || '').trim();
-  configNotice.hidden = !text;
-  configNotice.textContent = text;
-  configNotice.className = 'formNotice';
-  if (type) configNotice.classList.add(type);
-}
-
-function formatMinToHoursText(min) {
-  if (!min || min <= 0) return '-';
-  const hrs = (min / 60).toFixed(1).replace('.0', '');
-  return `⏱️ aprox. ${hrs} hora(s)`;
-}
-
-let isAlertUnitHours = false;
-
-function toggleAlertUnit(useHours) {
-  isAlertUnitHours = useHours;
-  const labels = [
-    document.getElementById("unitLabelAmarelo"),
-    document.getElementById("unitLabelVermelho"),
-    document.getElementById("unitLabelPisco")
-  ];
-  labels.forEach(lbl => {
-    if (lbl) lbl.textContent = useHours ? 'h' : 'min';
-  });
-
-  const inputs = [cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin];
-  inputs.forEach(inp => {
-    if (inp && inp.value !== '') {
-      let val = parseFloat(inp.value);
-      if (!isNaN(val)) {
-        if (useHours) {
-          inp.value = (val / 60).toFixed(1).replace('.0', '');
-        } else {
-          inp.value = Math.round(val * 60);
-        }
-      }
-    }
-  });
-  syncConfigSummary();
-}
-
-function fillConfigForm(config) {
-  const rules = config?.rules || {};
-  const isHours = Boolean(cfgAlertUnitHoursToggle && cfgAlertUnitHoursToggle.checked);
-  
-  if (cfgAlertaAmareloMin) {
-    const minVal = rules.alertaAmareloMin ?? '';
-    cfgAlertaAmareloMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
-  }
-  if (cfgAlertaVermelhoMin) {
-    const minVal = rules.alertaVermelhoMin ?? '';
-    cfgAlertaVermelhoMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
-  }
-  if (cfgAlertaPiscoMin) {
-    const minVal = rules.alertaPiscoMin ?? '';
-    cfgAlertaPiscoMin.value = (isHours && minVal) ? (minVal / 60).toFixed(1).replace('.0', '') : minVal;
-  }
-
-  if (cfgAutoCloseOpenHours) cfgAutoCloseOpenHours.value = rules.autoCloseOpenHours ?? '';
-  if (cfgFechadoViraDesatualizadoHoras) {
-    cfgFechadoViraDesatualizadoHoras.value = rules.autoDesatualizaFechadoHours ?? rules.fechadoViraDesatualizadoHoras ?? '';
-  }
-  if (cfgDesatualizadoCriticoHoras) cfgDesatualizadoCriticoHoras.value = rules.desatualizadoCriticoHoras ?? '';
-  if (cfgAutoInactivateHours) cfgAutoInactivateHours.value = rules.autoInactivateHours ?? '';
-  if (cfgPollingSeconds) cfgPollingSeconds.value = config?.pollingSeconds ?? '';
-  syncConfigSummary();
-}
-
-function collectConfigPayload() {
-  const isHours = Boolean(cfgAlertUnitHoursToggle && cfgAlertUnitHoursToggle.checked);
-  
-  const parseAlertMin = (inp) => {
-    let val = parseFloat(inp?.value || 0);
-    if (isNaN(val)) return 0;
-    return isHours ? Math.round(val * 60) : Math.round(val);
-  };
-
-  return {
-    pollingSeconds: Number(cfgPollingSeconds?.value || 0),
-    rules: {
-      alertaAmareloMin: parseAlertMin(cfgAlertaAmareloMin),
-      alertaVermelhoMin: parseAlertMin(cfgAlertaVermelhoMin),
-      alertaPiscoMin: parseAlertMin(cfgAlertaPiscoMin),
-      autoCloseOpenHours: Number(cfgAutoCloseOpenHours?.value || 0),
-      autoDesatualizaFechadoHours: Number(cfgFechadoViraDesatualizadoHoras?.value || 0),
-      desatualizadoCriticoHoras: Number(cfgDesatualizadoCriticoHoras?.value || 0),
-      autoInactivateHours: Number(cfgAutoInactivateHours?.value || 0),
-    },
-  };
-}
-
-function syncConfigSummary() {
-  const payload = collectConfigPayload();
-  const rules = payload.rules || {};
-  
-  const hintAmarelo = document.getElementById("hintAlertaAmarelo");
-  const hintVermelho = document.getElementById("hintAlertaVermelho");
-  const hintPisco = document.getElementById("hintAlertaPisco");
-  
-  const minAmarelo = rules.alertaAmareloMin || 0;
-  const minVermelho = rules.alertaVermelhoMin || 0;
-  const minPisco = rules.alertaPiscoMin || 0;
-  
-  const totalVermelho = (minVermelho > minAmarelo) ? minVermelho : (minAmarelo + minVermelho);
-  const totalPisco = (minPisco > totalVermelho) ? minPisco : (totalVermelho + minPisco);
-
-  if (hintAmarelo) hintAmarelo.textContent = `⏱️ ${(minAmarelo/60).toFixed(1).replace('.0','')}h sem contato`;
-  if (hintVermelho) hintVermelho.textContent = `⏱️ ${(totalVermelho/60).toFixed(1).replace('.0','')}h acumulado`;
-  if (hintPisco) hintPisco.textContent = `⏱️ ${(totalPisco/60).toFixed(1).replace('.0','')}h acumulado`;
-
-  const hOpen = rules.autoCloseOpenHours || 0;
-  const hClosed = rules.autoDesatualizaFechadoHours || rules.fechadoViraDesatualizadoHoras || 0;
-  const hCrit = rules.desatualizadoCriticoHoras || 0;
-  const hInact = rules.autoInactivateHours || 0;
-  
-  const acc1 = hOpen;
-  const acc2 = hOpen + hClosed;
-  const acc3 = acc2 + hCrit;
-  const acc4 = acc3 + hInact;
-
-  const accStep1 = document.getElementById("accStep1");
-  const accStep2 = document.getElementById("accStep2");
-  const accStep3 = document.getElementById("accStep3");
-  const accStep4 = document.getElementById("accStep4");
-
-  if (accStep1) accStep1.textContent = `Acumulado: ${acc1}h`;
-  if (accStep2) accStep2.textContent = `Acumulado: ${acc2}h (${(acc2/24).toFixed(1).replace('.0','')}d)`;
-  if (accStep3) accStep3.textContent = `Acumulado: ${acc3}h (${(acc3/24).toFixed(1).replace('.0','')}d)`;
-  if (accStep4) accStep4.textContent = `Tolerância Total: ${acc4}h (~${(acc4/24).toFixed(1).replace('.0','')} dias)`;
-}
-
-function attachConfigInputListeners() {
-  const inputs = [
-    cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin,
-    cfgAutoCloseOpenHours, cfgFechadoViraDesatualizadoHoras,
-    cfgDesatualizadoCriticoHoras, cfgAutoInactivateHours, cfgPollingSeconds
-  ];
-  inputs.forEach(inp => {
-    if (inp && !inp.dataset.listenerAttached) {
-      inp.dataset.listenerAttached = 'true';
-      inp.addEventListener('input', syncConfigSummary);
-    }
-  });
-
-  const toggleSwitch = document.getElementById("cfgAlertUnitHoursToggle");
-  if (toggleSwitch && !toggleSwitch.dataset.listenerAttached) {
-    toggleSwitch.dataset.listenerAttached = 'true';
-    toggleSwitch.addEventListener('change', (e) => {
-      toggleAlertUnit(e.target.checked);
-    });
-  }
-}
-
-function openConfigModal() {
-  fillConfigForm(cfg || {});
-  attachConfigInputListeners();
-  attachCrashReportListeners();
-  setConfigNotice('');
-  loadCrashReports();
-
-  if (configModalMeta) configModalMeta.textContent = 'Edite os tempos e confirme para aplicar.';
-  setConfigModalHidden(false);
-}
-
-function attachCrashReportListeners() {
-  const btnRefresh = document.getElementById("btnRefreshCrashReports");
-  if (btnRefresh && !btnRefresh.dataset.listenerAttached) {
-    btnRefresh.dataset.listenerAttached = 'true';
-    btnRefresh.addEventListener("click", loadCrashReports);
-  }
-  const btnClear = document.getElementById("btnClearCrashReports");
-  if (btnClear && !btnClear.dataset.listenerAttached) {
-    btnClear.dataset.listenerAttached = 'true';
-    btnClear.addEventListener("click", clearAllCrashReports);
-  }
-}
-
-async function loadCrashReports() {
-  const container = document.getElementById("crashReportsContainer");
-  const badge = document.getElementById("crashConfigBadge");
-  const btnRefresh = document.getElementById("btnRefreshCrashReports");
-
-  if (btnRefresh) btnRefresh.disabled = true;
-
-  try {
-    const res = await fetch("/api/crash-reports");
-    if (!res.ok) throw new Error("Falha ao carregar relatórios");
-    const data = await res.json();
-    const reports = data.reports || [];
-
-    if (badge) {
-      if (reports.length > 0) {
-        badge.textContent = reports.length;
-        badge.hidden = false;
-      } else {
-        badge.hidden = true;
-      }
-    }
-
-    if (!container) return;
-
-    if (reports.length === 0) {
-      container.innerHTML = `<div class="crashReportsEmpty">✅ Nenhum relatório de erro/fechamento anormal registrado até o momento.</div>`;
-      return;
-    }
-
-    container.innerHTML = reports.map(r => {
-      const errName = (r.exceptionType || "Exception").split('.').pop();
-      const deviceStr = r.device ? `${r.device} (Android ${r.androidVersion || '?'})` : "Dispositivo Desconhecido";
-      const appVerStr = r.appVersion ? `v${r.appVersion}` : "";
-      
-      return `
-        <div class="crashCard" data-id="${r.id}">
-          <div class="crashCardHeader">
-            <div class="crashCardMeta">
-              <span>📅 ${r.timestamp || '-'}</span>
-              <span class="crashBadgeDevice">📱 ${deviceStr}</span>
-              ${appVerStr ? `<span class="crashBadgeDevice">${appVerStr}</span>` : ''}
-            </div>
-            <span class="crashBadgeError">❌ ${errName}</span>
-          </div>
-          <div class="crashCardMessage">💬 ${r.message || 'Sem mensagem detalhada'}</div>
-          
-          <details class="crashCardDetails">
-            <summary>🔍 Ver Pilha de Chamadas (Stacktrace)</summary>
-            <pre class="crashStackTraceBox"><code>${r.stackTrace || 'Sem stacktrace'}</code></pre>
-          </details>
-
-          <div class="crashCardActions">
-            <button type="button" class="btnSecondary" style="font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.08); color: #fff; border: none; cursor: pointer;" onclick="copyCrashStackTrace('${r.id}')">
-              📋 Copiar Stacktrace
-            </button>
-            <button type="button" class="btnDanger" style="font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.3); cursor: pointer;" onclick="deleteCrashReport('${r.id}')">
-              🗑️ Excluir
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-  } catch (err) {
-    console.error("Erro ao carregar crash reports:", err);
-    if (container) container.innerHTML = `<div class="crashReportsEmpty" style="color: #f87171;">⚠️ Erro ao carregar relatórios do servidor.</div>`;
-  } finally {
-    if (btnRefresh) btnRefresh.disabled = false;
-  }
-}
-
-window.copyCrashStackTrace = function(reportId) {
-  const card = document.querySelector(`.crashCard[data-id="${reportId}"]`);
-  if (!card) return;
-  const code = card.querySelector(".crashStackTraceBox")?.textContent || "";
-  navigator.clipboard.writeText(code).then(() => {
-    alert("Stacktrace copiado para a área de transferência!");
-  }).catch(() => {
-    alert("Não foi possível copiar o texto.");
-  });
-};
-
-window.deleteCrashReport = async function(reportId) {
-  if (!confirm("Deseja realmente excluir este relatório de erro?")) return;
-  try {
-    const res = await fetch(`/api/crash-reports/${reportId}`, { method: 'DELETE' });
-    if (res.ok) {
-      loadCrashReports();
-    } else {
-      alert("Falha ao excluir o relatório.");
-    }
-  } catch (err) {
-    alert("Erro de conexão ao excluir o relatório.");
-  }
-};
-
-async function clearAllCrashReports() {
-  if (!confirm("Deseja realmente limpar TODOS os relatórios de erros do servidor? Essa ação não pode ser desfeita.")) return;
-  try {
-    const res = await fetch("/api/crash-reports", { method: 'DELETE' });
-    if (res.ok) {
-      loadCrashReports();
-    } else {
-      alert("Falha ao limpar relatórios.");
-    }
-  } catch (err) {
-    alert("Erro ao conectar com o servidor.");
-  }
-}
-
-function closeConfigModal() {
-  if (configSaveInFlight) return;
-  setConfigModalHidden(true);
-  setConfigNotice('');
-}
-
-async function saveConfigModal() {
-  if (configSaveInFlight) return;
-  const payload = collectConfigPayload();
-  configSaveInFlight = true;
-  if (configModalMeta) configModalMeta.textContent = 'Salvando configurações...';
-  setConfigNotice('');
-
-  try {
-    const response = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.detail || 'Falha ao salvar as configurações.');
-    cfg = {
-      defaultEmpresa: data.defaultEmpresa || cfg?.defaultEmpresa || '',
-      pollingSeconds: data.pollingSeconds,
-      rules: data.rules || {},
-    };
-    pollingSeconds = Number(cfg.pollingSeconds) || 600;
-    setConfigNotice(data?.message || 'Configurações salvas com sucesso.', 'success');
-    if (configModalMeta) configModalMeta.textContent = 'Configurações salvas com sucesso.';
-    await load();
-    startPolling();
-    setTimeout(() => {
-      closeConfigModal();
-    }, 600);
-  } catch (error) {
-    setConfigNotice(error?.message || 'Não foi possível salvar as configurações.', 'error');
-    if (configModalMeta) configModalMeta.textContent = 'Falha ao salvar';
-  } finally {
-    configSaveInFlight = false;
-  }
-}
-
-
-function normalizedState(state) {
-  const raw = safeUpper(state);
-  if (raw === "EXECUCAO") return "ABERTO";
-  if (raw === "ESPECIAL" || raw === "DESLOCAMENTO") return "DESLOCAMENTO_ESPECIAL";
-  return raw;
-}
-function stateLabel(state) { switch (normalizedState(state)) { case "DESLOCAMENTO_ESPECIAL": return "DESLOCAMENTO ESPECIAL"; default: return normalizedState(state); } }
-
-function getOrigemChar(item) {
-  return item?.rotalogSnapshot ? "R" : "D";
-}
-
-function getOrigemTitle(item) {
-  const char = getOrigemChar(item);
-  if (char === "R") return "Fonte operacional: JSON/cache do Rotalog";
-  return "Sem snapshot operacional do Rotalog";
-}
-
-function serviceEventTimestampMs(value, referenceIso) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
-  const raw = String(value).trim();
-  if (!raw) return null;
-  if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
-    const reference = new Date(referenceIso || Date.now());
-    const base = Number.isNaN(reference.getTime()) ? new Date() : reference;
-    const [hours, minutes, seconds = '0'] = raw.split(':');
-    base.setHours(Number(hours), Number(minutes), Number(seconds), 0);
-    return base.getTime();
-  }
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
-}
-function getRotalogService(item) {
-  if (!item?.rotalogSnapshot) return null;
-  const snapshot = item.rotalogSnapshot;
-  const current = snapshot.ordensServico?.atual || snapshot.atividadeAtual || null;
-  const completed = Array.isArray(snapshot.ordensServico?.historico)
-    ? snapshot.ordensServico.historico
-    : (Array.isArray(snapshot.ssExecutadas) ? snapshot.ssExecutadas : []);
-  const service = current || (completed.length ? completed[completed.length - 1] : null);
-  if (!service) return null;
-  const rawStatus = safeUpper(service.statusAtual || service.status || item?.atividadeStatus || item?.monitorStatus);
-  const statusChar = rawStatus === 'DESLOCAMENTO'
-    ? 'D'
-    : rawStatus === 'EXECUCAO'
-      ? 'E'
-      : rawStatus === 'CONCLUSAO'
-        ? 'C'
-        : '';
-  const realProtocol = service.protocolo || service.ssId || '';
-  const serviceId = service.protocoloBruto || service.ssId || '';
-  const serviceType = service.tipo || '';
-  const hasDistinctServiceId = serviceId && String(serviceId) !== String(serviceType);
-  const identifier = realProtocol || (hasDistinctServiceId ? serviceId : serviceType);
-  const identifierLabel = (realProtocol || hasDistinctServiceId) ? 'SS' : 'Tipo';
-  if (!identifier) return null;
-  const category = safeUpper(service.categoria || service.category || '');
-  const protocol = realProtocol && String(realProtocol) !== String(serviceType)
-    ? String(realProtocol)
-    : '';
-  const conclusionAtMs = rawStatus === 'CONCLUSAO'
-    ? serviceEventTimestampMs(
-        service.retornoIso || service.fimIso || service.terminoIso || service.retorno || service.termino,
-        snapshot.updatedAt || snapshot.updatedAtIso || item?.lastContact || item?.updatedAt
-      )
-    : null;
-  const conclusionOlderThanTenMinutes = Boolean(
-    conclusionAtMs && Date.now() - conclusionAtMs > 10 * 60 * 1000
-  );
-  const statusLabel = rawStatus === 'DESLOCAMENTO'
-    ? 'Deslocamento'
-    : rawStatus === 'EXECUCAO'
-      ? 'Execução'
-      : rawStatus === 'CONCLUSAO'
-        ? 'Conclusão'
-        : rawStatus;
-
-  let effectiveRawTime = null;
-  let effectiveStageLabel = '';
-
-  if (rawStatus === 'EXECUCAO' || statusChar === 'E') {
-    effectiveStageLabel = 'Início da Execução';
-    let transitionTime = null;
-    if (Array.isArray(service.transitions)) {
-      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'EXECUCAO');
-      if (tr) transitionTime = tr.hora || tr.timestampMs;
-    }
-    effectiveRawTime = service.inicioExecucao || transitionTime || service.execucao || service.inicioHora || service.inicioIso || service.inicioDeslocamento || service.inicio;
-  } else if (rawStatus === 'DESLOCAMENTO' || statusChar === 'D') {
-    effectiveStageLabel = 'Início do Deslocamento';
-    let transitionTime = null;
-    if (Array.isArray(service.transitions)) {
-      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'DESLOCAMENTO');
-      if (tr) transitionTime = tr.hora || tr.timestampMs;
-    }
-    effectiveRawTime = service.inicioDeslocamento || transitionTime || service.deslocamento || service.inicioHora || service.inicioIso || service.inicio;
-  } else if (rawStatus === 'CONCLUSAO' || statusChar === 'C') {
-    effectiveStageLabel = 'Conclusão';
-    let transitionTime = null;
-    if (Array.isArray(service.transitions)) {
-      const tr = [...service.transitions].reverse().find(t => safeUpper(t?.status) === 'CONCLUSAO');
-      if (tr) transitionTime = tr.hora || tr.timestampMs;
-    }
-    effectiveRawTime = service.termino || service.fimExecucao || service.retorno || transitionTime || service.fimIso || service.retornoIso || service.terminoIso || service.inicioExecucao || service.inicioIso;
-  } else {
-    effectiveStageLabel = 'Atividade';
-    effectiveRawTime = service.inicioExecucao || service.inicioDeslocamento || service.inicioHora || service.inicioIso || service.termino || service.fimIso;
-  }
-
-  const effectiveTimeLabel = formatEffectiveServiceTime(effectiveRawTime, service, item);
-
-  let timeTooltip = '';
-  if (effectiveStageLabel && effectiveTimeLabel) {
-    const extraParts = [];
-    if (rawStatus === 'EXECUCAO') {
-      if (service.inicioDeslocamento && service.inicioDeslocamento !== effectiveRawTime) {
-        extraParts.push(`Deslocamento: ${service.inicioDeslocamento}`);
-      }
-    } else if (rawStatus === 'CONCLUSAO') {
-      if (service.inicioExecucao) {
-        extraParts.push(`Execução: ${service.inicioExecucao}`);
-      }
-      if (service.inicioDeslocamento) {
-        extraParts.push(`Deslocamento: ${service.inicioDeslocamento}`);
-      }
-    }
-    const extraStr = extraParts.length ? ` (${extraParts.join(' • ')})` : '';
-    timeTooltip = `${effectiveStageLabel}: ${effectiveTimeLabel}${extraStr}`;
-  }
-
-  const latitude = service.latitude ?? item.latitude ?? null;
-  const longitude = service.longitude ?? item.longitude ?? null;
-
-  return {
-    identifier: String(identifier), identifierLabel, statusChar, statusLabel, rawStatus,
-    category,
-    serviceType: String(serviceType || identifier),
-    protocol,
-    conclusionOlderThanTenMinutes,
-    effectiveRawTime,
-    effectiveStageLabel,
-    effectiveTimeLabel,
-    timeTooltip,
-    latitude,
-    longitude,
-  };
-}
-function operationalTimestamp(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
-  const raw = String(value).trim();
-  if (!raw) return null;
-  if (/^\d+$/.test(raw)) {
-    const numeric = Number(raw);
-    return numeric > 100000000000 ? numeric : numeric * 1000;
-  }
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
-}
-
-function operationalTimeLabel(value) {
-  const timestamp = operationalTimestamp(value);
-  if (!timestamp) return '-';
-  return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function getTurnSummary(item, shown) {
-  if (shown !== 'FECHADO' && shown !== 'INTERVALO') return null;
-  const snapshot = item?.rotalogSnapshot || {};
-  const turno = snapshot?.jornada?.turno || snapshot?.turno || item?.turno || {};
-  const intervals = Array.isArray(snapshot.intervalos) ? snapshot.intervalos : [];
-  const latestInterval = intervals.length ? intervals[intervals.length - 1] : (snapshot.intervalo || {});
-  const openedAt = turno.inicio_iso || turno.inicioIso || turno.inicio_ms || turno.inicio || item?.turnoInicio || item?.openedAtClientMs;
-  const closedAt = turno.fim_iso || turno.fimIso || turno.fim_ms || turno.fim || item?.turnoFim || item?.closedAtClientMs || item?.updatedAt;
-  const intervalAt = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio_ms || latestInterval.inicio || item?.updatedAt;
-  const executedServices = Array.isArray(snapshot.ssExecutadas)
-    ? snapshot.ssExecutadas.length
-    : Number(snapshot?.ordensServico?.totalConcluidos ?? item?.totalConcluidos ?? snapshot.ssExecutadasCount ?? item?.ssExecutadasCount ?? 0);
-  return {
-    title: shown === 'FECHADO' ? 'ÚLTIMO TURNO' : 'TURNO ATUAL',
-    openedAt: operationalTimeLabel(openedAt),
-    endLabel: shown === 'FECHADO' ? 'Fechamento' : 'Intervalo',
-    endAt: operationalTimeLabel(shown === 'FECHADO' ? closedAt : intervalAt),
-    executedServices,
-  };
-}
-function vehicleFrameClass(state) { switch (normalizedState(state)) { case "ABERTO": return "vfGreen"; case "INTERVALO": return "vfYellow"; case "DESLOCAMENTO_ESPECIAL": return "vfBlue"; case "FECHADO": return "vfRed"; case "DESATUALIZADO": return "vfGray"; default: return "vfGray"; } }
-function stateCardClass(state) {
-  switch (normalizedState(state)) {
-    case "ABERTO": return "tileStateOpen";
-    case "INTERVALO": return "tileStateInterval";
-    case "DESLOCAMENTO_ESPECIAL": return "tileStateSpecial";
-    case "FECHADO": return "tileStateClosed";
-    case "DESATUALIZADO": return "tileStateStale";
-    default: return "tileStateUnknown";
-  }
-}
-function borderClass(alerta) { switch (safeUpper(alerta)) { case "YELLOW": return "tileBorderYellow"; case "RED": return "tileBorderRed"; case "PULSE": return "tileBorderPulse"; default: return ""; } }
-function participantsHtml(list, motorista, coringas, extraClass = "") {
-  const names = Array.isArray(list) ? list.filter(Boolean) : [];
-  const cls = ["participantsList", extraClass].filter(Boolean).join(" ");
-  if (!names.length) return `<div class="popoverEmpty">Nenhum participante informado</div>`;
-  
-  const normMotorista = (motorista || "").trim().toUpperCase();
-  const normCoringas = Array.isArray(coringas) ? coringas.map(c => (c || "").trim().toUpperCase()) : [];
-
-  return `<ul class="${cls}">${names.map((name) => {
-    const normName = name.trim().toUpperCase();
-    const isDriver = normName === normMotorista;
-    const isCoringa = normCoringas.includes(normName);
-    
-    let iconsHtml = "";
-    if (isDriver) {
-      iconsHtml += `<svg class="monitorIcon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display:inline-block; vertical-align:middle; margin-left:6px; color:#2196F3;" title="Motorista"><path d="M12,2C6.5,2 2,6.5 2,12C2,17.5 6.5,22 12,22C17.5,22 22,17.5 22,12C22,6.5 17.5,2 12,2M12,4C15.8,4 19,6.9 19.8,10.5H16.2C15.6,9 14,8 12,8C10,8 8.4,9 7.8,10.5H4.2C5,6.9 8.2,4 12,4M4.2,13.5H7.8C8.4,15 10,16 12,16C14,16 15.6,15 16.2,13.5H19.8C19,17.1 15.8,20 12,20C8.2,20 5,17.1 4.2,13.5Z"/></svg>`;
-    }
-    if (isCoringa) {
-      iconsHtml += `<svg class="monitorIcon" viewBox="0 0 24 24" width="14" height="14" style="display:inline-block; vertical-align:middle; margin-left:6px;" title="Coringa"><path fill="#4CAF50" d="M8,7.5c0,-0.83 0.67,-1.5 1.5,-1.5h6.5V4.5c0,-0.45 0.54,-0.67 0.85,-0.35l4.5,4.5c0.2,0.2 0.2,0.5 0,0.7l-4.5,4.5c-0.31,0.32 -0.85,0.1 -0.85,-0.35V10.5h-6.5C8.67,10.5 8,9.83 8,9V7.5z"/><path fill="#E53935" d="M16,16.5c0,0.83 -0.67,1.5 -1.5,1.5h-6.5V19.5c0,0.45 -0.54,0.67 -0.85,0.35l-4.5,-4.5c-0.2,-0.2 -0.2,-0.5 0,-0.7l4.5,-4.5c0.31,-0.32 0.85,-0.1 0.85,0.35V13.5h6.5C15.33,13.5 16,14.17 16,15V16.5z"/></svg>`;
-    }
-
-    return `<li style="display:flex; align-items:center;">${escapeHtml(name)}${iconsHtml}</li>`;
-  }).join("")}</ul>`;
-}
-function detailValue(value) { if (value === null || value === undefined) return "-"; const text = String(value).trim(); return text || "-"; }
-function hasMeaningfulValue(value) { const text = detailValue(value); return text !== '-' && safeUpper(text) !== 'NULL'; }
-function getViewMode() {
-  const mode = document.body?.dataset?.teamView;
-  if (mode === 'inactive') return 'inactive';
-  if (mode === 'trash') return 'trash';
-  return 'active';
-}
-function getActiveFilterValue() {
-  const mode = getViewMode();
-  if (mode === 'trash') return 'all'; // Na lixeira buscamos tudo da lixeira
-  return 'all'; // Para Ativas/Inativas, buscamos tudo para manter em cache
-}
-function getTeamCountLabel() {
-  const mode = getViewMode();
-  if (mode === 'inactive') return 'Inativas';
-  if (mode === 'trash') return 'Na Lixeira';
-  return 'Equipes';
-}
-
-function normalizeKpiFilter(value) {
-  const raw = safeUpper(value);
-  switch (raw) {
-    case "ABERTO":
-    case "INTERVALO":
-    case "FECHADO":
-    case "DESATUALIZADO":
-    case "ALERTA":
-    case "DDS_OK":
-    case "DDS":
-      return "DDS_OK";
-    case "DESLOCAMENTO":
-    case "DESLOCAMENTO_ESPECIAL":
-      return "DESLOCAMENTO_ESPECIAL";
-    default:
-      return "";
-  }
-}
-
-function activeAlertFilter(item) {
-  const alerta = safeUpper(item?.alerta);
-  return alerta === "YELLOW" || alerta === "RED" || alerta === "PULSE";
-}
-
-function syncKpiSelection() {
-  if (!kpis) return;
-  const current = normalizeKpiFilter(activeKpiFilter);
-  kpis.querySelectorAll(".kpi").forEach((chip) => {
-    const chipFilter = normalizeKpiFilter(chip.dataset.filter || chip.dataset.kpi);
-    const isActive = Boolean(current) && chipFilter === current;
-    chip.classList.toggle("kpiFilterActive", isActive);
-    chip.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
-}
-
-function hoverRows(item) {
-  const rows = [];
-  rows.push(`<div class="hoverRow"><span>Atualizacao Rotalog</span><strong>${escapeHtml(fmtDateTime(latestCommunicationAt(item)))}</strong></div>`);
-  const rotalogService = getRotalogService(item);
-  if (rotalogService?.effectiveTimeLabel && rotalogService.effectiveStageLabel) {
-    rows.push(`<div class="hoverRow"><span>${escapeHtml(rotalogService.effectiveStageLabel)}</span><strong>${escapeHtml(rotalogService.effectiveTimeLabel)}</strong></div>`);
-  }
-  if (rotalogService?.protocol) rows.push(`<div class="hoverRow"><span>SS/NOC</span><strong>${escapeHtml(rotalogService.protocol)}</strong></div>`);
-  const totalConcluidos = item.totalConcluidos ?? item.rotalogSnapshot?.ordensServico?.totalConcluidos;
-  if (totalConcluidos !== undefined && totalConcluidos !== null) {
-    rows.push(`<div class="hoverRow"><span>Serviços Concluídos (Hoje)</span><strong>${escapeHtml(String(totalConcluidos))}</strong></div>`);
-  }
-  const colab = item.colaborador ?? item.rotalogSnapshot?.conexao?.colaborador;
-  if (colab) {
-    rows.push(`<div class="hoverRow"><span>Colaborador</span><strong>${escapeHtml(colab)}</strong></div>`);
-  }
-  const lat = item.latitude ?? rotalogService?.latitude;
-  const lon = item.longitude ?? rotalogService?.longitude;
-  if (lat && lon) {
-    rows.push(`<div class="hoverRow"><span>GPS</span><strong><a class="gpsMapLink" href="https://maps.google.com/?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}" target="_blank" rel="noopener noreferrer">📍 Ver no Mapa</a></strong></div>`);
-  }
-  if (normalizedState(item.estado) === 'DESLOCAMENTO_ESPECIAL' && hasMeaningfulValue(item.motivo)) rows.push(`<div class="hoverRow"><span>Motivo</span><strong>${escapeHtml(detailValue(item.motivo))}</strong></div>`);
-  return rows.join('');
-}
-
-function normalizeDdsEntry(value) {
-  if (value === true) return "ok";
-  if (value === false) return "fail";
-  const raw = safeUpper(value);
-  if (["OK", "FEITO", "SIM", "TRUE", "DONE", "CHECK", "CHECKED", "CONCLUIDO", "CONCLUÍDO"].includes(raw)) return "ok";
-  if (["X", "NAO", "NÃO", "FALSE", "PENDENTE", "NAO_FEITO", "NÃO_FEITO", "FAIL"].includes(raw)) return "fail";
-  return "neutral";
-}
-
-function formatDdsDayOnly(day) {
-  if (!day) return "";
-  const parts = String(day).split("-");
-  if (parts.length !== 3) return String(day);
-  return String(Number(parts[2]));
-}
-
-function formatDdsFullDate(day) {
-  if (!day) return "";
-  const parts = String(day).split("-");
-  if (parts.length !== 3) return String(day);
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function ddsStatusLabel(status) {
-  if (status === "ok") return "DDS feito";
-  if (status === "fail") return "Equipe sem DDS";
-  return "Sem DDS no dia";
-}
-
-function ddsSequenceHtml(item, options = {}) {
-  const ddsToggle = document.getElementById("ddsToggle");
-  if (!ddsToggle || !ddsToggle.checked) return "";
-  const {
-    maxItems = 5,
-    showDayLabels = false,
-    showMeta = true,
-    label = "DDS",
-    hintText = `Últimos ${maxItems}`,
-    containerClass = "",
-  } = options;
-
-  const raw = Array.isArray(item.ddsHistory)
-    ? item.ddsHistory
-    : Array.isArray(item.ddsSequence)
-      ? item.ddsSequence
-      : [];
-  const days = Array.isArray(item.ddsDays) ? item.ddsDays : [];
-
-  let dots = "";
-
-  if (showDayLabels) {
-    // Modo de Grade Calendário (Ex: Popover/Modal)
-    // Calcula o número de semanas com base em maxItems (10 -> 2 semanas, 20 -> 3 semanas)
-    const numWeeks = maxItems > 14 ? 3 : 2;
-    const totalDays = numWeeks * 7;
-
-    // Encontra o "hoje" baseado no último dia de histórico enviado pelo back
-    const todayStr = days.length > 0 ? days[days.length - 1] : new Date().toISOString().split('T')[0];
-    const todayParts = todayStr.split("-");
-    const todayDate = new Date(Number(todayParts[0]), Number(todayParts[1]) - 1, Number(todayParts[2]));
-
-    // Encontra o domingo inicial
-    const weeksBefore = numWeeks - 1;
-    const startSunday = new Date(todayDate);
-    startSunday.setDate(todayDate.getDate() - todayDate.getDay() - (weeksBefore * 7));
-
-    const calendarDots = [];
-    for (let i = 0; i < totalDays; i++) {
-      const d = new Date(startSunday);
-      d.setDate(startSunday.getDate() + i);
-
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-
-      const dayLabel = d.getDate();
-      const dayIdx = days.indexOf(dateStr);
-
-      let status = "neutral";
-      let isFuture = false;
-
-      if (dateStr > todayStr) {
-        status = "future";
-        isFuture = true;
-      } else if (dayIdx !== -1) {
-        status = normalizeDdsEntry(raw[dayIdx]);
-      }
-
-      const statusText = isFuture ? "Dia futuro" : ddsStatusLabel(status);
-      const timeStr = (status === "ok" && item.ddsTimes && item.ddsTimes[dateStr]) ? ` (${item.ddsTimes[dateStr]})` : "";
-      const tooltip = `${formatDdsFullDate(dateStr)} • ${statusText}${timeStr}`;
-      const isToday = dateStr === todayStr;
-
-      const photoUrl = (status === "ok" && item.ddsPhotos && item.ddsPhotos[dateStr]) ? item.ddsPhotos[dateStr] : "";
-      const hasPhotoClass = photoUrl ? " has-photo" : "";
-
-      calendarDots.push(`
-        <span class="ddsDayDot${hasPhotoClass}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" ${photoUrl ? `data-photo="${escapeHtml(photoUrl)}"` : ""}>
-          <span class="ddsDayLabel">${escapeHtml(dayLabel)}</span>
-          <span class="ddsDotWrap${isToday ? " isCurrent" : ""}">
-            <span class="ddsDot ddsDot--${status}${isToday ? " ddsDot--current" : ""}"></span>
-          </span>
-        </span>
-      `);
-    }
-    dots = calendarDots.join("");
-  } else {
-    // Modo Compacto (Ex: Card principal)
-    const recentRaw = raw.slice(-maxItems);
-    const recentDays = days.slice(-maxItems);
-
-    const normalized = recentRaw.map(normalizeDdsEntry);
-    while (normalized.length < maxItems) normalized.unshift("neutral");
-    while (recentDays.length < maxItems) recentDays.unshift("");
-
-    dots = normalized.map((status, idx) => {
-      const isCurrent = idx === normalized.length - 1;
-      const day = recentDays[idx];
-      const statusText = ddsStatusLabel(status);
-      const timeStr = (status === "ok" && day && item.ddsTimes && item.ddsTimes[day]) ? ` (${item.ddsTimes[day]})` : "";
-      const tooltip = day ? `${formatDdsFullDate(day)} • ${statusText}${timeStr}` : statusText;
-
-      const photoUrl = (status === "ok" && day && item.ddsPhotos && item.ddsPhotos[day]) ? item.ddsPhotos[day] : "";
-      const hasPhotoClass = photoUrl ? " has-photo" : "";
-
-      return `
-        <span class="ddsDotWrap${isCurrent ? " isCurrent" : ""}${hasPhotoClass}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" ${photoUrl ? `data-photo="${escapeHtml(photoUrl)}"` : ""}>
-          <span class="ddsDot ddsDot--${status}${isCurrent ? " ddsDot--current" : ""}"></span>
-        </span>
-      `;
-    }).join("");
-  }
-
-  const rowClass = ["ddsRow", containerClass, showDayLabels ? "ddsRowExpanded" : "", showMeta ? "" : "ddsRowCompact"]
-    .filter(Boolean)
-    .join(" ");
-
-  const trackClass = ["ddsTrack", showDayLabels ? "ddsTrackExpanded" : "", showMeta ? "" : "ddsTrackCompact"]
-    .filter(Boolean)
-    .join(" ");
-
-  const actualHintText = showDayLabels ? `Últimas ${maxItems > 14 ? 3 : 2} semanas` : hintText;
-
-  return `
-    <div class="${rowClass}" aria-label="DDS">
-      ${showMeta ? `
-        <div class="ddsMeta">
-          <span class="ddsLabel">${escapeHtml(label)}</span>
-          <span class="ddsHint">${escapeHtml(actualHintText)}</span>
-        </div>
-      ` : ""}
-      <div class="${trackClass}" role="list">
-        ${dots}
-      </div>
-    </div>
-  `;
-}
-
-
-function formatStatusWithTime(item, shown, art66Active, art66EndAt) {
-  const statusLabel = stateLabel(shown);
-  const normState = normalizedState(shown);
-  const snapshot = item?.rotalogSnapshot || {};
-  const turno = snapshot?.jornada?.turno || snapshot?.turno || item?.turno || {};
-  const intervalos = Array.isArray(snapshot?.intervalos) ? snapshot.intervalos : [];
-  const latestInterval = intervalos.length ? intervalos[intervalos.length - 1] : (snapshot?.intervalo || {});
-
-  let dateLike = null;
-  if (normState === "ABERTO" || normState === "EXECUCAO" || normState === "DESLOCAMENTO" || normState === "DESLOCAMENTO_ESPECIAL") {
-    dateLike = turno.inicio_iso || turno.inicioIso || turno.inicio || item?.turnoInicio || item?.inicioIso || item?.openedAtClientMs || item?.updatedAt;
-  } else if (normState === "FECHADO") {
-    dateLike = turno.fim_iso || turno.fimIso || turno.fim || item?.turnoFim || item?.fimIso || item?.closedAtClientMs || item?.updatedAt;
-  } else if (normState === "INTERVALO") {
-    dateLike = latestInterval.inicioIso || latestInterval.inicio_iso || latestInterval.inicio || item?.updatedAt;
-  } else {
-    dateLike = item?.lastContact || item?.updatedAt;
-  }
-
-  if (!dateLike) {
-    return statusLabel;
-  }
-
-  const dt = dateLike instanceof Date ? dateLike : new Date(dateLike);
-  if (Number.isNaN(dt.getTime())) {
-    return statusLabel;
-  }
-
-  const today = new Date();
-  const isToday = dt.getDate() === today.getDate() &&
-                  dt.getMonth() === today.getMonth() &&
-                  dt.getFullYear() === today.getFullYear();
-
-  const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const dd = String(dt.getDate()).padStart(2, "0");
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const dayMonthStr = `${dd}/${mm}`;
-
-  if (normState === "FECHADO" && art66Active) {
-    const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
-    const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
-    if (!isBeforeSeven && art66EndLabel) {
-      if (isToday) {
-        return `${statusLabel}: ${timeStr} → ${art66EndLabel}`;
-      } else {
-        return `${statusLabel}: ${dayMonthStr} ${timeStr} → ${art66EndLabel}`;
-      }
-    }
-  }
-
-  if (isToday) {
-    return `${statusLabel}: ${timeStr}`;
-  } else {
-    return `${statusLabel}: ${dayMonthStr} ${timeStr}`;
-  }
-}
-
-function tile(item) {
-  const shown = normalizedState(item.estado);
-  const border = borderClass(item.alerta);
-  const stateCard = stateCardClass(shown);
-  const crit = item.critico === true && shown === "DESATUALIZADO";
-  const equipe = detailValue(item.equipe);
-  const teamKey = detailValue(item.teamKey || item.equipe);
-  const veiculoOperacional = item?.operacional?.veiculo
-    || item?.rotalogSnapshot?.veiculo
-    || item?.rotalogSnapshot?.conexao?.veiculo
-    || item?.operacional?.identificadorEquipamento
-    || item?.rotalogSnapshot?.identificadorEquipamento
-    || item?.rotalogSnapshot?.conexao?.identificadorEquipamento;
-  const veiculoLabel = veiculoOperacional ? String(veiculoOperacional).trim() : "-";
-  const participantes = participantsHtml(item.participantes, item.motorista, item.coringas, 'hoverParticipantsList');
-  const details = hoverRows(item);
-  const statusLabel = stateLabel(shown);
-  const art66Active = isArt66Active(item, shown);
-  const art66EndAt = getArt66EndAt(item, shown);
-  const isBeforeSeven = art66EndAt && art66EndAt.getHours() < 7;
-  const art66EndLabel = isBeforeSeven ? "" : fmtHourMinute(art66EndAt);
-
-  const statusLineFormatted = formatStatusWithTime(item, shown, art66Active, art66EndAt);
-
-  const badgeLabel = item.lastWasDescansoSemanal ? "ART 67" : "ART 66";
-  const badgeHtml = art66Active
-    ? `<div class="topRightTab art66Tab"><div class="tabLine1">${badgeLabel}</div>${isBeforeSeven ? '' : `<div class="tabLine2">${escapeHtml(art66EndLabel)}</div>`}</div>`
-    : (crit ? `<div class="topRightTab criticalTab"><div class="tabLine1">CRÍTICO</div></div>` : ``);
-
-  // Lógica de Mensagens Global por Setor (Estratégia 4)
-  const currentSector = (sectorSelector?.value || 'TODOS').toUpperCase();
-  const unreadMap = item.unreadMap || {};
-
-  let unreadCurrent = 0;
-  if (currentSector === 'TODOS') {
-    unreadCurrent = Object.values(unreadMap).reduce((a, b) => a + b, 0);
-  } else {
-    unreadCurrent = Number(unreadMap[currentSector] || 0);
-  }
-
-  const totalUnread = Object.values(unreadMap).reduce((a, b) => a + b, 0);
-  const hasOthers = totalUnread > unreadCurrent;
-
-  let messageIconHtml = "";
-  if (totalUnread > 0) {
-    const iconClass = unreadCurrent > 0 ? "tileMessageIcon active" : "tileMessageIcon others";
-    const title = unreadCurrent > 0
-      ? `${unreadCurrent} mensagens para seu setor (${currentSector})`
-      : `Mensagens pendentes para outros setores`;
-
-    messageIconHtml = `
-      <div class="${iconClass}" title="${escapeHtml(title)}">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.8 8.38 8.38 0 0 1 3.8.9L21 3l-1.4 4.7a8.38 8.38 0 0 1 .9 3.8Z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        ${unreadCurrent > 0 ? `<span class="messageBadge">${unreadCurrent}</span>` : ""}
-      </div>`;
-  }
-
-  const ddsToggle = document.getElementById("ddsToggle");
-  const isDdsChecked = ddsToggle ? ddsToggle.checked : false;
-
-  const hoverDdsHtml = isDdsChecked ? `
-        <div class="hoverSection">
-          <div class="hoverSectionTitle">Presenças no DDS (Últimas 2 semanas)</div>
-          ${ddsSequenceHtml(item, { maxItems: 10, showDayLabels: true, showMeta: false, containerClass: "ddsRowHover" })}
-        </div>
-  ` : '';
-
-  const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
-
-  const lastContactLabel = fmtLastContact(latestCommunicationAt(item));
-  const tabletLabel = detailValue(item.tablet || item?.rotalogSnapshot?.identificadorEquipamento);
-  const origemChar = getOrigemChar(item);
-  const origemTitle = getOrigemTitle(item);
-  const rotalogService = getRotalogService(item);
-  const turnSummary = getTurnSummary(item, shown);
-  const serviceTimeDisplay = rotalogService?.effectiveTimeLabel || lastContactLabel;
-  const serviceTimeTooltip = rotalogService?.timeTooltip
-    ? (lastContactLabel && lastContactLabel !== '-' ? `${rotalogService.timeTooltip} • Sincronizado: ${lastContactLabel}` : rotalogService.timeTooltip)
-    : (lastContactLabel ? `Última sincronização: ${lastContactLabel}` : '');
-  const serviceStageHtml = rotalogService?.statusChar
-    ? `<span class="contactServiceStage contactServiceStage--${rotalogService.statusChar}" title="${escapeHtml(rotalogService.statusLabel)}">${rotalogService.statusChar}</span>`
-    : '';
-  const serviceContactHtml = rotalogService ? `
-    <div class="contactServiceDetails">
-      <span class="contactServiceCategory">Tipo: ${escapeHtml(rotalogService.category === 'EMERGENCIA' ? 'Emergência' : rotalogService.category === 'COMERCIAL' ? 'Comercial' : rotalogService.category || '-')}</span>
-      <span class="contactServiceType">${escapeHtml(rotalogService.serviceType)} ${serviceStageHtml}</span>
-      <span class="contactServiceProtocol">${rotalogService.conclusionOlderThanTenMinutes ? 'SEM EXECUÇÃO' : rotalogService.protocol ? escapeHtml(rotalogService.protocol) : '&nbsp;'}</span>
-    </div>` : `
-    <div class="contactServiceDetails contactServiceDetails--empty">
-      <span class="contactServiceCategory">&nbsp;</span>
-      <span class="contactServiceType">&nbsp;</span>
-      <span class="contactServiceProtocol">&nbsp;</span>
-    </div>`;
-  const turnSummaryHtml = turnSummary ? `
-    <div class="turnSummary">
-      <span class="turnSummaryTitle">${escapeHtml(turnSummary.title)}</span>
-      <span class="turnSummaryLine"><span>Abertura</span><strong>${escapeHtml(turnSummary.openedAt)}</strong></span>
-      <span class="turnSummaryLine"><span>${escapeHtml(turnSummary.endLabel)}</span><strong>${escapeHtml(turnSummary.endAt)}</strong></span>
-      <span class="turnSummaryServices">${turnSummary.executedServices} ${turnSummary.executedServices === 1 ? 'serviço executado' : 'serviços executados'}</span>
-    </div>` : '';  const isTrash = getViewMode() === 'trash';
-  const trashActions = isTrash ? `
-    <div class="tileTrashActions">
-      <button class="btnRestore" type="button" title="Restaurar Equipe" onclick="event.stopPropagation(); window.restoreTeam('${escapeHtml(teamKey)}')">Restaurar</button>
-      <button class="btnPermanentDelete" type="button" title="Excluir Permanentemente" onclick="event.stopPropagation(); window.deleteTeamPermanent('${escapeHtml(teamKey)}')">Excluir Permanente</button>
-    </div>
-  ` : '';
-
-  const typeIcons = {
-    'STC': '/static/img/stc_small.jpg',
-    'STC_CESTO': '/static/img/stc_cesto_small.jpg',
-    'LINHA_VIVA': '/static/img/linha_viva_small.jpg',
-    'ROCADA': '/static/img/rocada_small.jpg',
-    'CONSTRUCAO': '/static/img/construcao_small.jpg',
-    'EP': '/static/img/ep_small.jpg'
-  };
-
-  let teamTypeIconHtml = '';
-  if (item.teamType && typeIcons[item.teamType]) {
-    teamTypeIconHtml = `<img class="teamTypeBadgeIcon" src="${typeIcons[item.teamType]}" loading="lazy" alt="${escapeHtml(item.teamType)}" />`;
-  }
-
-  return `<article class="tile ${stateCard} ${border} ${isTrash ? 'isTrashTile' : ''}" tabindex="0" role="button" data-team="${escapeHtml(teamKey)}" aria-label="Equipe ${escapeHtml(equipe)}, status ${escapeHtml(statusLabel)}">
-    ${badgeHtml}
-    ${messageIconHtml}
-    <div class="tileMain">
-      <div class="tileTopRow">
-        <div class="tileIdentity">
-          <div class="tileTitleBlock tileTitleBlockFull">
-            <div class="teamIdentityBadge" title="${escapeHtml(equipe)}">
-              ${teamTypeIconHtml}
-              <div class="teamIdentityContent">
-                <div class="equipeCompact equipeCompactInline">${escapeHtml(equipe)}</div>
-                <div class="veiculoLine">${escapeHtml(veiculoLabel)}</div>
-                ${isTrash ? '' : `<div class="statusLineSub">${escapeHtml(statusLineFormatted)}</div>`}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      ${isTrash ? trashActions : `
-        <div class="tileContactRow" title="${escapeHtml(origemTitle)}">
-           ${turnSummaryHtml || serviceContactHtml}
-           ${turnSummary ? '' : `<span class="contactValue" title="${escapeHtml(serviceTimeTooltip)}">${escapeHtml(serviceTimeDisplay)}</span>`}
-         </div>
-        ${ddsRow}
-      `}
-    </div>
-    ${isTrash ? '' : `
-    <div class="tileHoverPanel" aria-hidden="true">
-      <div class="tileHoverTop">
-        <div class="tileHoverTitles">
-          <div class="teamIdentityBadge teamIdentityBadgeHover" title="${escapeHtml(equipe)}">
-            ${teamTypeIconHtml}
-            <div class="teamIdentityTextHover">
-              <div class="equipeCompact equipeCompactHover">${escapeHtml(equipe)}</div>
-              <div class="tabletCompactHover">${escapeHtml(tabletLabel)}</div>
-            </div>
-          </div>
-          <div class="badge badgeCompact">
-            ${escapeHtml(stateLabel(shown))}
-          </div>
-        </div>
-      </div>
-      <div class="tileHoverBody">
-        <div class="hoverRows">${details}</div>
-        ${hoverDdsHtml}
-        <div class="hoverSection">
-          <div class="hoverSectionTitle">Participantes</div>
-          ${participantes}
-        </div>
-      </div>
-    </div>
-    `}
-  </article>`;
-}
-
-function getItemTeamKey(item) { return detailValue(item.teamKey || item.equipe); }
-function getItemEquipe(item) { return detailValue(item.equipe || item.teamKey); }
-function buildTeamOptionLabel(item) {
-  const equipe = getItemEquipe(item);
-  const teamKey = getItemTeamKey(item);
-  return safeUpper(equipe) === safeUpper(teamKey) ? equipe : `${equipe} — ${teamKey}`;
-}
-function syncTeamSelect(items) {
-  if (!teamSelect) return;
-  const previous = teamSelect.value || '';
-  const unique = new Map();
-  (items || []).forEach((item) => {
-    const key = getItemTeamKey(item);
-    if (!key || key === '-') return;
-    if (!unique.has(key)) unique.set(key, buildTeamOptionLabel(item));
-  });
-  const ordered = [...unique.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR', { sensitivity: 'base' }));
-  teamSelect.innerHTML = `<option value="">Todas as equipes</option>${ordered.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}`;
-  if (previous && unique.has(previous)) teamSelect.value = previous;
-}
-function applyFilters(items) {
-  const q = safeUpper(searchInput.value);
-  const selectedTeam = safeUpper(teamSelect?.value);
-  const kpiFilter = normalizeKpiFilter(activeKpiFilter);
-  return (items || []).filter((it) => {
-    const eq = safeUpper(it.equipe);
-    const teamKey = safeUpper(it.teamKey || it.equipe);
-    const shown = normalizedState(it.estado);
-    const matchesText = !q || eq.includes(q) || teamKey.includes(q);
-    const matchesTeam = !selectedTeam || teamKey === selectedTeam;
-    const matchesKpi =
-      !kpiFilter ||
-      (kpiFilter === "ALERTA" ? activeAlertFilter(it) :
-        kpiFilter === "DDS_OK" ? it.ddsToday === "ok" :
-          shown === kpiFilter);
-    return matchesText && matchesTeam && matchesKpi;
-  });
-}
-
-function renderKpis(items) {
-  const counts = { ABERTO: 0, INTERVALO: 0, DESLOCAMENTO_ESPECIAL: 0, FECHADO: 0, DESATUALIZADO: 0, DESCONHECIDO: 0, ALERTA: 0 };
-  let ddsOk = 0;
-  let ddsTotal = 0;
-
-  (items || []).forEach((it) => {
-    const st = normalizedState(it.estado);
-    if (counts[st] !== undefined) counts[st]++;
-    const alerta = safeUpper(it.alerta);
-    if (alerta === "YELLOW" || alerta === "RED" || alerta === "PULSE") counts.ALERTA++;
-
-    if (it.ddsToday === "ok") {
-      ddsOk++;
-      ddsTotal++;
-    } else if (it.ddsToday === "fail") {
-      ddsTotal++;
-    }
-  });
-
-  const ddsToggle = document.getElementById("ddsToggle");
-  const showDdsKpi = ddsToggle && ddsToggle.checked;
-  const ddsKpiHtml = showDdsKpi ? `
-    <button class="kpi kpiHintWrap" type="button" data-kpi="dds_ok" data-filter="DDS_OK" aria-label="Filtrar equipes com DDS concluído" aria-pressed="false">
-      <span class="kpiDot dotTeal"></span>
-      <span>${ddsOk}/${ddsTotal}</span>
-      <span class="kpiHint">DDS Realizado</span>
-    </button>
-  ` : '';
-
-  kpis.innerHTML = `
-    <button class="kpi kpiHintWrap" type="button" data-kpi="aberto" data-filter="ABERTO" aria-label="Filtrar equipes abertas" aria-pressed="false"><span class="kpiDot dotGreen"></span><span>${counts.ABERTO}</span><span class="kpiHint">Equipes em aberto</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="intervalo" data-filter="INTERVALO" aria-label="Filtrar equipes em intervalo" aria-pressed="false"><span class="kpiDot dotYellow"></span><span>${counts.INTERVALO}</span><span class="kpiHint">Equipes em intervalo</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="deslocamento" data-filter="DESLOCAMENTO_ESPECIAL" aria-label="Filtrar deslocamento especial" aria-pressed="false"><span class="kpiDot dotBlue"></span><span>${counts.DESLOCAMENTO_ESPECIAL}</span><span class="kpiHint">Deslocamento especial</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="fechado" data-filter="FECHADO" aria-label="Filtrar equipes fechadas" aria-pressed="false"><span class="kpiDot dotRed"></span><span>${counts.FECHADO}</span><span class="kpiHint">Equipes fechadas</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="desatualizado" data-filter="DESATUALIZADO" aria-label="Filtrar equipes desatualizadas" aria-pressed="false"><span class="kpiDot dotGray"></span><span>${counts.DESATUALIZADO}</span><span class="kpiHint">Equipes desatualizadas</span></button>
-    <button class="kpi kpiHintWrap" type="button" data-kpi="alerta" data-filter="ALERTA" aria-label="Filtrar equipes em alerta" aria-pressed="false"><span class="kpiWarn">⚠</span><span>${counts.ALERTA}</span><span class="kpiHint">Alertas de atualização</span></button>
-    ${ddsKpiHtml}`;
-  syncKpiSelection();
-}
-
-function renderTeamCount(items) {
-  if (teamCount) teamCount.textContent = `${getTeamCountLabel()}: ${Array.isArray(items) ? items.length : 0}`;
-}
-function findItem(teamKey) { return currentItems.find((item) => detailValue(item.teamKey || item.equipe) === teamKey) || null; }
-function getEmpresaValue() { return (empresaInput.value || cfg?.defaultEmpresa || '').trim(); }
-
-function syncHoverPlacement(tileEl) {
-  if (!grid || !tileEl) return;
-
-  const gridRect = grid.getBoundingClientRect();
-  const viewportLeft = Math.max(12, gridRect.left);
-  const viewportRight = Math.min(window.innerWidth - 12, gridRect.right);
-
-  tileEl.classList.remove('tileHoverShiftLeft');
-  tileEl.classList.remove('tileHoverShiftRight');
-
-  const tileRect = tileEl.getBoundingClientRect();
-  const hoverWidth = Math.min((tileRect.width * 2) + 12, 420);
-
-  const defaultLeft = tileRect.left - (hoverWidth * 0.25);
-  const defaultRight = defaultLeft + hoverWidth;
-
-  if (defaultRight > viewportRight) {
-    tileEl.classList.add('tileHoverShiftLeft');
-  } else if (defaultLeft < viewportLeft) {
-    tileEl.classList.add('tileHoverShiftRight');
-  }
-}
-
-window.monitorUtils = {
-  safeUpper,
-  escapeHtml,
-  fmtDateTime,
-  fmtTimeOnly,
-  fmtAgeFromMinutes,
-  normalizedState,
-  stateLabel,
-  vehicleFrameClass,
-  participantsHtml,
-  renderDdsKpiHtml: ddsSequenceHtml,
-  detailValue,
-};
-
+// Estado global unificado para team-form.js, messaging.js e requests.js
 window.monitorState = {
   getConfig: () => cfg,
-  getEmpresa: () => getEmpresaValue(),
-  getViewMode,
-  findItem,
+  getEmpresa: () => (window.monitorFilters?.getEmpresaValue?.() || empresaInput?.value || cfg?.defaultEmpresa || '').trim(),
+  getViewMode: () => (window.monitorFilters?.getViewMode?.() || 'active'),
+  findItem: (teamKey) => currentItems.find((item) => (window.monitorUtils?.detailValue?.(item.teamKey || item.equipe) === teamKey)) || null,
   reload: (options = {}) => load(options),
   getCurrentItems: () => [...currentItems],
   getCurrentSector: () => {
@@ -1570,28 +113,22 @@ window.monitorState = {
 };
 
 function syncRealtimeData() {
-  const mode = getViewMode();
-  if (mode === 'trash') return; // Lixeira ainda usa fetch normal
+  const mode = window.monitorFilters?.getViewMode?.() || 'active';
+  if (mode === 'trash') return; // Lixeira usa fetch dedicado
 
-  // Applica os filtros em cima da memória (allRealtimeItems)
   const isInactiveMode = mode === 'inactive';
+  const sUpper = window.monitorUtils?.safeUpper || safeUpper;
 
   // Estágio 1: Filtros de texto, equipe e ativo/inativo (usados para a contagem de KPIs)
   const baseFiltered = allRealtimeItems.filter(item => {
-    // 1. Filtro de Ativa/Inativa
-    const itemActive = item.active !== false; // Padrão é true
+    const itemActive = item.active !== false;
     if (isInactiveMode && itemActive) return false;
     if (!isInactiveMode && !itemActive) return false;
 
-    // O Filtro de Setor (TIPO) agora é apenas para mensagens e requisições.
-    // As equipes aparecem globais para todos os setores conforme solicitado.
-
-    // 3. Filtros de Pesquisa e KPI (já existentes)
-    const q = safeUpper(searchInput.value);
-    const selectedTeam = safeUpper(teamSelect?.value);
-
-    const eq = safeUpper(item.equipe);
-    const teamKey = safeUpper(item.teamKey || item.equipe);
+    const q = sUpper(searchInput?.value);
+    const selectedTeam = sUpper(teamSelect?.value);
+    const eq = sUpper(item.equipe);
+    const teamKey = sUpper(item.teamKey || item.equipe);
 
     const matchesText = !q || eq.includes(q) || teamKey.includes(q);
     const matchesTeam = !selectedTeam || teamKey === selectedTeam;
@@ -1600,11 +137,15 @@ function syncRealtimeData() {
   });
 
   // Estágio 2: Filtro de KPI (para determinar os cards exibidos)
-  const kpiFilter = normalizeKpiFilter(activeKpiFilter);
+  const activeKpi = window.monitorFilters?.getActiveKpiFilter?.() || "";
+  const kpiFilter = window.monitorFilters?.normalizeKpiFilter?.(activeKpi);
+  const normState = window.monitorCards?.normalizedState || normalizedState;
+  const isAlertActive = window.monitorFilters?.activeAlertFilter || activeAlertFilter;
+
   const filtered = baseFiltered.filter(item => {
-    const shown = normalizedState(item.estado);
+    const shown = normState(item.estado);
     const matchesKpi = !kpiFilter || (
-      kpiFilter === "ALERTA" ? activeAlertFilter(item) :
+      kpiFilter === "ALERTA" ? isAlertActive(item) :
         kpiFilter === "DDS_OK" ? item.ddsToday === "ok" :
           shown === kpiFilter
     );
@@ -1612,12 +153,17 @@ function syncRealtimeData() {
   });
 
   currentItems = filtered;
-  renderData(filtered, lastData || { empresa: getEmpresaValue(), serverTime: new Date().toISOString() }, baseFiltered);
+  renderData(filtered, lastData || { empresa: window.monitorState.getEmpresa(), serverTime: new Date().toISOString() }, baseFiltered);
+  window.monitorFeed?.refreshVisibleFeed?.();
 }
 
 function startPolling() {
-  if (pollingTimer) clearInterval(pollingTimer);
+  pollingEnabled = false;
+  if (pollingTimer) clearTimeout(pollingTimer);
+  pollingTimer = null;
+  nextTickAtMs = null;
   if (countdownTimer) clearInterval(countdownTimer);
+  if (alertTimer) clearInterval(alertTimer);
 
   if (typeof unsubMonitor === 'function') {
     try { unsubMonitor(); } catch (e) { console.warn("Erro ao desinscrever:", e); }
@@ -1631,102 +177,35 @@ function startPolling() {
   // Verifica se o dia virou para resetar o cache (Lógica 00:00)
   triggerFullDailyReset();
 
-  const empresa = getEmpresaValue();
-
-  const mode = getViewMode();
+  const empresa = window.monitorState.getEmpresa();
+  const mode = window.monitorFilters?.getViewMode?.() || 'active';
   if (mode === 'trash') {
-    // A lixeira ainda usa fetch normal
     load();
     return;
   }
 
-  const useHttpPolling = !db || String(lastData?.persistenceMode || 'json').toLowerCase() !== 'firestore';
-  if (useHttpPolling) {
-    // JSON/GCS: atualização via API com intervalo adaptativo
-    nextRefresh.textContent = "Polling Ativo ⏳";
-    const safeSeconds = getAdaptivePollingSeconds();
-    pollingTimer = setInterval(() => {
-      load({ silent: true });
-    }, safeSeconds * 1000);
+  // A listagem do grid tem uma única fonte: as Torres de Controle via API.
+  // O Firebase é consultado apenas pelos detalhes abertos a partir de um card.
+  if (nextRefresh) nextRefresh.textContent = "Polling das Torres Ativo";
+  pollingEnabled = true;
+  scheduleNextPoll();
 
-    countdownTimer = setInterval(() => {
-      setRefreshInfo();
-    }, 1000);
-    return;
-  }
+  countdownTimer = setInterval(() => {
+    setRefreshInfo();
+  }, 1000);
 
-  // ==========================================
-  // ESTRATÉGIA 3: ONSNAPSHOT REALTIME
-  // ==========================================
-  nextRefresh.textContent = "Real-time Ativo ⚡";
-  let initialSnapshot = true;
-
-  unsubMonitor = db.collection("turno").doc(empresa).collection("realtime")
-    .onSnapshot((snapshot) => {
-      // Usamos docChanges para identificar exatamente o que mudou e avisar o servidor (patch incremental)
-      snapshot.docChanges().forEach((change) => {
-        const item = change.doc.data();
-        const teamKey = item.teamKey || item.equipe;
-
-        if (change.type === "added" || change.type === "modified") {
-          // Atualiza nosso cache local em memória
-          const idx = allRealtimeItems.findIndex(it => (it.teamKey || it.equipe) === teamKey);
-          if (idx !== -1) {
-            allRealtimeItems[idx] = item;
-          } else {
-            allRealtimeItems.push(item);
-          }
-          if (!initialSnapshot && change.type === "modified") {
-            updateSingleTeamCard(item);
-          }
-        } else if (change.type === "removed") {
-          allRealtimeItems = allRealtimeItems.filter(it => (it.teamKey || it.equipe) !== teamKey);
-        }
-      });
-
-      // Amortecedor (Throttle): Na primeira carga, renderiza IMEDIATO. 
-      // Depois, segura a interface a cada 10 segundos para economizar CPU.
-      if (initialSnapshot) {
-        syncRealtimeData();
-        initialSnapshot = false;
-      } else {
-        requestUiSync();
-      }
-    }, (error) => {
-      console.error("Erro no onSnapshot do Firebase:", error);
-      lastSync.textContent = "Atualizado: ERRO DE PERMISSÃO";
-    });
-
-  unsubActivityFeed = db.collection("webtools").doc("monitor").collection("activity_feed").doc(empresa)
-    .onSnapshot((doc) => {
-      if (doc.exists) {
-        const data = doc.data();
-        if (data && Array.isArray(data.items)) {
-          const initialCached = getLocalFeedCache(empresa);
-          const updatedCache = mergeActivityFeedItems(initialCached, data.items);
-          saveLocalFeedCache(empresa, updatedCache);
-          renderActivityFeed(updatedCache);
-        }
-      }
-    }, (error) => {
-      console.warn("Erro ao assinar activity_feed no Firestore:", error);
-    });
-
-  // Reloginho Local: Atualiza as cores (Amarelo, Vermelho) a cada 30 segundos
-  // sem fazer nenhuma leitura a mais no banco de dados!
-  pollingTimer = setInterval(() => {
+  alertTimer = setInterval(() => {
     recalculateLocalAlerts();
   }, 30000);
 }
 
 let uiSyncTimeout = null;
 function requestUiSync() {
-  if (uiSyncTimeout) return; // Já existe uma atualização agendada
-
+  if (uiSyncTimeout) return;
   uiSyncTimeout = setTimeout(() => {
     syncRealtimeData();
     uiSyncTimeout = null;
-  }, 3000); // 3 segundos de espera
+  }, 3000);
 }
 
 function recalculateLocalAlerts() {
@@ -1762,16 +241,17 @@ async function loadConfig() {
   cfg = await r.json();
   if (!empresaInput.value) empresaInput.value = cfg.defaultEmpresa || '';
   pollingSeconds = Number(cfg.pollingSeconds) || 600;
-  fillConfigForm(cfg);
+  window.monitorConfig?.fillConfigForm?.(cfg);
 }
 
 async function loadDdsBackground(forceRefresh = false) {
-  const empresa = getEmpresaValue();
-  const active = getActiveFilterValue();
+  const empresa = window.monitorState.getEmpresa();
+  const active = window.monitorFilters?.getActiveFilterValue?.() || 'all';
   const qs = new URLSearchParams();
   if (empresa) qs.set('empresa', empresa);
   qs.set('active', active);
   if (forceRefresh) qs.set('refresh', 'manual');
+
   const sectorSelectorEl = document.getElementById('sectorSelector');
   const selectedSector = sectorSelectorEl ? sectorSelectorEl.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
   if (selectedSector) qs.set('setor', selectedSector);
@@ -1781,14 +261,14 @@ async function loadDdsBackground(forceRefresh = false) {
     const data = await r.json();
     if (!r.ok || !Array.isArray(data.items)) return;
 
-    // Merge dos campos DDS em allRealtimeItems
+    const isNewer = window.monitorUtils?.isIsoNewer || isIsoNewer;
     let merged = false;
     data.items.forEach(ddsItem => {
       const idx = allRealtimeItems.findIndex(it => it.teamKey === ddsItem.teamKey);
       if (idx !== -1) {
         const current = allRealtimeItems[idx];
-        const ddsContactIsNewer = isIsoNewer(ddsItem.lastContact, current.lastContact);
-        const ddsTurnIsNewer = isIsoNewer(ddsItem.updatedAt, current.updatedAt);
+        const ddsContactIsNewer = isNewer(ddsItem.lastContact, current.lastContact);
+        const ddsTurnIsNewer = isNewer(ddsItem.updatedAt, current.updatedAt);
         allRealtimeItems[idx] = {
           ...current,
           ddsHistory: ddsItem.ddsHistory,
@@ -1808,13 +288,16 @@ async function loadDdsBackground(forceRefresh = false) {
     });
 
     ddsDataLoaded = true;
-    if (merged) syncRealtimeData(); // Re-renderiza silenciosamente com DDS
+    if (merged) syncRealtimeData();
   } catch (e) {
     console.warn('Erro ao carregar DDS lazy:', e);
   }
 }
 
 async function load(options = {}) {
+  if (pollingTimer) clearTimeout(pollingTimer);
+  pollingTimer = null;
+  nextTickAtMs = null;
   const forceRefresh = options.forceRefresh || false;
   const silent = options.silent === true;
   const refreshSpinner = document.getElementById('refreshSpinner');
@@ -1824,18 +307,17 @@ async function load(options = {}) {
     if (refreshSpinner) refreshSpinner.hidden = false;
   }
 
-  const empresa = getEmpresaValue();
+  const empresa = window.monitorState.getEmpresa();
   const qs = new URLSearchParams();
   if (empresa) qs.set('empresa', empresa);
-  qs.set('active', getActiveFilterValue());
+  qs.set('active', window.monitorFilters?.getActiveFilterValue?.() || 'all');
 
-  const sectorSelector = document.getElementById('sectorSelector');
   const selectedSector = sectorSelector ? sectorSelector.value : (localStorage.getItem('dds_monitor_setor') || 'TODOS');
   if (selectedSector) qs.set('setor', selectedSector);
 
   if (forceRefresh) qs.set('refresh', 'manual');
 
-  const mode = getViewMode();
+  const mode = window.monitorFilters?.getViewMode?.() || 'active';
   let url = `/api/turnos?${qs.toString()}`;
   if (mode === 'trash') {
     url = `/api/teams/trash`;
@@ -1858,88 +340,27 @@ async function load(options = {}) {
       return;
     }
 
-
-
-    // Atualiza o cache local com os dados frescos do servidor
     allRealtimeItems = data.items || [];
-    ddsDataLoaded = false; // Reseta flag: DDS precisa ser carregado novamente
+    ddsDataLoaded = false;
     lastData = data;
     syncRealtimeData();
 
-    // Carga lazy de DDS e feed em background (sem bloquear a UI)
-    loadDdsBackground(forceRefresh);
-    loadActivityFeed();
+    loadDdsBackground();
+    window.monitorFeed?.loadActivityFeed?.();
   } catch (e) {
     console.error('Erro ao carregar monitor:', e);
-    lastSync.textContent = 'Atualizado: ERRO';
+    if (lastSync) lastSync.textContent = 'Atualizado: ERRO';
     if (!silent || !allRealtimeItems.length) {
-      grid.innerHTML = '<div class="emptyState">Não foi possível carregar o monitor.</div>';
+      if (grid) grid.innerHTML = '<div class="emptyState">Não foi possível carregar o monitor.</div>';
       if (kpis) kpis.innerHTML = `<div class="kpi">⚠ erro ao carregar</div>`;
-      renderTeamCount([]);
+      window.monitorFilters?.renderTeamCount?.([]);
     }
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
     if (refreshSpinner) refreshSpinner.hidden = true;
 
-    const safeSeconds = String(lastData?.persistenceMode || 'json').toLowerCase() === 'firestore'
-      ? Math.max(15, pollingSeconds)
-      : getAdaptivePollingSeconds();
-    nextTickAtMs = Date.now() + safeSeconds * 1000;
-    setRefreshInfo();
+    scheduleNextPoll();
   }
-}
-
-function getTeamUpdateSignature(item) {
-  return JSON.stringify({
-    teamKey: item?.teamKey || item?.equipe || null,
-    equipe: item?.equipe || null,
-    teamType: item?.teamType || null,
-    tablet: item?.tablet || null,
-    estado: item?.estado || null,
-    alerta: item?.alerta || null,
-    critico: item?.critico || false,
-    updatedAt: item?.updatedAt || null,
-    lastContact: item?.lastContact || null,
-    lastContactSource: item?.lastContactSource || null,
-    ss: item?.ss || null,
-    motivo: item?.motivo || null,
-    participantes: item?.participantes || [],
-    motorista: item?.motorista || null,
-    coringas: item?.coringas || [],
-    rotalogSnapshot: item?.rotalogSnapshot || null,
-    unreadMap: item?.unreadMap || {},
-    ddsHistory: item?.ddsHistory || [],
-    ddsDays: item?.ddsDays || [],
-    ddsTimes: item?.ddsTimes || {},
-    ddsPhotos: item?.ddsPhotos || {},
-    showDds: Boolean(document.getElementById("ddsToggle")?.checked),
-  });
-}
-
-function updateSingleTeamCard(item) {
-  const teamKey = item.teamKey || item.equipe;
-  if (!teamKey) return;
-  const cardId = `card-${teamKey.replace(/[^\w]/g, '_')}`;
-  const card = document.getElementById(cardId);
-  if (!card) return;
-
-  const coreData = getTeamUpdateSignature(item);
-
-  const oldCore = card.dataset.core;
-  const hasChanged = oldCore !== coreData;
-  if (!hasChanged) return;
-
-  const temp = document.createElement('div');
-  temp.innerHTML = tile(item);
-  const newCard = temp.firstElementChild;
-  if (!newCard) return;
-  newCard.id = cardId;
-  newCard.dataset.core = coreData;
-  newCard.style.order = card.style.order || '0';
-  newCard.classList.add('flash-update');
-  newCard.addEventListener('animationend', () => newCard.classList.remove('flash-update'), { once: true });
-  newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
-  card.replaceWith(newCard);
 }
 
 function renderData(items, meta, kpiSourceItems) {
@@ -1947,7 +368,7 @@ function renderData(items, meta, kpiSourceItems) {
   if (grid) grid.classList.remove('hidden');
 
   if (empresaLabel) empresaLabel.textContent = meta.empresa || '-';
-  lastSync.textContent = `Atualizado: ${fmtTimeOnly(meta.serverTime)}`;
+  if (lastSync) lastSync.textContent = `Atualizado: ${(window.monitorUtils?.fmtTimeOnly || fmtTimeOnly)(meta.serverTime)}`;
   lastData = meta;
 
   const teamTypeOrder = {
@@ -1978,27 +399,29 @@ function renderData(items, meta, kpiSourceItems) {
     return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
   });
 
-  syncTeamSelect(sortedItems);
+  window.monitorFilters?.syncTeamSelect?.(sortedItems);
   currentItems = sortedItems;
 
-  if (getViewMode() !== 'trash') {
-    renderKpis(kpiSourceItems || items);
-    kpis.hidden = false;
+  const mode = window.monitorFilters?.getViewMode?.() || 'active';
+  if (mode !== 'trash') {
+    window.monitorFilters?.renderKpis?.(kpiSourceItems || items);
+    if (kpis) kpis.hidden = false;
   } else {
-    kpis.hidden = true;
+    if (kpis) kpis.hidden = true;
   }
 
-  renderTeamCount(currentItems);
+  window.monitorFilters?.renderTeamCount?.(currentItems);
 
   if (!currentItems.length) {
-    grid.innerHTML = `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
+    if (grid) grid.innerHTML = `<div class="emptyState">Nenhuma equipe encontrada nesta visualização.</div>`;
     return;
   }
 
-  // RENDERIZAÇÃO INCREMENTAL:
-  // Em vez de limpar o grid, vamos atualizar apenas os cards que mudaram.
   const container = grid;
   const existingIds = new Set();
+  const tileFn = window.monitorCards?.tile || tile;
+  const getSig = window.monitorCards?.getTeamUpdateSignature || getTeamUpdateSignature;
+  const syncHover = window.monitorCards?.syncHoverPlacement || syncHoverPlacement;
 
   currentItems.forEach((item, index) => {
     const teamKey = item.teamKey || item.equipe;
@@ -2006,10 +429,8 @@ function renderData(items, meta, kpiSourceItems) {
     existingIds.add(cardId);
 
     let card = document.getElementById(cardId);
-    const html = tile(item);
-
-    // Dados vitais para decidir se deve 'piscar' (ignora relógio)
-    const coreData = getTeamUpdateSignature(item);
+    const html = tileFn(item);
+    const coreData = getSig(item);
 
     if (!card) {
       const temp = document.createElement('div');
@@ -2018,7 +439,7 @@ function renderData(items, meta, kpiSourceItems) {
       card.id = cardId;
       card.dataset.core = coreData;
       card.style.order = index;
-      card.addEventListener('mouseenter', () => syncHoverPlacement(card));
+      card.addEventListener('mouseenter', () => syncHover(card));
       container.appendChild(card);
     } else {
       const hasChanged = card.dataset.core !== coreData;
@@ -2032,7 +453,7 @@ function renderData(items, meta, kpiSourceItems) {
           newCard.style.order = index;
           newCard.classList.add('flash-update');
           newCard.addEventListener('animationend', () => newCard.classList.remove('flash-update'), { once: true });
-          newCard.addEventListener('mouseenter', () => syncHoverPlacement(newCard));
+          newCard.addEventListener('mouseenter', () => syncHover(newCard));
           card.replaceWith(newCard);
         }
       } else {
@@ -2041,7 +462,6 @@ function renderData(items, meta, kpiSourceItems) {
     }
   });
 
-  // Remove cards que não estão mais na lista filtrada
   Array.from(container.children).forEach(child => {
     if (child.id && child.id.startsWith('card-') && !existingIds.has(child.id)) {
       container.removeChild(child);
@@ -2050,7 +470,7 @@ function renderData(items, meta, kpiSourceItems) {
 
   if (window.teamForm?.refreshOpenTeam) {
     const openTeamKey = window.teamForm.getOpenTeamKey?.();
-    if (openTeamKey) window.teamForm.refreshOpenTeam(findItem(openTeamKey));
+    if (openTeamKey) window.teamForm.refreshOpenTeam(window.monitorState.findItem(openTeamKey));
   }
 
   const globalMessagesBadge = document.getElementById('globalMessagesBadge');
@@ -2068,6 +488,7 @@ function renderData(items, meta, kpiSourceItems) {
   }
 }
 
+// Ações de gerenciamento de equipe (Lixeira, Restauração, Ativação)
 window.restoreTeam = async function (teamKey) {
   if (!confirm(`Deseja restaurar a equipe ${teamKey}?`)) return;
   try {
@@ -2117,7 +538,6 @@ window.openTrashConfirmation = async function (teamKey) {
   const modal = document.getElementById('trashConfirmModal');
   const backdrop = document.getElementById('trashConfirmModalBackdrop');
 
-  // Limpa estado anterior
   document.getElementById('trashTeamName').textContent = teamKey;
   document.getElementById('trashMembersCount').textContent = '...';
   document.getElementById('trashDdsCount').textContent = '...';
@@ -2140,9 +560,11 @@ window.openTrashConfirmation = async function (teamKey) {
 };
 
 function closeTrashConfirmation() {
-  document.getElementById('trashConfirmModal').hidden = true;
-  document.getElementById('trashConfirmModalBackdrop').hidden = true;
-  if (configModal?.hidden && document.getElementById('teamFormModal')?.hidden) {
+  const modal = document.getElementById('trashConfirmModal');
+  const backdrop = document.getElementById('trashConfirmModalBackdrop');
+  if (modal) modal.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+  if (document.getElementById('configModal')?.hidden && document.getElementById('teamFormModal')?.hidden) {
     document.body.classList.remove('modalOpen');
   }
   pendingTrashTeamKey = null;
@@ -2161,7 +583,7 @@ document.getElementById('trashConfirmExecute')?.addEventListener('click', async 
     const r = await fetch(`/api/teams/${encodeURIComponent(pendingTrashTeamKey)}/trash`, { method: 'POST' });
     if (r.ok) {
       closeTrashConfirmation();
-      window.teamForm?.closeTeamForm?.(); // Fecha a tela de detalhes da equipe
+      window.teamForm?.closeTeamForm?.();
       await load();
     } else {
       const data = await r.json();
@@ -2175,13 +597,20 @@ document.getElementById('trashConfirmExecute')?.addEventListener('click', async 
   }
 });
 
-refreshBtn.addEventListener('click', async () => { await load({ forceRefresh: true }); startPolling(); });
-configBtn?.addEventListener('click', openConfigModal);
-configModalClose?.addEventListener('click', closeConfigModal);
-configModalCancel?.addEventListener('click', closeConfigModal);
-configModalBackdrop?.addEventListener('click', closeConfigModal);
-configModalSave?.addEventListener('click', saveConfigModal);
-[cfgAlertaAmareloMin, cfgAlertaVermelhoMin, cfgAlertaPiscoMin, cfgFechadoViraDesatualizadoHoras, cfgDesatualizadoCriticoHoras, cfgPollingSeconds].forEach((el) => el?.addEventListener('input', syncConfigSummary));
+// Handlers de UI e eventos de filtro
+refreshBtn?.addEventListener('click', async () => { await load({ forceRefresh: true }); startPolling(); });
+configBtn?.addEventListener('click', () => window.monitorConfig?.openConfigModal?.(cfg));
+document.getElementById("configModalClose")?.addEventListener('click', () => window.monitorConfig?.closeConfigModal?.());
+document.getElementById("configModalCancel")?.addEventListener('click', () => window.monitorConfig?.closeConfigModal?.());
+document.getElementById("configModalBackdrop")?.addEventListener('click', () => window.monitorConfig?.closeConfigModal?.());
+document.getElementById("configModalSave")?.addEventListener('click', () => {
+  window.monitorConfig?.saveConfigModal?.(async (updatedCfg) => {
+    cfg = updatedCfg;
+    pollingSeconds = Number(cfg.pollingSeconds) || 600;
+    await load();
+    startPolling();
+  });
+});
 
 const ddsToggle = document.getElementById("ddsToggle");
 const savedDdsState = localStorage.getItem('monitor_show_dds') === 'true';
@@ -2189,7 +618,6 @@ if (ddsToggle) {
   ddsToggle.checked = savedDdsState;
   ddsToggle.addEventListener('change', () => {
     localStorage.setItem('monitor_show_dds', ddsToggle.checked);
-    // O estado do botão altera a composição visual e precisa refletir imediatamente.
     syncRealtimeData();
     if (ddsToggle.checked && !ddsDataLoaded) {
       loadDdsBackground();
@@ -2197,45 +625,39 @@ if (ddsToggle) {
   });
 }
 
-searchInput.addEventListener('input', () => syncRealtimeData());
+searchInput?.addEventListener('input', () => syncRealtimeData());
 teamSelect?.addEventListener('change', () => syncRealtimeData());
 
-grid.addEventListener('click', (event) => {
+grid?.addEventListener('click', (event) => {
   if (event.target.closest('a, button, input, select, textarea')) return;
   const tileEl = event.target.closest('.tile');
-  if (!tileEl || getViewMode() === 'trash') return;
+  const mode = window.monitorFilters?.getViewMode?.() || 'active';
+  if (!tileEl || mode === 'trash') return;
   window.teamForm?.openTeamForm?.(tileEl.dataset.team || '');
 });
 
-grid.addEventListener('keydown', (event) => {
+grid?.addEventListener('keydown', (event) => {
   const tileEl = event.target.closest('.tile');
   if (!tileEl) return;
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    if (getViewMode() === 'trash') return;
+    const mode = window.monitorFilters?.getViewMode?.() || 'active';
+    if (mode === 'trash') return;
     window.teamForm?.openTeamForm?.(tileEl.dataset.team || '');
   }
 });
 
-kpis.addEventListener('click', (event) => {
+kpis?.addEventListener('click', (event) => {
   const chip = event.target.closest('.kpi');
   if (!chip) return;
-  const nextFilter = normalizeKpiFilter(chip.dataset.filter || chip.dataset.kpi);
-  const sameFilter = normalizeKpiFilter(activeKpiFilter) === nextFilter;
+  const nextFilter = window.monitorFilters?.normalizeKpiFilter?.(chip.dataset.filter || chip.dataset.kpi);
+  const currentActive = window.monitorFilters?.getActiveKpiFilter?.() || "";
+  const sameFilter = window.monitorFilters?.normalizeKpiFilter?.(currentActive) === nextFilter;
 
-  if (sameFilter) {
-    activeKpiFilter = "";
-  } else {
-    activeKpiFilter = nextFilter;
-  }
+  window.monitorFilters?.setActiveKpiFilter?.(sameFilter ? "" : nextFilter);
+  window.monitorFilters?.syncKpiSelection?.();
 
-  syncKpiSelection();
-
-  // O usuário solicitou que ao trocar o status (mesmo em memória), mostre o skeleton
   showSkeleton();
-
-  // Pequeno delay apenas para o skeleton ser visível e dar sensação de "processamento"
-  // e satisfazer o requisito visual do usuário.
   setTimeout(() => {
     syncRealtimeData();
   }, 150);
@@ -2246,14 +668,15 @@ kpis.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   window.teamForm?.closeTeamForm?.();
-  closeConfigModal();
+  window.monitorConfig?.closeConfigModal?.();
 });
 
 window.addEventListener('resize', () => {
-  requestAnimationFrame(syncHoverPlacement);
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.tile').forEach(t => window.monitorCards?.syncHoverPlacement?.(t));
+  });
 });
 
-const sectorSelector = document.getElementById('sectorSelector');
 if (sectorSelector) {
   sectorSelector.value = localStorage.getItem('dds_monitor_setor') || 'TODOS';
   sectorSelector.addEventListener('change', () => {
@@ -2262,13 +685,11 @@ if (sectorSelector) {
   });
 }
 
-// Lógica de Navegação Dinâmica (SPA)
+// Navegação SPA e virada de dia
 function initNavigation() {
-  // Carrega contagem de crash reports ao iniciar
-  loadCrashReports();
+  window.monitorConfig?.loadCrashReports?.();
 
   document.querySelectorAll('.viewTab').forEach(tab => {
-    // A aba de solicitações tem comportamento próprio, ignoramos aqui
     if (tab.id === 'requestsTab') return;
 
     tab.addEventListener('click', async (e) => {
@@ -2276,33 +697,25 @@ function initNavigation() {
         const href = tab.getAttribute('href') || '';
         const newMode = href.includes('inativas') ? 'inactive' :
           href.includes('lixeira') ? 'trash' : 'active';
-        const oldMode = getViewMode();
+        const oldMode = window.monitorFilters?.getViewMode?.() || 'active';
 
         if (newMode === oldMode) return;
 
         e.preventDefault();
-
-        // 1. Atualiza a URL sem recarregar
         history.pushState({ mode: newMode }, '', tab.href);
 
-        // 2. Atualiza o estado visual
         document.body.setAttribute('data-team-view', newMode);
         document.querySelectorAll('.viewTab').forEach(t => t.classList.remove('isActive'));
         tab.classList.add('isActive');
 
-        // 3. Atualiza o título da página
         const pageTitle = document.querySelector('.h1');
         if (pageTitle) {
           pageTitle.textContent = newMode === 'inactive' ? 'Equipes Inativas' :
             newMode === 'trash' ? 'Lixeira de Equipes' : 'Monitor de Turnos';
         }
 
-        // 4. Limpa a lista atual imediatamente (mostra skeleton) para feedback instantâneo
         showSkeleton();
 
-        // 5. Reinicia o monitoramento/polling para o novo modo
-        // Se for apenas troca entre Ativas/Inativas, e já temos o listener e dados, basta filtrar em memória.
-        // Se allRealtimeItems estiver vazio, forçamos o reinício para garantir a carga.
         if (newMode !== 'trash' && oldMode !== 'trash' && typeof unsubMonitor === 'function' && allRealtimeItems.length > 0) {
           syncRealtimeData();
         } else {
@@ -2310,12 +723,11 @@ function initNavigation() {
         }
       } catch (err) {
         console.error("Erro na navegação dinâmica:", err);
-        window.location.href = tab.href; // Fallback para navegação real
+        window.location.href = tab.href;
       }
     });
   });
 
-  // Trata o botão "Voltar" do navegador
   window.addEventListener('popstate', (e) => {
     const mode = e.state?.mode || 'active';
     document.body.dataset.teamView = mode;
@@ -2323,9 +735,6 @@ function initNavigation() {
   });
 }
 
-
-
-// Lógica de Reset Diário (00:00)
 function triggerFullDailyReset() {
   const lastReset = localStorage.getItem('dds_monitor_last_reset_day');
   const today = new Date().toISOString().split('T')[0];
@@ -2337,139 +746,6 @@ function triggerFullDailyReset() {
   localStorage.setItem('dds_monitor_last_reset_day', today);
 }
 
-// Estilos dinâmicos para hover e cursor nas bolinhas com fotos
-(() => {
-  const style = document.createElement("style");
-  style.textContent = `
-    .has-photo {
-      cursor: pointer !important;
-    }
-    .has-photo:hover .ddsDot {
-      transform: scale(1.3);
-      filter: brightness(1.2);
-      box-shadow: 0 0 8px var(--green, #22c55e);
-      transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
-    }
-    @keyframes ddsModalSpin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-function showDdsPhotoModal(photoUrl) {
-  let modal = document.getElementById("ddsPhotoModal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "ddsPhotoModal";
-    modal.style.position = "fixed";
-    modal.style.top = "0";
-    modal.style.left = "0";
-    modal.style.width = "100%";
-    modal.style.height = "100%";
-    modal.style.backgroundColor = "rgba(10, 15, 30, 0.9)";
-    modal.style.display = "none";
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = "4000";
-    modal.style.opacity = "0";
-    modal.style.transition = "opacity 0.2s ease";
-    modal.style.cursor = "pointer";
-
-    // Loader spinner
-    const loader = document.createElement("div");
-    loader.id = "ddsPhotoModalLoader";
-    loader.style.border = "4px solid rgba(255, 255, 255, 0.1)";
-    loader.style.borderTop = "4px solid var(--green, #22c55e)";
-    loader.style.borderRadius = "50%";
-    loader.style.width = "45px";
-    loader.style.height = "45px";
-    loader.style.position = "absolute";
-    loader.style.animation = "ddsModalSpin 1s linear infinite";
-    loader.style.display = "none";
-    loader.style.zIndex = "4001";
-
-    const img = document.createElement("img");
-    img.id = "ddsPhotoModalImg";
-    img.style.maxWidth = "85%";
-    img.style.maxHeight = "85%";
-    img.style.borderRadius = "12px";
-    img.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-    img.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.7)";
-    img.style.cursor = "default";
-    img.style.transition = "transform 0.2s ease";
-    img.style.transform = "scale(0.95)";
-
-    img.addEventListener("click", (e) => e.stopPropagation());
-
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "×";
-    closeBtn.style.position = "absolute";
-    closeBtn.style.top = "20px";
-    closeBtn.style.right = "30px";
-    closeBtn.style.background = "none";
-    closeBtn.style.border = "none";
-    closeBtn.style.color = "rgba(255, 255, 255, 0.8)";
-    closeBtn.style.fontSize = "48px";
-    closeBtn.style.cursor = "pointer";
-    closeBtn.style.lineHeight = "1";
-
-    closeBtn.addEventListener("mouseenter", () => closeBtn.style.color = "#fff");
-    closeBtn.addEventListener("mouseleave", () => closeBtn.style.color = "rgba(255, 255, 255, 0.8)");
-
-    modal.appendChild(loader);
-    modal.appendChild(img);
-    modal.appendChild(closeBtn);
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", () => {
-      modal.style.opacity = "0";
-      img.style.transform = "scale(0.95)";
-      setTimeout(() => {
-        modal.style.display = "none";
-      }, 200);
-    });
-  }
-
-  const img = document.getElementById("ddsPhotoModalImg");
-  const loader = document.getElementById("ddsPhotoModalLoader");
-
-  // Oculta a imagem anterior e exibe o loader
-  img.style.display = "none";
-  if (loader) loader.style.display = "block";
-
-  img.onload = () => {
-    if (loader) loader.style.display = "none";
-    img.style.display = "block";
-  };
-  img.onerror = () => {
-    if (loader) loader.style.display = "none";
-  };
-
-  img.src = photoUrl;
-
-  modal.style.display = "flex";
-  // Forçar reflow
-  modal.offsetHeight;
-  modal.style.opacity = "1";
-  img.style.transform = "scale(1)";
-}
-
-// Listener de clique global para bolinhas com fotos
-document.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-photo]");
-  if (target) {
-    const photoUrl = target.getAttribute("data-photo");
-    if (photoUrl) {
-      event.preventDefault();
-      event.stopPropagation();
-      showDdsPhotoModal(photoUrl);
-    }
-  }
-});
-
-// Atalho de teclado: F5 aciona atualização manual imediata em qualquer horário
 window.addEventListener("keydown", (event) => {
   if (event.key === "F5" || event.keyCode === 116) {
     event.preventDefault();
@@ -2478,6 +754,7 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+// Inicialização da aplicação
 (async () => {
   try {
     await loadConfig();
@@ -2485,10 +762,8 @@ window.addEventListener("keydown", (event) => {
     console.error('Erro ao carregar configuração do monitor:', error);
     cfg = cfg || { defaultEmpresa: empresaInput?.value || '', pollingSeconds, rules: {} };
   }
-  initNavigation(); // Inicializa a navegação SPA
+  initNavigation();
 
-  // Se a página foi aberta via recarregamento do navegador (F5 físico ou botão de reload),
-  // força a sincronização imediata sem cache
   const isPageReload = (() => {
     try {
       const nav = performance.getEntriesByType('navigation')[0];

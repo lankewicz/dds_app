@@ -16,6 +16,20 @@ from services.team_form_service import get_team_form_data, save_team_form_data
 router = APIRouter()
 
 
+@router.get("/api/teams/{team_key}/details")
+def read_team_details(
+    team_key: str,
+    empresa: str = Query(...),
+):
+    team_key = team_key.strip()
+    empresa = empresa.strip()
+    if not team_key:
+        raise HTTPException(status_code=400, detail="teamKey é obrigatório.")
+    if not empresa:
+        raise HTTPException(status_code=400, detail="empresa é obrigatória.")
+    return JSONResponse(jsonable_encoder(get_team_form_data(empresa, team_key)))
+
+
 @router.get("/api/team-form")
 def read_team_form(
     empresa: str = Query(...),

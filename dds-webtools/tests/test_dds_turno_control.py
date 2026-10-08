@@ -12,6 +12,7 @@ if str(MONITOR_DIR) not in sys.path:
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from monitor.services.turnos_activity_service import _activity_feed_from_monitor_cache
 from monitor.services.turnos_service import _build_dds_controlled_items, _build_pure_torre_items, list_turnos, DDS_TIMEZONE
 
 
@@ -163,6 +164,59 @@ class TestDdsTurnoControl(unittest.TestCase):
             # Equipe sem telemetria reflete DDS (ABERTO)
             self.assertEqual(items_map["E_SEM_TEL_1"]["estado"], "ABERTO")
             self.assertEqual(items_map["E_SEM_TEL_1"]["origemAtualizacao"], "TORRE_DDS")
+
+    def test_summary_ignora_dados_de_dds_e_usa_somente_torre_de_turnos(self):
+        cache = {
+            "items": [
+                {
+                    "teamKey": "T1",
+                    "equipe": "Equipe Torre",
+                    "estado": "ABERTO",
+                    "active": True,
+                    "origemAtualizacao": "TORRE_CONTROLE",
+                    "rotalogSnapshot": {
+                        "ssPendentesComercialCount": 2,
+                        "ssPendentesEmergenciaCount": 1,
+                        "ordensServico": {"atual": {"categoria": "COMERCIAL", "statusAtual": "EXECUCAO"}},
+                    },
+                },
+                {
+                    "teamKey": "T2",
+                    "equipe": "Equipe DDS",
+                    "estado": "ABERTO",
+                    "active": True,
+                    "origemAtualizacao": "TORRE_DDS",
+                    "rotalogSnapshot": None,
+                    "operacional": {"servicoAtual": {"categoria": "EMERGENCIA", "statusAtual": "DESLOCAMENTO"}},
+                },
+            ]
+        }
+
+        with patch("monitor.services.turnos_activity_service._read_monitor_view_cache", return_value=cache):
+            result = _activity_feed_from_monitor_cache("teste", limit=30)
+
+        self.assertEqual(result["summary"], {"abertas": 1, "comerciais": 2, "emergenciais": 1})
+
+    def test_feed_counts_current_queue_without_executing_service_or_opening_queue(self):
+        items = []
+        for key, queue in [("T1", {"comercial": 3, "emergencia": 2}), ("T2", {"comercial": 0, "emergencia": 0})]:
+            items.append({
+                "teamKey": key, "estado": "ABERTO", "active": True,
+                "origemAtualizacao": "TORRE_CONTROLE",
+                "rotalogSnapshot": {
+                    "fila": queue,
+                    "ssPendentesComercialCount": 99,
+                    "ssPendentesEmergenciaCount": 99,
+                    "jornada": {"turno": {"filaNaAbertura": {"comercial": 99}}},
+                    "ordensServico": {"atual": {"categoria": "EMERGENCIA", "statusAtual": "EXECUCAO"}},
+                },
+            })
+        with patch("monitor.services.turnos_activity_service._read_monitor_view_cache", return_value={"items": items}):
+            result = _activity_feed_from_monitor_cache("teste", 30)
+        self.assertEqual(result["summary"], {"abertas": 2, "comerciais": 3, "emergenciais": 2})
+        by_key = {item["teamKey"]: item for item in result["items"]}
+        self.assertEqual(by_key["T2"]["queue"], {"comercial": 0, "emergencia": 0})
+        self.assertEqual(by_key["T1"]["execution"], {"comercial": 0, "emergencia": 1})
 
     def test_plantao_madrugada_e_dias_anteriores_fechados(self):
         """Equipe de plantão da madrugada sem OS e offline após as 8h deve ser FECHADO."""

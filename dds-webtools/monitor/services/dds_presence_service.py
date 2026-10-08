@@ -566,7 +566,7 @@ def _load_recent_dds_presence(
 
 
 def _load_day_dds_teams(day_iso: str, manual_refresh: bool = False) -> dict[str, dict[str, Any]]:
-    """Retorna mapa {teamKey: {"completedAt": iso_str}} do JSON de controle de DDS para o dia especificado."""
+    """Retorna presenças DDS da Torre de Controle para o dia especificado."""
     if DDS_PRESENCE_MODE == "json":
         try:
             from monitor.services.dds_control_projection import load_daily_projection
@@ -575,6 +575,7 @@ def _load_day_dds_teams(day_iso: str, manual_refresh: bool = False) -> dict[str,
                 return {str(k).strip().upper(): v for k, v in payload["teams"].items() if isinstance(v, dict)}
         except Exception as exc:
             logger.warning("Não foi possível carregar projeção diária DDS para %s: %s", day_iso, exc)
+        return {}
 
     try:
         entry = _load_day_presence_with_cache(

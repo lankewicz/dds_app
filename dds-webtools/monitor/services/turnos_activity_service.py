@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 from google.cloud import firestore
 from services.firestore_client import db
 
+from monitor.services.torre_monitor_builder import _read_monitor_view_cache
+
 from monitor.services.turnos_common import (
     AUTO_REASON_INACTIVE_UNKNOWN,
     DDS_TIMEZONE,
@@ -219,21 +221,195 @@ def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
         return {"empresa": empresa, "items": [], "cached": False, "error": str(exc)}
 
 
+def _activity_feed_from_monitor_cache(empresa: str, limit: int) -> dict[str, Any]:
+    cache = _read_monitor_view_cache(empresa)
+    empty_summary = {"abertas": 0, "comerciais": 0, "emergenciais": 0}
+    if not cache:
+        return {
+            "empresa": empresa,
+            "items": [],
+            "summary": empty_summary,
+            "source": "monitor_cache",
+            "cached": False,
+        }
+
+    summary = dict(empty_summary)
+    events: list[dict[str, Any]] = []
+    active_states = {"ABERTO", "INTERVALO", "DESLOCAMENTO_ESPECIAL"}
+
+    for item in cache.get("items") or []:
+        origem = str(item.get("origemAtualizacao") or "").upper()
+        if origem and origem != "TORRE_CONTROLE":
+            continue
+
+        team_key = str(item.get("teamKey") or item.get("equipe") or "").strip()
+        if not team_key:
+            continue
+
+        state = normalize_estado(item.get("estado"))
+        turn_open = item.get("active") is not False and state in active_states
+        if turn_open:
+            summary["abertas"] += 1
+
+        snapshot = item.get("rotalogSnapshot") or {}
+        service = (
+            (item.get("operacional") or {}).get("servicoAtual")
+            or (snapshot.get("ordensServico") or {}).get("atual")
+            or snapshot.get("atividadeAtual")
+            or {}
+        )
+        if not isinstance(service, dict):
+            service = {}
+
+        queue = snapshot.get("fila")
+        if isinstance(queue, dict):
+            pending_commercial = max(0, int(queue.get("comercial") or 0))
+            pending_emergency = max(0, int(queue.get("emergencia") or 0))
+        else:
+            pending_commercial = max(0, int(snapshot.get("ssPendentesComercialCount") or 0))
+            pending_emergency = max(0, int(snapshot.get("ssPendentesEmergenciaCount") or 0))
+        summary["comerciais"] += pending_commercial
+        summary["emergenciais"] += pending_emergency
+
+        status = str(service.get("statusAtual") or service.get("status") or state).upper()
+        category = str(service.get("categoria") or service.get("category") or "").upper()
+        execution = {
+            "comercial": int(status == "EXECUCAO" and "COMERC" in category),
+            "emergencia": int(status == "EXECUCAO" and "EMERG" in category),
+        }
+        label = {
+            "EXECUCAO": "Execução",
+            "DESLOCAMENTO": "Deslocamento",
+            "CONCLUSAO": "Conclusão",
+            "ABERTO": "Turno Aberto",
+            "INTERVALO": "Intervalo",
+            "FECHADO": "Turno Fechado",
+        }.get(status, status.title() if status else "Atividade")
+        activity_at = (
+            service.get("inicioExecucao")
+            or service.get("inicioDeslocamento")
+            or service.get("updatedAt")
+            or item.get("updatedAt")
+        )
+        communication_at = (
+            (item.get("operacional") or {}).get("atualizadoEm")
+            or snapshot.get("updatedAtIso")
+            or snapshot.get("eventTimestampMs")
+            or item.get("updatedAt")
+        )
+        activity_dt = to_utc_dt(activity_at)
+        communication_dt = to_utc_dt(communication_at)
+        if status != "CONCLUSAO" and activity_dt and communication_dt:
+            activity_local_day = activity_dt.astimezone(ZoneInfo(DDS_TIMEZONE)).date()
+            communication_local_day = communication_dt.astimezone(ZoneInfo(DDS_TIMEZONE)).date()
+            if activity_local_day != communication_local_day or activity_dt > communication_dt:
+                activity_at = communication_at
+        activity_dt = to_utc_dt(activity_at)
+        events.append({
+            "eventId": f"monitor_cache_{team_key}_{activity_at or status}",
+            "empresa": empresa,
+            "teamKey": team_key,
+            "equipe": item.get("equipe") or team_key,
+            "source": "monitor_cache",
+            "label": label,
+            "turnOpen": turn_open,
+            "queue": {"comercial": pending_commercial, "emergencia": pending_emergency},
+            "execution": execution,
+            "time": activity_dt.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M") if activity_dt and DDS_TIMEZONE else str(activity_at or "")[-5:],
+            "activityAt": activity_at,
+        })
+
+    # Os estados da equipe e do serviço são independentes na torre.
+    snapshots = {str(item.get("teamKey") or item.get("equipe") or "").strip(): item
+                 for item in cache.get("items") or []}
+    status_labels = {"EXECUCAO": "Execução", "DESLOCAMENTO": "Deslocamento",
+                     "CONCLUSAO": "Conclusão", "ABERTO": "Turno Aberto",
+                     "FECHADO": "Turno Fechado", "INTERVALO": "Intervalo",
+                     "DESLOCAMENTO_ESPECIAL": "Deslocamento especial"}
+    expanded = []
+    for event in events:
+        item = snapshots[event["teamKey"]]
+        snapshot = item.get("rotalogSnapshot") or {}
+        state = normalize_estado(item.get("estado"))
+        jornada = snapshot.get("jornada") or {}
+        turno = jornada.get("turno") or snapshot.get("turno") or {}
+        intervalo = snapshot.get("intervalo") or jornada.get("intervalo") or {}
+        # Nunca usar a hora da raspagem como hora da transição. O builder
+        # pode estimar turnoFim, portanto o fechamento deve vir do snapshot.
+        team_time = (
+            (turno.get("fim") or turno.get("fim_iso") or turno.get("fimIso")) if state == "FECHADO" else
+            (turno.get("inicio") or turno.get("inicio_iso") or turno.get("inicioIso") or item.get("turnoInicio")) if state == "ABERTO" else
+            intervalo.get("inicio") if state == "INTERVALO" else None
+        )
+        team_dt = to_utc_dt(team_time)
+        expanded.append({**event, "eventId": f"team_{event['teamKey']}_{state}_{team_dt.isoformat() if team_dt else 'snapshot'}",
+                         "stateKey": f"team_{event['teamKey']}", "stateValue": state,
+                         "snapshotOnly": not bool(team_dt),
+                         "label": f"Equipe: {status_labels.get(state, state.title())}",
+                         "activityAt": team_dt.isoformat() if team_dt else team_time,
+                         "time": team_dt.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M") if team_dt else ""})
+        orders = snapshot.get("ordensServico") or {}
+        services = list(orders.get("historico") or snapshot.get("ssExecutadas") or [])
+        current = orders.get("atual") or snapshot.get("atividadeAtual") or (item.get("operacional") or {}).get("servicoAtual")
+        if isinstance(current, dict):
+            services.append(current)
+        seen = set()
+        for service in services:
+            if not isinstance(service, dict):
+                continue
+            protocol = str(service.get("protocolo") or service.get("ssId") or service.get("serviceId") or service.get("tipo") or "")
+            transitions = list(service.get("transitions") or [])
+            status = str(service.get("statusAtual") or service.get("status") or "").upper()
+            if not transitions:
+                for stage, fields in (("DESLOCAMENTO", ("inicioDeslocamento", "inicioIso")),
+                                      ("EXECUCAO", ("inicioExecucao",)),
+                                      ("CONCLUSAO", ("termino", "fimExecucao", "retorno", "fimIso"))):
+                    value = next((service.get(field) for field in fields if service.get(field)), None)
+                    if value:
+                        transitions.append({"status": stage, "hora": value})
+            # Um status sem horário real não é um evento novo a cada coleta.
+            if status:
+                expanded.append({**event,
+                                 "eventId": f"service_{event['teamKey']}_{protocol}_{status}_snapshot",
+                                 "stateKey": f"service_{event['teamKey']}_{protocol}_{snapshot.get('date') or ''}",
+                                 "stateValue": status, "snapshotOnly": True,
+                                 "stateOnly": any(str(t.get("status") or "").upper() == status for t in transitions if isinstance(t, dict)),
+                                 "label": f"SS {protocol}: {status_labels.get(status, status.title())}",
+                                 "activityAt": None, "time": ""})
+            for transition in transitions:
+                if not isinstance(transition, dict):
+                    continue
+                stage = str(transition.get("status") or "").upper()
+                raw_time = transition.get("timestampMs") or transition.get("hora") or transition.get("timestamp")
+                dt = (datetime.fromtimestamp(raw_time / 1000, timezone.utc)
+                      if isinstance(raw_time, (int, float)) and raw_time > 100000000000
+                      else to_utc_dt(raw_time))
+                if not dt and re.fullmatch(r"\d{2}:\d{2}(?::\d{2})?", str(raw_time or "")):
+                    day = str(snapshot.get("date") or item.get("updatedAt") or "")[:10]
+                    dt = to_utc_dt(f"{day}T{raw_time}-03:00")
+                if not stage or not dt:
+                    continue
+                event_id = f"service_{event['teamKey']}_{protocol}_{stage}_{dt.isoformat()}"
+                if event_id in seen:
+                    continue
+                seen.add(event_id)
+                expanded.append({**event, "eventId": event_id,
+                                 "label": f"SS {protocol}: {status_labels.get(stage, stage.title())}" if protocol else f"Serviço: {status_labels.get(stage, stage.title())}",
+                                 "activityAt": dt.isoformat(),
+                                 "time": dt.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M")})
+    events = expanded
+    events.sort(key=lambda event: str(event.get("activityAt") or ""), reverse=True)
+    return {
+        "empresa": empresa,
+        "items": events[: max(1, min(int(limit or 30), 1000))],
+        "summary": summary,
+        "source": "monitor_cache",
+        "cached": True,
+    }
+
+
 def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 30) -> dict[str, Any]:
-    if os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower() != "firestore":
-        try:
-            from bdo.services.rotalog_sync_task import get_rotalog_activity_feed
-            result = get_rotalog_activity_feed(limit=limit)
-            return {"empresa": empresa, **result}
-        except Exception as exc:
-            return {
-                "empresa": empresa,
-                "items": [],
-                "summary": {"abertas": 0, "comerciais": 0, "emergenciais": 0},
-                "source": "json",
-                "error": str(exc),
-            }
-    return _read_activity_feed(empresa, limit=limit)
+    return _activity_feed_from_monitor_cache(empresa, limit)
 
 
 def _persist_team_activity_if_newer(

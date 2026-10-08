@@ -9,6 +9,7 @@ Use --once para um teste único; sem essa opção o processo permanece em ciclo.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import logging
 import os
@@ -56,6 +57,13 @@ def _write_json(path: Path, value) -> None:
     with temporary.open("w", encoding="utf-8") as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2, default=str)
     temporary.replace(path)
+
+
+def _write_json_gzip(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(value, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+    with path.open("wb") as stream:
+        stream.write(gzip.compress(payload, compresslevel=6))
 
 
 def _queue_counts(team: dict) -> dict[str, int]:
@@ -202,13 +210,15 @@ class LocalRotalogRunner:
 
                 previous[team_key] = document
 
-            # Grava o índice único local
-            _write_json(self.index_path, {
+            # Grava o índice único local em JSON e em JSON comprimido
+            index_payload = {
                 "schemaVersion": 1,
                 "company": self.empresa,
                 "lastCollectedAt": timestamp,
                 "equipes": previous,
-            })
+            }
+            _write_json(self.index_path, index_payload)
+            _write_json_gzip(self.index_path.with_suffix(".json.gz"), index_payload)
 
             # Grava o índice único consolidado (index.json.gz) no Firebase Storage
             firebase_uploaded = False

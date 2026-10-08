@@ -33,6 +33,11 @@ DDS_PRESENCE_MODE = os.getenv("DDS_PRESENCE_MODE", "json").strip().lower()
 DDS_JSON_REFRESH_SEC = int(os.getenv("DDS_JSON_REFRESH_SEC", "60"))
 MONITOR_VIEW_CACHE_PREFIX = os.getenv("MONITOR_VIEW_CACHE_PREFIX", "_cache/monitor")
 MONITOR_VIEW_CACHE_TTL_SEC = int(os.getenv("MONITOR_VIEW_CACHE_TTL_SEC", "86400"))
+MONITOR_PEAK_START_HOUR = int(os.getenv("MONITOR_PEAK_START_HOUR", "7"))
+MONITOR_PEAK_END_HOUR = int(os.getenv("MONITOR_PEAK_END_HOUR", "18"))
+MONITOR_PEAK_REFRESH_SEC = int(os.getenv("MONITOR_PEAK_REFRESH_SEC", "180"))
+MONITOR_OFFPEAK_REFRESH_SEC = int(os.getenv("MONITOR_OFFPEAK_REFRESH_SEC", "1800"))
+MONITOR_VIEW_LOCK_COLLECTION = os.getenv("MONITOR_VIEW_LOCK_COLLECTION", "monitor_cache_locks")
 WEBTOOLS_ROOT_COLLECTION = os.getenv("WEBTOOLS_ROOT_COLLECTION", "webtools")
 WEBTOOLS_MONITOR_DOC = os.getenv("WEBTOOLS_MONITOR_DOC", "monitor")
 AUTO_CLOSE_OPEN_HOURS_DEFAULT = int(os.getenv("DDS_AUTO_CLOSE_OPEN_HOURS", "16"))
@@ -46,6 +51,13 @@ AUTO_REASON_DESAT_INTERVALO = "AUTO_DESATUALIZADO_INTERVALO_TIMEOUT"
 AUTO_REASON_INACTIVE_UNKNOWN = "AUTO_INACTIVE_DESCONHECIDO"
 
 _STORAGE_CLIENT = None
+
+
+def get_monitor_source_ttl_seconds(now: datetime | None = None) -> int:
+    current = now or datetime.now(ZoneInfo(DDS_TIMEZONE))
+    if MONITOR_PEAK_START_HOUR <= current.hour < MONITOR_PEAK_END_HOUR:
+        return MONITOR_PEAK_REFRESH_SEC
+    return MONITOR_OFFPEAK_REFRESH_SEC
 
 
 def to_utc_dt(ts: Any):
@@ -293,7 +305,16 @@ def limpar_protocolo(protocolo_raw: str | None) -> str:
     if not protocolo_raw:
         return ""
     prot = str(protocolo_raw).strip()
-    return re.sub(r"\.\d+(\.\d+)?$", "", prot)
+    prot = re.sub(r"\.\d+(\.\d+)?$", "", prot)
+    if "." in prot:
+        parts = [part for part in prot.split(".") if part]
+        if parts and all(part.isdigit() for part in parts):
+            for part in reversed(parts):
+                if len(part) >= 7:
+                    return part
+            if len(parts) > 1 and len(parts[0]) <= 3:
+                return "".join(parts[1:])
+    return prot
 
 
 def formatar_protocolo_copel(protocolo_raw: str | None) -> str | None:

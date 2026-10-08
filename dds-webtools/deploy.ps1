@@ -39,6 +39,18 @@ function Build-Image {
 
 function Deploy-Admin {
     Write-Host "Atualizando $AdminService" -ForegroundColor Cyan
+    $AdminSecrets = $Secrets
+    gcloud secrets describe DDS_TAILSCALE_OAUTH_SECRET --project=$Project *> $null
+    if ($LASTEXITCODE -eq 0) {
+        $AdminSecrets += ",TAILSCALE_OAUTH_SECRET=DDS_TAILSCALE_OAUTH_SECRET:latest"
+    } else {
+        gcloud secrets describe DDS_TAILSCALE_AUTHKEY --project=$Project *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $AdminSecrets += ",TAILSCALE_AUTHKEY=DDS_TAILSCALE_AUTHKEY:latest"
+        } else {
+            Write-Host "Credencial Tailscale ausente: o site usará o fallback Firebase." -ForegroundColor Yellow
+        }
+    }
     gcloud run deploy $AdminService `
         --image=$Image `
         --region=$Region `
@@ -52,7 +64,7 @@ function Deploy-Admin {
         --no-cpu-throttling `
         --service-account=$ServiceAccount `
         --env-vars-file="$SourceDirectory/env.yaml" `
-        --set-secrets=$Secrets
+        --set-secrets=$AdminSecrets
     Assert-LastCommand "deploy do site"
 }
 

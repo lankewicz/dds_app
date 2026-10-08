@@ -124,11 +124,8 @@ def turnos(
     
     manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
     
-    if manual_refresh:
-        # Se for manual, força a sincronização completa com o Firestore Realtime
-        return JSONResponse(jsonable_encoder(update_realtime_view(empresa=empresa, active=active_bool, manual_refresh=True, setor=setor)))
-    
-    kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": False}
+    # Consultas automáticas e manuais leem somente as projeções em arquivos.
+    kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": manual_refresh, "files_only": True}
     if setor:
         kwargs["setor"] = setor
     return JSONResponse(jsonable_encoder(list_turnos(**kwargs)))
@@ -154,10 +151,10 @@ def turnos_dds(
 
     manual_refresh = str(refresh or "").strip().lower() in {"1", "true", "manual", "force"}
     if manual_refresh:
-        kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": True}
+        kwargs = {"empresa": empresa, "active": active_bool, "manual_refresh": True, "files_only": True}
         if setor:
             kwargs["setor"] = setor
-        update_realtime_view(**kwargs)
+        list_turnos(**kwargs)
 
     return JSONResponse(jsonable_encoder(list_turnos_dds(empresa=empresa, active=active_bool)))
 

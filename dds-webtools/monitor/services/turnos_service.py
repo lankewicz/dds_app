@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -39,6 +39,8 @@ from monitor.services.turnos_common import (
     DDS_JSON_REFRESH_SEC,
     MONITOR_VIEW_CACHE_PREFIX,
     MONITOR_VIEW_CACHE_TTL_SEC,
+    MONITOR_VIEW_LOCK_COLLECTION,
+    get_monitor_source_ttl_seconds,
     WEBTOOLS_ROOT_COLLECTION,
     WEBTOOLS_MONITOR_DOC,
     AUTO_CLOSE_OPEN_HOURS_DEFAULT,
@@ -158,6 +160,9 @@ from monitor.services.turnos_legacy_sync import (
 
 logger = logging.getLogger(__name__)
 
+_LOCAL_CACHE_REFRESH_LOCK = threading.Lock()
+_LOCAL_CACHE_REFRESH_IN_FLIGHT: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Endpoints e Funções de Orquestração do Monitor
@@ -227,68 +232,223 @@ def update_productivity_metadata(empresa: str = DEFAULT_EMPRESA):
         print(f"[update_productivity_metadata] Erro: {e}")
 
 
-def list_turnos(empresa: str, active: bool | None = None, *, manual_refresh: bool = False, setor: str = CURRENT_SETOR) -> dict[str, Any]:
-    now = _get_now()
-    rotalog_snapshots = _rotalog_json_snapshots(force=manual_refresh)
-
-    try:
-        teams_map = list_teams_map(active=None) or {}
-    except Exception as exc:
-        logger.warning("Não foi possível carregar teams_map em list_turnos: %s", exc)
-        teams_map = {}
-
-    now_local = now.astimezone(ZoneInfo(DDS_TIMEZONE)) if DDS_TIMEZONE else now
-    today_iso = now_local.date().isoformat()
-    recent_7d_dds = _load_recent_7d_dds_teams(now_local, manual_refresh=manual_refresh)
-    today_dds_teams = _load_today_dds_teams(today_iso, manual_refresh=manual_refresh)
-
-    from monitor.services.dds_control_projection import sync_recent_daily_projections
-    daily_projections = sync_recent_daily_projections(limit_days=25, manual_refresh=manual_refresh)
-
-    pure_items = _build_pure_torre_items(
-        rotalog_snapshots,
-        now,
-        teams_map=teams_map,
-        recent_7d_dds=recent_7d_dds,
-        manual_refresh=manual_refresh,
-        daily_projections=daily_projections,
-    ) if rotalog_snapshots else []
-    telemetry_keys = {str(it.get("teamKey") or "").strip().upper() for it in pure_items}
-    dds_items = _build_dds_controlled_items(
-        telemetry_keys,
-        now,
-        teams_map=teams_map,
-        recent_7d_dds=recent_7d_dds,
-        manual_refresh=manual_refresh,
-        today_dds_teams=today_dds_teams,
-        daily_projections=daily_projections,
-    )
-    all_items = pure_items + dds_items
-
-    if all_items:
-        all_items.sort(key=lambda x: (str(x.get("equipe") or ""), str(x.get("teamKey") or "")))
-
-    full_result = {
-        "empresa": empresa,
-        "serverTime": now.isoformat(),
-        "manualRefresh": manual_refresh,
-        "persistenceMode": os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower(),
-        "items": all_items,
-        "dataSource": "torre_controle",
-    }
-    _write_monitor_view_cache(empresa, full_result)
-
-    items = all_items if active is None else [it for it in all_items if bool(it.get("active")) is active]
+def _cached_turnos_response(
+    cached: dict[str, Any],
+    active: bool | None,
+    setor: str,
+    *,
+    stale: bool = False,
+) -> dict[str, Any]:
+    items = cached.get("items") or []
+    if active is not None:
+        items = [item for item in items if bool(item.get("active")) is active]
+    cached_response = {key: value for key, value in cached.items() if key != "_cachedAt"}
     return {
-        **full_result,
+        **cached_response,
         "items": items,
         "activeFilter": active,
         "currentSector": setor,
+        "cachedView": True,
+        "staleCache": stale,
     }
+
+
+def _claim_monitor_cache_refresh(empresa: str, lease_seconds: int = 45) -> bool:
+    """Claims a short Firestore lease so only one server refreshes a stale view."""
+    transaction = db.transaction()
+    lock_ref = db.collection(MONITOR_VIEW_LOCK_COLLECTION).document(empresa)
+    now = _utc_now()
+
+    @firestore.transactional
+    def claim(transaction):
+        snapshot = lock_ref.get(transaction=transaction)
+        expires_at = to_utc_dt(snapshot.to_dict().get("expiresAt")) if snapshot.exists else None
+        if expires_at and expires_at > now:
+            return False
+        transaction.set(lock_ref, {
+            "empresa": empresa,
+            "expiresAt": now + timedelta(seconds=lease_seconds),
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return True
+
+    try:
+        return bool(claim(transaction))
+    except Exception as exc:
+        logger.warning("Não foi possível obter trava de atualização do cache (%s): %s", empresa, exc)
+        return False
+
+
+def _release_monitor_cache_refresh(empresa: str) -> None:
+    try:
+        db.collection(MONITOR_VIEW_LOCK_COLLECTION).document(empresa).delete()
+    except Exception:
+        pass
+
+
+def list_turnos(
+    empresa: str,
+    active: bool | None = None,
+    *,
+    manual_refresh: bool = False,
+    setor: str = CURRENT_SETOR,
+    _skip_cache: bool = False,
+    files_only: bool = False,
+) -> dict[str, Any]:
+    if files_only:
+        return _list_turnos_from_files(empresa, active, setor, manual_refresh=manual_refresh)
+    refresh_lease_claimed = False
+    local_refresh_claimed = False
+    cached = _read_monitor_view_cache(empresa) if not manual_refresh else None
+    if cached and cached.get("items") and not _skip_cache:
+        cached_at = _parse_iso_datetime(cached.get("_cachedAt"))
+        cache_age = (_utc_now() - cached_at).total_seconds() if cached_at else None
+        if cache_age is not None and cache_age < get_monitor_source_ttl_seconds():
+            return _cached_turnos_response(cached, active, setor)
+
+        with _LOCAL_CACHE_REFRESH_LOCK:
+            if empresa in _LOCAL_CACHE_REFRESH_IN_FLIGHT:
+                return _cached_turnos_response(cached, active, setor, stale=True)
+            _LOCAL_CACHE_REFRESH_IN_FLIGHT.add(empresa)
+            local_refresh_claimed = True
+
+        if not _claim_monitor_cache_refresh(empresa):
+            with _LOCAL_CACHE_REFRESH_LOCK:
+                _LOCAL_CACHE_REFRESH_IN_FLIGHT.discard(empresa)
+            local_refresh_claimed = False
+            return _cached_turnos_response(cached, active, setor, stale=True)
+        refresh_lease_claimed = True
+
+    try:
+        now = _get_now()
+        rotalog_snapshots = _rotalog_json_snapshots(force=manual_refresh)
+
+        try:
+            teams_map = list_teams_map(active=None) or {}
+        except Exception as exc:
+            logger.warning("Não foi possível carregar teams_map em list_turnos: %s", exc)
+            teams_map = {}
+
+        now_local = now.astimezone(ZoneInfo(DDS_TIMEZONE)) if DDS_TIMEZONE else now
+        today_iso = now_local.date().isoformat()
+        recent_7d_dds = _load_recent_7d_dds_teams(now_local, manual_refresh=manual_refresh)
+        today_dds_teams = _load_today_dds_teams(today_iso, manual_refresh=manual_refresh)
+
+        from monitor.services.dds_control_projection import sync_recent_daily_projections
+        daily_projections = sync_recent_daily_projections(limit_days=25, manual_refresh=manual_refresh)
+
+        pure_items = _build_pure_torre_items(
+            rotalog_snapshots,
+            now,
+            teams_map=teams_map,
+            recent_7d_dds=recent_7d_dds,
+            manual_refresh=manual_refresh,
+            daily_projections=daily_projections,
+        ) if rotalog_snapshots else []
+        telemetry_keys = {str(it.get("teamKey") or "").strip().upper() for it in pure_items}
+        dds_items = _build_dds_controlled_items(
+            telemetry_keys,
+            now,
+            teams_map=teams_map,
+            recent_7d_dds=recent_7d_dds,
+            manual_refresh=manual_refresh,
+            today_dds_teams=today_dds_teams,
+            daily_projections=daily_projections,
+        )
+        all_items = pure_items + dds_items
+
+        if all_items:
+            all_items.sort(key=lambda x: (str(x.get("equipe") or ""), str(x.get("teamKey") or "")))
+
+        full_result = {
+            "empresa": empresa,
+            "serverTime": now.isoformat(),
+            "manualRefresh": manual_refresh,
+            "persistenceMode": os.getenv("ROTALOG_PERSISTENCE_MODE", "json").strip().lower(),
+            "items": all_items,
+            "dataSource": "torre_controle",
+        }
+        _write_monitor_view_cache(empresa, full_result)
+
+        items = all_items if active is None else [it for it in all_items if bool(it.get("active")) is active]
+        return {
+            **full_result,
+            "items": items,
+            "activeFilter": active,
+            "currentSector": setor,
+        }
+    finally:
+        if refresh_lease_claimed:
+            _release_monitor_cache_refresh(empresa)
+        if local_refresh_claimed:
+            with _LOCAL_CACHE_REFRESH_LOCK:
+                _LOCAL_CACHE_REFRESH_IN_FLIGHT.discard(empresa)
 
 
 # Campos de histórico DDS que são carregados separadamente via /api/turnos/dds
 _DDS_HEAVY_FIELDS = {"ddsHistory", "ddsDays", "ddsTimes", "ddsPhotos"}
+
+
+def _list_turnos_from_files(
+    empresa: str, active: bool | None, setor: str, *, manual_refresh: bool = False,
+) -> dict[str, Any]:
+    """Atualiza a tela apenas com arquivos consolidados, sem consultar registros fonte."""
+    from monitor.services.dds_control_projection import sync_recent_daily_projections
+    from monitor.services.torre_monitor_builder import _cache_lock
+
+    cached = _read_monitor_view_cache(empresa) or {}
+    teams_map = {
+        str(item.get("teamKey") or "").strip().upper(): {
+            **item,
+            "displayName": item.get("equipe"),
+            "members": item.get("participantes") or [],
+        }
+        for item in cached.get("items") or []
+        if item.get("teamKey")
+    }
+    now = _get_now()
+    today = now.astimezone(ZoneInfo(DDS_TIMEZONE)).date()
+    projections = sync_recent_daily_projections(limit_days=25, manual_refresh=True)
+    _, by_day = projections
+    today_teams = (by_day.get(today.isoformat()) or {}).get("teams") or {}
+    recent_teams: dict[str, dict[str, Any]] = {}
+    for day in sorted(by_day):
+        if not (today - timedelta(days=6)).isoformat() <= day <= today.isoformat():
+            continue
+        for key, entry in (by_day[day].get("teams") or {}).items():
+            recent_teams[key] = {
+                **entry,
+                "completedAt": entry.get("completedAt") or f"{day}T07:00:00-03:00",
+                "date": day,
+            }
+    snapshots = _rotalog_json_snapshots(force=True)
+    from bdo.services.rotalog_sync_task import _durable_cache_state
+    pure_items = _build_pure_torre_items(
+        snapshots, now, teams_map=teams_map, recent_7d_dds=recent_teams,
+        daily_projections=projections,
+    )
+    telemetry_keys = {str(item.get("teamKey") or "").strip().upper() for item in pure_items}
+    dds_items = _build_dds_controlled_items(
+        telemetry_keys, now, teams_map=teams_map, recent_7d_dds=recent_teams,
+        today_dds_teams=today_teams, daily_projections=projections,
+    )
+    items = sorted(pure_items + dds_items, key=lambda item: (
+        str(item.get("equipe") or ""), str(item.get("teamKey") or ""),
+    ))
+    result = {
+        "empresa": empresa, "serverTime": now.isoformat(),
+        "manualRefresh": manual_refresh, "persistenceMode": "json",
+        "items": items, "dataSource": "monitor_files",
+        "rotalogSource": _durable_cache_state.get("source", "unknown"),
+    }
+    # O histórico DDS da segunda requisição usa esta mesma leitura dos arquivos.
+    with _cache_lock:
+        _MONITOR_VIEW_CACHE[empresa] = {**result, "_cachedAt": _utc_now_iso()}
+    return {
+        **result,
+        "items": items if active is None else [item for item in items if bool(item.get("active")) is active],
+        "activeFilter": active, "currentSector": setor,
+    }
 
 
 def _strip_dds_history(item: dict[str, Any]) -> dict[str, Any]:
@@ -303,7 +463,7 @@ def list_turnos_dds(empresa: str, active: bool | None = None) -> dict[str, Any]:
     """
     cache = _read_monitor_view_cache(empresa)
     if not cache or not cache.get("items"):
-        res = list_turnos(empresa=empresa, active=active)
+        res = list_turnos(empresa=empresa, active=active, files_only=True)
         all_items = res.get("items") or []
     else:
         all_items = cache.get("items") or []

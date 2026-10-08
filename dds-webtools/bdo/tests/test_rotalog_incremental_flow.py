@@ -1,5 +1,6 @@
 import copy
 import datetime
+import json
 import os
 import tempfile
 import unittest
@@ -90,6 +91,22 @@ class IncrementalFlowTests(unittest.TestCase):
             self._persist(cache, repo, store)
             self.assertEqual("2026-09-11", repo.merge_and_save_daily.call_args.args[1])
             repo.save_current.assert_called_once()
+
+    def test_local_current_index_supports_uncompressed_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local_dir = os.path.join(directory, "rotalog", "equipes", "current")
+            os.makedirs(local_dir, exist_ok=True)
+            payload = {"equipes": {"E3389": {"teamKey": "E3389", "estadoConsolidado": "ABERTO"}}}
+            with open(os.path.join(local_dir, "index.json"), "w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+
+            cache = RotalogLocalCache(os.path.join(directory, "cache.json"))
+            with mock.patch.dict(os.environ, {"ROTALOG_LOCAL_DATA_DIR": directory}, clear=False), \
+                 mock.patch.object(sync, "_local_cache", cache), \
+                 mock.patch.object(sync, "_durable_cache_store", mock.Mock(enabled=False)), \
+                 mock.patch.object(sync, "_durable_cache_state", {"hydrated": False, "loaded_at": 0, "reads": 0, "writes": 0}):
+                sync._hydrate_durable_cache_once(force=True)
+                self.assertEqual("ABERTO", cache.get("E3389")["estadoConsolidado"])
 
     def test_daily_reader_observes_other_writer(self):
         store = mock.Mock()
