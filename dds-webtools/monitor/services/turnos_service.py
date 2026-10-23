@@ -422,7 +422,7 @@ def _list_turnos_from_files(
                 "date": day,
             }
     snapshots = _rotalog_json_snapshots(force=True)
-    from bdo.services.rotalog_sync_task import _durable_cache_state
+    from bdo.services.rotalog_reader import _durable_cache_state
     pure_items = _build_pure_torre_items(
         snapshots, now, teams_map=teams_map, recent_7d_dds=recent_teams,
         daily_projections=projections,

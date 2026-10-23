@@ -1,46 +1,75 @@
-// -----------------------------------------------------------------------------
-// Arquivo : static/js/monitor_feed.js
-// Objetivo: Gestão do feed de atividades, auditoria de mudanças em tempo real,
-//           cache local em localStorage e renderização lateral.
-// -----------------------------------------------------------------------------
-
-// Nova versão descarta eventos antigos que usavam a hora da raspagem.
-const getLocalFeedCacheKey = (empresa) => `dds_activity_feed_local_cache_v2_${empresa || 'default'}`;
-const getFeedStateKey = (empresa) => `${getLocalFeedCacheKey(empresa)}_states`;
-const RECENT_FEED_MS = 24 * 60 * 60 * 1000;
-function isRecentFeedItem(item, now = Date.now()) {
-  const timestamp = new Date(item.activityAt).getTime();
-  return !item.snapshotOnly && Number.isFinite(timestamp) && timestamp <= now && now - timestamp <= RECENT_FEED_MS;
-}
-
-function reconcileActivityFeed(previous, incoming, states, now = Date.now()) {
-  const changes = [];
-  for (const item of incoming) {
-    if (!item.stateKey) {
-      if (isRecentFeedItem(item, now)) changes.push(item);
-      continue;
-    }
-    const last = states[item.stateKey];
-    states[item.stateKey] = item.stateValue;
-    if (item.stateOnly) continue;
-    if (last === item.stateValue) continue;
-    if (!item.snapshotOnly) {
-      if (isRecentFeedItem(item, now)) changes.push(item);
-    } else if (last !== undefined) {
-      const activityAt = new Date(now).toISOString();
-      changes.push({...item, snapshotOnly: false, activityAt,
-        eventId: `${item.stateKey}_${item.stateValue}_observed_${activityAt}`,
-        label: `${item.label} (detectado pela torre)`,
-        time: new Intl.DateTimeFormat('pt-BR', {timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'}).format(new Date(now))});
-    }
-  }
-  return mergeActivityFeedItems(previous.filter(item => isRecentFeedItem(item, now)), changes);
-}
+// Current collector window. Event history is never reconstructed from card snapshots.
+const getLocalFeedCacheKey = empresa => `dds_activity_feed_window_v3_${String(empresa).trim().toLowerCase()}`;
+const FEED_STATUS = {
+  DESLOCAMENTO: 'Deslocamento', EXECUCAO: 'Execução', CONCLUSAO: 'Conclusão',
+  TURNO_ABERTO: 'Turno aberto', TURNO_FECHADO: 'Turno fechado',
+  INTERVALO_INICIADO: 'Intervalo iniciado', INTERVALO_ENCERRADO: 'Intervalo encerrado',
+};
 let currentFeedItems = [];
-let latestFeedItems = [];
+let latestFeedItems = []; // Per-team counts retain the existing source, independently of events.
 let summaryMode = 'execution';
 let summaryTimer = null;
 let currentFeedSummary = null;
+let feedCompany = null;
+let feedInFlight = null;
+let feedUnavailable = null;
+let feedHasWindow = false;
+let feedUpdatedAt = null;
+
+function getFeedCompany() {
+  const getter = window.monitorFilters?.getEmpresaValue || window.monitorState?.getEmpresa;
+  return String(typeof getter === 'function' ? getter() : '').trim();
+}
+
+function validFeedDate(value) {
+  const parts = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts || !Number.isFinite(Date.parse(value))) return false;
+  const [year, month, day, hour, minute, second] = parts.slice(1).map(Number);
+  const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1] && hour < 24 && minute < 60 && second < 60;
+}
+
+function validateFeedWindow(data, empresa) {
+  if (!data || data.schemaVersion !== 1 || data.windowHours !== 24 || data.timezone !== 'America/Sao_Paulo'
+      || typeof data.company !== 'string' || data.company.trim().toLowerCase() !== empresa.trim().toLowerCase()
+      || !validFeedDate(data.updatedAt) || !Array.isArray(data.items)) throw new Error('Janela de eventos inválida');
+  const byId = new Map();
+  for (const item of data.items) {
+    if (!item || !['id', 'teamKey', 'entityId', 'timeSource'].every(key => typeof item[key] === 'string' && item[key].trim())
+        || !Object.hasOwn(FEED_STATUS, item.status) || !validFeedDate(item.occurredAt)
+        || !Object.hasOwn(item, 'type') || !['C', 'E', null].includes(item.type)
+        || !Object.hasOwn(item, 'protocol') || !(item.protocol === null || typeof item.protocol === 'string')) {
+      throw new Error('Evento inválido');
+    }
+    byId.set(item.id, item);
+  }
+  return [...byId.values()].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || b.id.localeCompare(a.id));
+}
+
+function getLocalFeedCache(empresa) {
+  try {
+    const data = JSON.parse(localStorage.getItem(getLocalFeedCacheKey(empresa)) || 'null');
+    return data ? { ...data, items: validateFeedWindow(data, empresa) } : null;
+  } catch (_) { return null; }
+}
+
+function saveLocalFeedCache(empresa, data) {
+  try {
+    const {schemaVersion, company, timezone, windowHours, updatedAt, items} = data;
+    localStorage.setItem(getLocalFeedCacheKey(empresa), JSON.stringify({schemaVersion, company, timezone, windowHours, updatedAt, items}));
+  } catch (_) { /* Storage may be disabled; the in-memory window remains valid. */ }
+}
+
+function selectFeedCompany(empresa) {
+  if (empresa === feedCompany) return;
+  feedCompany = empresa;
+  const cached = getLocalFeedCache(empresa);
+  currentFeedItems = cached?.items || [];
+  latestFeedItems = [];
+  feedHasWindow = !!cached;
+  feedUpdatedAt = cached?.updatedAt || null;
+  feedUnavailable = null;
+}
 
 function renderRotatingSummary() {
   const element = document.getElementById('activityFeedSummary');
@@ -51,9 +80,11 @@ function renderRotatingSummary() {
 }
 
 function refreshVisibleFeed() {
+  selectFeedCompany(getFeedCompany());
+  if (window.orangeEventsEnabled) latestFeedItems = feedCountsFromCards();
   const teams = new Set((window.monitorState?.getCurrentItems?.() || [])
     .map(item => String(item.teamKey || item.equipe || '').trim().toUpperCase()));
-  const visible = currentFeedItems.filter(item => teams.has(String(item.teamKey || item.equipe || '').trim().toUpperCase()));
+  const visible = currentFeedItems.filter(item => teams.has(String(item.teamKey).trim().toUpperCase()));
   const counted = new Set();
   const summary = { execution: { comercial: 0, emergencia: 0 }, queue: { comercial: 0, emergencia: 0 } };
   latestFeedItems.filter(item => teams.has(String(item.teamKey || item.equipe || '').trim().toUpperCase())).forEach(item => {
@@ -69,160 +100,131 @@ function refreshVisibleFeed() {
   renderActivityFeed(visible, summary);
 }
 
-function getLocalFeedCache(empresa) {
-  try {
-    const raw = localStorage.getItem(getLocalFeedCacheKey(empresa));
-    const items = raw ? JSON.parse(raw) : [];
-    return Array.isArray(items) ? items.filter(item => isRecentFeedItem(item)) : [];
-  } catch (e) {
-    console.warn("Erro ao ler cache local de atividades:", e);
-    return [];
+function feedCountsFromCards() {
+  // Same snapshot fields and rules as the existing server summary. No events are derived here.
+  return (window.monitorState?.getCurrentItems?.() || []).filter(item =>
+    !item.origemAtualizacao || String(item.origemAtualizacao).toUpperCase() === 'TORRE_CONTROLE').map(item => {
+    const snapshot = item.rotalogSnapshot || {};
+    const service = [item.operacional?.servicoAtual, snapshot.ordensServico?.atual, snapshot.atividadeAtual]
+      .find(value => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length) || {};
+    const status = String(service.statusAtual || service.status || item.estado || '').toUpperCase();
+    const category = String(service.categoria || service.category || '').toUpperCase();
+    const queue = snapshot.fila && typeof snapshot.fila === 'object' && !Array.isArray(snapshot.fila) ? snapshot.fila :
+      {comercial: snapshot.ssPendentesComercialCount, emergencia: snapshot.ssPendentesEmergenciaCount};
+    return {teamKey: item.teamKey || item.equipe,
+      execution: {comercial: Number(status === 'EXECUCAO' && category.includes('COMERC')),
+        emergencia: Number(status === 'EXECUCAO' && category.includes('EMERG'))},
+      queue: {comercial: Math.max(0, Number(queue.comercial) || 0), emergencia: Math.max(0, Number(queue.emergencia) || 0)}};
+  });
+}
+
+async function readActivityWindow(empresa) {
+  if (window.orangeEventsEnabled) {
+    if (window.orangeMonitorEnabled) {
+      const {data, source} = await window.orangeTorre.snapshot('events', empresa, validateFeedWindow);
+      return {...data, empresa, available: true, source};
+    }
+    try {
+      const data = await window.orangeTorre.read('/api/rotalog/events', empresa);
+      validateFeedWindow(data, empresa);
+      return {...data, empresa, available: true, source: 'orangepi'};
+    } catch (error) {
+      console.warn('Orange indisponível; consultando arquivo Firebase:', error);
+    }
   }
+  // Existing authorized Storage reader remains the fallback; no public download URLs.
+  const response = await fetch(`/api/activity-feed?${new URLSearchParams({empresa, limit: '1000'})}`, {cache: 'no-store'});
+  const data = await response.json();
+  if (!response.ok) throw new Error('Feed indisponível');
+  return data;
 }
 
-function saveLocalFeedCache(empresa, items) {
-  try {
-    localStorage.setItem(getLocalFeedCacheKey(empresa), JSON.stringify(items));
-  } catch (e) {
-    console.warn("Erro ao salvar cache local de atividades:", e);
-  }
+function feedEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 }
 
-function isUsefulActivityFeedItem(item) {
-  const label = String(item?.label || '').trim().toUpperCase();
-  if (!label || label === 'ROTALOG') return false;
-  if (label.includes(' - FILA:')) return false;
-  if (label.includes('DADOS OPERACIONAIS ATUALIZADOS')) return false;
-  if (label.includes('INATIVADA') || label.includes('INATIVADO')) return false;
-  if (label.includes('ATIVADA') || label.includes('ATIVADO')) return false;
-  return true;
-}
-
-function mergeActivityFeedItems(localItems, newItems) {
-  const mergedMap = new Map();
-  const getUniqueKey = (item) => {
-    if (item.eventId) return item.eventId;
-    const timeKey = item.activityAt || item.time || '';
-    const team = item.teamKey || item.equipe || '';
-    const label = item.label || item.source || '';
-    return `${timeKey}_${team}_${label}`;
-  };
-
-  (localItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
-    const key = getUniqueKey(item);
-    if (key) mergedMap.set(key, item);
-  });
-
-  (newItems || []).filter(isUsefulActivityFeedItem).forEach(item => {
-    const key = getUniqueKey(item);
-    if (key) mergedMap.set(key, item);
-  });
-
-  const mergedList = Array.from(mergedMap.values());
-  mergedList.sort((a, b) => {
-    const dateA = a.activityAt ? new Date(a.activityAt).getTime() : 0;
-    const dateB = b.activityAt ? new Date(b.activityAt).getTime() : 0;
-    if (dateA && dateB) return dateB - dateA;
-    const strA = a.activityAt || a.time || '';
-    const strB = b.activityAt || b.time || '';
-    return strB.localeCompare(strA);
-  });
-
-  return mergedList.slice(0, 1000);
+function displayFeedProtocol(item) {
+  if (item.status.startsWith('TURNO_') || item.status.startsWith('INTERVALO_')) return '—';
+  const protocol = item.protocol;
+  if (!protocol) return '—';
+  // Recognized commercial year prefix; the original value is always retained.
+  return item.type === 'C' && /^(?:19|20)\d{12}$/.test(protocol) ? protocol.slice(4) : protocol;
 }
 
 function renderActivityFeed(items = [], summary = null) {
-  const activityFeedPanel = document.getElementById("activityFeedPanel");
-  const activityFeedList = document.getElementById("activityFeedList");
-  const activityFeedSummary = document.getElementById("activityFeedSummary");
-
-  if (!activityFeedPanel || !activityFeedList) return;
-  if (activityFeedSummary && summary) {
+  const panel = document.getElementById('activityFeedPanel');
+  const list = document.getElementById('activityFeedList');
+  if (!panel || !list) return;
+  if (summary) {
     currentFeedSummary = summary;
     renderRotatingSummary();
-    if (summaryTimer === null) {
-      summaryTimer = setInterval(() => {
-        summaryMode = summaryMode === 'execution' ? 'queue' : 'execution';
-        renderRotatingSummary();
-      }, 5000);
-    }
+    if (summaryTimer === null) summaryTimer = setInterval(() => {
+      summaryMode = summaryMode === 'execution' ? 'queue' : 'execution';
+      renderRotatingSummary();
+    }, 5000);
   }
-  const visible = items
-    .filter(isUsefulActivityFeedItem)
-    .slice(0, 1000);
-  if (!visible.length) {
-    activityFeedList.innerHTML = '<div class="activityFeedEmpty">Sem mudanças recentes</div>';
+  const warning = feedUnavailable === true ? '<div class="activityFeedError" role="status">Eventos indisponíveis' +
+    (feedHasWindow ? ' · exibindo última lista válida' : '') + '</div>' :
+    feedUnavailable === null ? '<div class="activityFeedEmpty" role="status">Carregando eventos…</div>' : '';
+  if (!items.length) {
+    list.innerHTML = warning + (feedUnavailable === false && feedHasWindow
+      ? '<div class="activityFeedEmpty">Sem eventos nas últimas 24 horas</div>' : '');
     return;
   }
-
-  const esc = window.monitorUtils?.escapeHtml || escapeHtml;
-  const fmtHM = window.monitorUtils?.fmtHourMinute || fmtHourMinute;
-
-  activityFeedList.innerHTML = visible.map((item) => {
-    const time = esc(item.time || fmtHM(item.activityAt));
-    const team = esc(String(item.teamKey || item.equipe || '-').trim().toUpperCase());
-    let rawLabel = String(item.label || 'Mudança operacional').trim();
-
-    // Se vier no formato antigo 'TEAM - Label', limpa o prefixo repetido
-    if (rawLabel.toUpperCase().startsWith(`${team} - `)) {
-      rawLabel = rawLabel.substring(team.length + 3).trim();
-    } else if (rawLabel.toUpperCase().startsWith(`${team} `)) {
-      rawLabel = rawLabel.substring(team.length + 1).trim();
-    }
-
-    const label = esc(rawLabel);
-    const source = esc(item.source || '');
-    return `<div class="activityFeedItem" data-source="${source}">` +
-      `<span class="activityFeedTime">${time}</span>` +
-      `<span class="activityFeedSep">|</span>` +
-      `<span class="activityFeedTeam">${team}</span>` +
-      `<span class="activityFeedSep">|</span>` +
-      `<span class="activityFeedLabel">${label}</span>` +
-    `</div>`;
-  }).join('');
+  const clock = new Intl.DateTimeFormat('pt-BR', {timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+  const date = new Intl.DateTimeFormat('pt-BR', {timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium'});
+  list.innerHTML = warning + '<table class="activityFeedTable"><thead><tr><th>Hora</th><th>Equipe</th><th>Tipo</th><th>Protocolo</th><th>Status</th></tr></thead><tbody>' +
+    items.map(item => {
+      const stamp = new Date(item.occurredAt);
+      const estimated = item.timeSource === 'inferred';
+      const source = `${estimated ? 'Horário estimado · ' : ''}timeSource: ${item.timeSource}${item.timeSource === 'consolidated' ? ' · recebido do diário' : ''}`;
+      const type = item.type === 'C' ? 'Comercial' : item.type === 'E' ? 'Emergência' : 'Sem tipo';
+      return `<tr data-event-id="${feedEscape(item.id)}">` +
+        `<td class="activityFeedTime" title="${feedEscape(date.format(stamp) + ' · ' + item.occurredAt + ' · ' + source)}">${feedEscape(clock.format(stamp))}${estimated ? '<span class="activityFeedEstimated" aria-label="Horário estimado"> ≈</span>' : ''}</td>` +
+        `<td class="activityFeedTeam">${feedEscape(item.teamKey)}</td>` +
+        `<td title="${type}">${item.type || '—'}</td>` +
+        `<td title="${feedEscape(item.protocol || '—')}">${feedEscape(displayFeedProtocol(item))}</td>` +
+        `<td class="activityFeedStatus status-${feedEscape(item.status)}" title="${feedEscape(source + ' · ocorrência: ' + item.entityId)}">${feedEscape(FEED_STATUS[item.status])}</td></tr>`;
+    }).join('') + '</tbody></table>';
 }
 
 async function loadActivityFeed() {
-  const activityFeedPanel = document.getElementById("activityFeedPanel");
-  const getViewModeFn = window.monitorFilters?.getViewMode || (window.monitorState?.getViewMode) || getViewMode;
-  if (!activityFeedPanel || (typeof getViewModeFn === 'function' && getViewModeFn() === 'trash')) return;
-
-  const getEmpresaFn = window.monitorFilters?.getEmpresaValue || (window.monitorState?.getEmpresa) || getEmpresaValue;
-  const empresa = typeof getEmpresaFn === 'function' ? getEmpresaFn() : '';
-
-  const qs = new URLSearchParams();
-  if (empresa) qs.set('empresa', empresa);
-  qs.set('limit', '1000');
-  try {
-    const r = await fetch(`/api/activity-feed?${qs.toString()}`, { cache: 'no-store' });
-    const data = await r.json();
-    if (!r.ok || !Array.isArray(data.items)) {
-      currentFeedItems = getLocalFeedCache(empresa);
+  const view = window.monitorFilters?.getViewMode || window.monitorState?.getViewMode;
+  if (!document.getElementById('activityFeedPanel') || (typeof view === 'function' && view() === 'trash')) return;
+  const empresa = getFeedCompany();
+  selectFeedCompany(empresa);
+  if (feedInFlight) return feedInFlight;
+  feedInFlight = (async () => {
+    try {
+      const data = await readActivityWindow(empresa);
+      if (getFeedCompany() !== empresa) return;
+      if (data.empresa !== empresa || typeof data.available !== 'boolean') throw new Error('Feed indisponível');
+      if (Array.isArray(data.teamSummary)) latestFeedItems = data.teamSummary;
+      const items = data.items === null && !data.available ? null : validateFeedWindow(data, empresa);
+      if (items !== null) {
+        // A delayed publication must not undo a correction already received from the same producer.
+        // This compares two known window revisions, not the age of updatedAt against the clock.
+        if (window.orangeEventsEnabled && data.source !== 'orangepi' && feedUpdatedAt
+            && Date.parse(data.updatedAt) < Date.parse(feedUpdatedAt)) {
+          throw new Error('Arquivo alternativo anterior à última janela válida');
+        }
+        currentFeedItems = items; // Complete replacement also handles removals and same-id corrections.
+        feedHasWindow = true;
+        feedUpdatedAt = data.updatedAt;
+        saveLocalFeedCache(empresa, {...data, items});
+      }
+      feedUnavailable = !data.available;
+    } catch (error) {
+      if (getFeedCompany() === empresa) feedUnavailable = true;
+      console.warn('Eventos indisponíveis:', error);
+    } finally {
+      feedInFlight = null;
       refreshVisibleFeed();
-      return;
+      if (getFeedCompany() !== empresa) loadActivityFeed();
     }
-    latestFeedItems = data.items;
-    const previous = getLocalFeedCache(empresa);
-    let states = {};
-    try { states = JSON.parse(localStorage.getItem(getFeedStateKey(empresa)) || '{}') || {}; } catch (_) {}
-    currentFeedItems = reconcileActivityFeed(previous, data.items, states);
-    try { localStorage.setItem(getFeedStateKey(empresa), JSON.stringify(states)); } catch (_) {}
-    saveLocalFeedCache(empresa, currentFeedItems);
-    refreshVisibleFeed();
-  } catch (error) {
-    console.warn('Erro ao carregar feed de atividades:', error);
-    currentFeedItems = getLocalFeedCache(empresa);
-    refreshVisibleFeed();
-  }
+  })();
+  return feedInFlight;
 }
 
-window.monitorFeed = {
-  refreshVisibleFeed,
-  reconcileActivityFeed,
-  getLocalFeedCache,
-  saveLocalFeedCache,
-  isUsefulActivityFeedItem,
-  mergeActivityFeedItems,
-  renderActivityFeed,
-  loadActivityFeed,
-};
+window.monitorFeed = {refreshVisibleFeed, getLocalFeedCache, saveLocalFeedCache, renderActivityFeed,
+  loadActivityFeed, validateFeedWindow, displayFeedProtocol};

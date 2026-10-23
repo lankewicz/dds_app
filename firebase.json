@@ -26,13 +26,317 @@
     ],
     "rewrites": [
       {
+        "source": "/login",
+        "destination": "/portal/login.html"
+      },
+      {
+        "source": "/login/",
+        "destination": "/portal/login.html"
+      },
+      {
+        "source": "/request-access",
+        "destination": "/portal/request-access.html"
+      },
+      {
+        "source": "/request-access/",
+        "destination": "/portal/request-access.html"
+      },
+      {
+        "source": "/",
+        "destination": "/portal/home.html"
+      },
+      {
+        "source": "/forbidden",
+        "destination": "/portal/forbidden.html"
+      },
+      {
+        "source": "/forbidden/",
+        "destination": "/portal/forbidden.html"
+      },
+      {
+        "source": "/access-control",
+        "destination": "/portal/access-control.html"
+      },
+      {
+        "source": "/access-control/",
+        "destination": "/portal/access-control.html"
+      },
+      {
+        "source": "/monitor",
+        "destination": "/portal/monitor.html"
+      },
+      {
+        "source": "/monitor/",
+        "destination": "/portal/monitor.html"
+      },
+      {
+        "source": "/monitor/inativas",
+        "destination": "/portal/monitor-inativas.html"
+      },
+      {
+        "source": "/monitor/inativas/",
+        "destination": "/portal/monitor-inativas.html"
+      },
+      {
+        "source": "/monitor/lixeira",
+        "destination": "/portal/monitor-lixeira.html"
+      },
+      {
+        "source": "/monitor/lixeira/",
+        "destination": "/portal/monitor-lixeira.html"
+      },
+      {
+        "source": "/boletim-x-ponto",
+        "destination": "/portal/boletim-x-ponto.html"
+      },
+      {
+        "source": "/boletim-x-ponto/",
+        "destination": "/portal/boletim-x-ponto.html"
+      },
+      {
+        "source": "/controle-projetos",
+        "destination": "/portal/controle-projetos.html"
+      },
+      {
+        "source": "/controle-projetos/",
+        "destination": "/portal/controle-projetos.html"
+      },
+      {
+        "source": "/vexpenses",
+        "destination": "/portal/vexpenses.html"
+      },
+      {
+        "source": "/vexpenses/",
+        "destination": "/portal/vexpenses.html"
+      },
+      {
         "source": "**",
         "run": {
           "serviceId": "dds-admin-site",
           "region": "us-central1"
         }
       }
+    ],
+    "headers": [
+      {
+        "source": "/login",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/login/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/request-access",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/request-access/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/forbidden",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/forbidden/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/access-control",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/access-control/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor/inativas",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor/inativas/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor/lixeira",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/monitor/lixeira/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/boletim-x-ponto",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/boletim-x-ponto/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/controle-projetos",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/controle-projetos/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/vexpenses",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/vexpenses/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/portal/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=0,must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/static/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=3600"
+          }
+        ]
+      },
+      {
+        "source": "/{admin,vexpenses,controle-projetos}/static/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=3600"
+          }
+        ]
+      }
+    ],
+    "predeploy": [
+      "python dds-webtools/scripts/build_hosting.py"
     ]
   }
 }
-

@@ -257,9 +257,9 @@ async function loadDdsBackground(forceRefresh = false) {
   if (selectedSector) qs.set('setor', selectedSector);
 
   try {
-    const r = await fetch(`/api/turnos/dds?${qs.toString()}`, { cache: 'no-store' });
-    const data = await r.json();
-    if (!r.ok || !Array.isArray(data.items)) return;
+    const r = window.orangeMonitorEnabled ? null : await fetch(`/api/turnos/dds?${qs.toString()}`, { cache: 'no-store' });
+    const data = window.orangeMonitorEnabled ? await window.monitorDirect.turnos(qs) : await r.json();
+    if ((r && !r.ok) || !Array.isArray(data.items)) return;
 
     const isNewer = window.monitorUtils?.isIsoNewer || isIsoNewer;
     let merged = false;
@@ -328,8 +328,10 @@ async function load(options = {}) {
   }
 
   try {
-    const r = await fetch(url, { cache: 'no-store' });
-    const data = await r.json();
+    const direct = window.orangeMonitorEnabled && mode !== 'trash';
+    const r = direct ? null : await fetch(url, { cache: 'no-store' });
+    if (r && !r.ok) throw new Error('Falha na leitura do monitor');
+    const data = direct ? await window.monitorDirect.turnos(qs) : await r.json();
 
     if (mode === 'trash') {
       const teamsMap = data || {};
@@ -350,7 +352,7 @@ async function load(options = {}) {
   } catch (e) {
     console.error('Erro ao carregar monitor:', e);
     if (lastSync) lastSync.textContent = 'Atualizado: ERRO';
-    if (!silent || !allRealtimeItems.length) {
+    if (!allRealtimeItems.length) {
       if (grid) grid.innerHTML = '<div class="emptyState">Não foi possível carregar o monitor.</div>';
       if (kpis) kpis.innerHTML = `<div class="kpi">⚠ erro ao carregar</div>`;
       window.monitorFilters?.renderTeamCount?.([]);
@@ -368,7 +370,9 @@ function renderData(items, meta, kpiSourceItems) {
   if (grid) grid.classList.remove('hidden');
 
   if (empresaLabel) empresaLabel.textContent = meta.empresa || '-';
-  if (lastSync) lastSync.textContent = `Atualizado: ${(window.monitorUtils?.fmtTimeOnly || fmtTimeOnly)(meta.serverTime)}`;
+  if (lastSync) lastSync.textContent = `Atualizado: ${(window.monitorUtils?.fmtTimeOnly || fmtTimeOnly)(meta.serverTime)}`
+    + (meta.dataSource ? ` · ${meta.dataSource === 'firebase' ? 'Firebase (backup)' : 'Orange Pi'}` : '')
+    + (meta.stale ? ' · Fonte desatualizada' : '');
   lastData = meta;
 
   const teamTypeOrder = {

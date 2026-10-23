@@ -61,7 +61,10 @@
             const password = document.getElementById('password').value;
 
             try {
-                const apiKey = {{ firebase_api_key | tojson }};
+                const bootstrapResponse = await fetch('/api/auth/bootstrap', {cache: 'no-store'});
+                if (!bootstrapResponse.ok) throw new Error('Não foi possível iniciar o acesso. Tente novamente.');
+                const bootstrap = await bootstrapResponse.json();
+                const apiKey = bootstrap.firebaseApiKey;
                 if (!apiKey) {
                     throw new Error('Firebase não está configurado no servidor.');
                 }
@@ -81,10 +84,10 @@
 
                 const response = await fetch('/api/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-Portal-CSRF': bootstrap.csrfToken },
                     body: JSON.stringify({
                         id_token: firebaseResult.idToken,
-                        csrf_token: {{ csrf_token | tojson }}
+                        csrf_token: bootstrap.csrfToken
                     })
                 });
 

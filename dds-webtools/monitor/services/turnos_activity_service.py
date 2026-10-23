@@ -221,7 +221,7 @@ def _read_activity_feed(empresa: str, limit: int = 5) -> dict[str, Any]:
         return {"empresa": empresa, "items": [], "cached": False, "error": str(exc)}
 
 
-def _activity_feed_from_monitor_cache(empresa: str, limit: int) -> dict[str, Any]:
+def _activity_feed_from_monitor_cache(empresa: str, limit: int, *, summary_only: bool = False) -> dict[str, Any]:
     cache = _read_monitor_view_cache(empresa)
     empty_summary = {"abertas": 0, "comerciais": 0, "emergenciais": 0}
     if not cache:
@@ -277,6 +277,10 @@ def _activity_feed_from_monitor_cache(empresa: str, limit: int) -> dict[str, Any
             "comercial": int(status == "EXECUCAO" and "COMERC" in category),
             "emergencia": int(status == "EXECUCAO" and "EMERG" in category),
         }
+        if summary_only:
+            events.append({"teamKey": team_key, "execution": execution,
+                           "queue": {"comercial": pending_commercial, "emergencia": pending_emergency}})
+            continue
         label = {
             "EXECUCAO": "Execução",
             "DESLOCAMENTO": "Deslocamento",
@@ -318,6 +322,9 @@ def _activity_feed_from_monitor_cache(empresa: str, limit: int) -> dict[str, Any
             "time": activity_dt.astimezone(ZoneInfo(DDS_TIMEZONE)).strftime("%H:%M") if activity_dt and DDS_TIMEZONE else str(activity_at or "")[-5:],
             "activityAt": activity_at,
         })
+
+    if summary_only:
+        return {"empresa": empresa, "items": events, "summary": summary}
 
     # Os estados da equipe e do serviço são independentes na torre.
     snapshots = {str(item.get("teamKey") or item.get("equipe") or "").strip(): item
@@ -409,7 +416,12 @@ def _activity_feed_from_monitor_cache(empresa: str, limit: int) -> dict[str, Any
 
 
 def get_activity_feed(empresa: str = DEFAULT_EMPRESA, limit: int = 30) -> dict[str, Any]:
-    return _activity_feed_from_monitor_cache(empresa, limit)
+    from bdo.services.rotalog_activity_reader import read_activity_window
+
+    # Counts retain the existing snapshot source and rules; events come only from the collector.
+    counts = _activity_feed_from_monitor_cache(empresa, limit, summary_only=True)
+    window = read_activity_window(empresa)
+    return {"empresa": empresa, **window, "summary": counts["summary"], "teamSummary": counts["items"]}
 
 
 def _persist_team_activity_if_newer(

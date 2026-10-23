@@ -6,34 +6,18 @@ import tempfile
 import unittest
 from unittest import mock
 
-from bdo.services import rotalog_sync_task as sync
+from bdo.services import rotalog_reader as sync
 from bdo.services.rotalog_change_tracker import RotalogLocalCache, RotalogGcsSnapshotStore, changed_fields
-from bdo.services.rotalog_tempo_real_service import _enriquecer_com_snapshot_anterior, _servico_precisa_detalhes
 from bdo.services.rotalog_daily_reconciliation import normalize_events, normalize_turns, reconcile_document
 from bdo.services.rotalog_team_file_repository import RotalogTeamFileRepository
 
 
 class IncrementalFlowTests(unittest.TestCase):
-    def test_snapshot_preserves_new_times_and_known_protocol(self):
-        service = {"inicioIso": "2026-09-10T09:00:00-03:00", "tipo": "UC",
-                   "protocolo": "UC", "termino": "10:30", "status": "CONCLUSAO"}
-        previous = {**service, "protocolo": "50961067", "termino": "10:00",
-                    "detalhesStatus": "EXECUCAO"}
-        _enriquecer_com_snapshot_anterior(
-            [{"equipe_codigo": "E3389", "ss_executadas": [service]}],
-            {"E3389": {"ssEmAndamento": [previous]}})
-        self.assertEqual("10:30", service["termino"])
-        self.assertEqual("50961067", service["protocolo"])
-        self.assertTrue(_servico_precisa_detalhes(service))
-
-    def test_completed_details_need_no_popup(self):
-        service = {"protocolo": "50961067", "status": "CONCLUSAO",
-                   "detalhesStatus": "CONCLUSAO", "inicioDeslocamento": "09:00",
-                   "inicioExecucao": "09:10", "termino": "10:30", "retorno": "10:40"}
-        self.assertFalse(_servico_precisa_detalhes(service))
-        service["inicioExecucao"] = None
-        self.assertTrue(_servico_precisa_detalhes(service))
-
+    def setUp(self):
+        # Nenhum teste deve acessar o Orange nem um índice da máquina real.
+        environment = mock.patch.dict(os.environ, {"ROTALOG_ORANGE_INDEX_URL": "", "ROTALOG_INDEX_PATH": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
     def test_diff_ignores_position_and_order_but_tracks_connection(self):
         first = {"ssExecutadas": [{"protocolo": "50961067", "eventIdx": 1},
                                  {"protocolo": "50961068", "eventIdx": 2}]}
@@ -54,43 +38,9 @@ class IncrementalFlowTests(unittest.TestCase):
                 sync._hydrate_durable_cache_once()
                 self.assertEqual(1, store.load.call_count)
 
-    def _persist(self, cache, repo, store, publication=True):
-        eq = {"equipe_codigo": "E3389", "estado_consolidado": "ABERTO",
-              "turno": {}, "ss_executadas": [], "ss_em_andamento": []}
-        with mock.patch.object(sync, "_local_cache", cache), mock.patch.object(sync, "_team_file_repository", repo), mock.patch.object(sync, "_durable_cache_store", store), mock.patch.object(sync, "_persist_durable_cache", return_value=publication):
-            return sync._persistir_somente_json(
-                [eq], "ChicoEletro", "2026-09-11T03:05:00+00:00", {},
-                gcs_reads_before=0, gcs_writes_before=0, firestore_reads=0)
 
-    def test_failed_team_write_is_not_acknowledged(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache = RotalogLocalCache(os.path.join(directory, "cache.json"))
-            repo = mock.Mock()
-            repo.merge_and_save_daily.side_effect = IOError("storage failed")
-            with self.assertRaises(IOError):
-                self._persist(cache, repo, mock.Mock(enabled=True))
-            self.assertIsNone(cache.get("E3389"))
 
-    def test_failed_index_publication_rolls_back_cache(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache = RotalogLocalCache(os.path.join(directory, "cache.json"))
-            with self.assertRaises(RuntimeError):
-                self._persist(cache, mock.Mock(), mock.Mock(enabled=True), publication=False)
-            self.assertIsNone(cache.get("E3389"))
 
-    def test_new_day_writes_unchanged_team_and_current(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache = RotalogLocalCache(os.path.join(directory, "cache.json"))
-            repo = mock.Mock()
-            store = mock.Mock(enabled=True)
-            self._persist(cache, repo, store)
-            previous = cache.get("E3389")
-            previous["historyDay"] = "2026-09-10"
-            cache.set("E3389", previous)
-            repo.reset_mock()
-            self._persist(cache, repo, store)
-            self.assertEqual("2026-09-11", repo.merge_and_save_daily.call_args.args[1])
-            repo.save_current.assert_called_once()
 
     def test_local_current_index_supports_uncompressed_json(self):
         with tempfile.TemporaryDirectory() as directory:

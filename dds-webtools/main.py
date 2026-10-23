@@ -112,49 +112,10 @@ from bdo.routes.rotalog_routes import router as rotalog_router
 # Controle de Projetos import
 from controle_projetos.routes.projeto_routes import router as projeto_router
 
-listener_manager = None
-
-rotalog_scheduler = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global listener_manager, rotalog_scheduler
-    try:
-        from monitor.services.turnos_service import FirestoreListenerManager
-        listener_manager = FirestoreListenerManager()
-        listener_manager.start()
-    except Exception as e:
-        print(f"Error starting background listener: {e}")
-
-    rotalog_execution_mode = os.getenv("ROTALOG_EXECUTION_MODE", "external").strip().lower()
-    rotalog_enabled = (
-        rotalog_execution_mode == "embedded"
-        and os.getenv("ROTALOG_SCHEDULER_ENABLED", "false").strip().lower() in {
-            "1", "true", "yes", "on"
-        }
-    )
-    if rotalog_enabled:
-        try:
-            from bdo.services.rotalog_sync_task import RotalogBackgroundScheduler
-            interval_seconds = max(60, int(os.getenv("ROTALOG_SYNC_INTERVAL_SECONDS", "120")))
-            rotalog_scheduler = RotalogBackgroundScheduler(interval_seconds=interval_seconds)
-            rotalog_scheduler.start()
-        except Exception as e:
-            print(f"Error starting Rotalog background scheduler: {e}")
-
+    # O site atende requisições. Coleta e atividade DDS pertencem ao Orange.
     yield
-
-    if listener_manager:
-        try:
-            listener_manager.stop()
-        except Exception as e:
-            print(f"Error stopping background listener: {e}")
-
-    if rotalog_scheduler:
-        try:
-            rotalog_scheduler.stop()
-        except Exception as e:
-            print(f"Error stopping Rotalog background scheduler: {e}")
 
 class CacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
@@ -259,13 +220,9 @@ def _firebase_web_api_key() -> str:
 
 
 def _is_public_path(path: str) -> bool:
-    if (
-        path == "/api/rotalog/sync-now"
-        and os.getenv("ROTALOG_SYNC_ENDPOINT_IAM_ONLY", "false").strip().lower() == "true"
-    ):
-        return True
     exact_paths = {
-        "/login", "/api/login", "/request-access", "/api/request-access", "/favicon.ico"
+        "/login", "/api/login", "/api/auth/bootstrap", "/api/runtime/ready",
+        "/internal/report-worker", "/request-access", "/api/request-access", "/favicon.ico"
     }
     public_prefixes = (
         "/static/",
@@ -306,7 +263,11 @@ async def auth_middleware(request: Request, call_next):
                 request.cookies.get(SESSION_COOKIE_NAME, ""), db
             )
         except (InvalidSessionError, UnauthorizedUserError):
-            response = RedirectResponse(url="/login", status_code=303)
+            if "/api/" in request.url.path or request.url.path.startswith("/api/"):
+                response = JSONResponse(status_code=401, content={"ok": False, "message": "Sua sessão expirou. Entre novamente."})
+            else:
+                response = RedirectResponse(url="/login", status_code=303)
+            response.headers["Cache-Control"] = "no-store"
             response.delete_cookie(SESSION_COOKIE_NAME, path="/")
             return response
 
@@ -397,6 +358,8 @@ async def auth_middleware(request: Request, call_next):
         except Exception as audit_error:
             print(f"Falha ao registrar auditoria da alteração: {audit_error}")
 
+    if not _is_public_path(request.url.path) or "/api/" in request.url.path:
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 @app.get("/", response_class=HTMLResponse)
@@ -453,7 +416,9 @@ async def request_access(request: Request):
 async def submit_access_request(payload: CreateAccessUserPayload, request: Request):
     csrf_cookie = request.cookies.get("request_access_csrf", "")
     csrf_header = request.headers.get("x-csrf-token", "")
-    if not csrf_cookie or not secrets.compare_digest(csrf_cookie, csrf_header):
+    from portal_runtime import validate_login_challenge
+    if not ((csrf_cookie and secrets.compare_digest(csrf_cookie, csrf_header)) or
+            validate_login_challenge(csrf_header, csrf_header, purpose="request-access")):
         return JSONResponse(
             status_code=403,
             content={"ok": False, "message": "Página expirada. Recarregue e tente novamente."},
@@ -539,10 +504,7 @@ async def submit_access_request(payload: CreateAccessUserPayload, request: Reque
     return response
 
 
-@app.get("/access-control", response_class=HTMLResponse)
-async def access_control(request: Request):
-    from monitor.services.firestore_client import db
-
+def _list_access_users(db):
     users = []
     for snapshot in db.collection("dds_users").stream():
         data = snapshot.to_dict() or {}
@@ -563,6 +525,29 @@ async def access_control(request: Request):
             "is_root": is_root_email(str(data.get("email") or snapshot.id)),
         })
     users.sort(key=lambda item: item["email"])
+
+    return users
+
+
+@app.get("/api/access-control/users")
+async def list_access_users(request: Request):
+    from monitor.services.firestore_client import db
+    from portal_runtime import issue_login_challenge
+    users = _list_access_users(db)
+    for user in users:
+        user["permissions"] = sorted(user["permissions"])
+        user["write_permissions"] = sorted(user["write_permissions"])
+    return JSONResponse({"users": users, "areas": PORTAL_AREAS,
+                         "currentIsRoot": bool(request.state.portal_user["is_root"]),
+                         "csrfToken": issue_login_challenge("access")},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/access-control", response_class=HTMLResponse)
+async def access_control(request: Request):
+    from monitor.services.firestore_client import db
+
+    users = _list_access_users(db)
 
     csrf_token = secrets.token_urlsafe(32)
     response = templates.TemplateResponse("access_control.html", {
@@ -590,7 +575,9 @@ async def access_control(request: Request):
 async def update_access_user(email: str, payload: AccessUpdatePayload, request: Request):
     csrf_cookie = request.cookies.get("access_csrf", "")
     csrf_header = request.headers.get("x-csrf-token", "")
-    if not csrf_cookie or not secrets.compare_digest(csrf_cookie, csrf_header):
+    from portal_runtime import validate_login_challenge
+    if not ((csrf_cookie and secrets.compare_digest(csrf_cookie, csrf_header)) or
+            validate_login_challenge(csrf_header, csrf_header, purpose="access")):
         return JSONResponse(
             status_code=403,
             content={"ok": False, "message": "Token de segurança inválido."},
@@ -673,7 +660,9 @@ async def update_access_user(email: str, payload: AccessUpdatePayload, request: 
 async def create_access_user(payload: CreateAccessUserPayload, request: Request):
     csrf_cookie = request.cookies.get("access_csrf", "")
     csrf_header = request.headers.get("x-csrf-token", "")
-    if not csrf_cookie or not secrets.compare_digest(csrf_cookie, csrf_header):
+    from portal_runtime import validate_login_challenge
+    if not ((csrf_cookie and secrets.compare_digest(csrf_cookie, csrf_header)) or
+            validate_login_challenge(csrf_header, csrf_header, purpose="access")):
         return JSONResponse(
             status_code=403,
             content={"ok": False, "message": "Token de segurança inválido."},
@@ -780,6 +769,55 @@ async def login(request: Request):
     )
     return response
 
+
+@app.get("/api/runtime/ready")
+async def runtime_ready():
+    return JSONResponse({"ready": True}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/auth/bootstrap")
+async def auth_bootstrap(purpose: str = "login"):
+    from portal_runtime import issue_login_challenge
+    if purpose not in {"login", "request-access"}:
+        return JSONResponse(status_code=400, content={"ok": False})
+    return JSONResponse({
+        "firebaseApiKey": _firebase_web_api_key() if purpose == "login" else None,
+        "csrfToken": issue_login_challenge(purpose),
+    }, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/portal/session")
+async def portal_session(request: Request):
+    user = request.state.portal_user
+    return JSONResponse({
+        "email": user["email"], "name": user.get("name") or "",
+        "isRoot": bool(user.get("is_root")),
+        "permissions": [area for area in PORTAL_AREAS if has_permission(user, area)],
+        "areas": PORTAL_AREAS,
+        "revision": os.environ.get("K_REVISION", "local"),
+    }, headers={"Cache-Control": "no-store"})
+
+@app.get("/api/torre/access")
+async def torre_access(request: Request):
+    from torre_access import issue_token
+    from urllib.parse import urlsplit
+    user = request.state.portal_user
+    if not has_permission(user, "monitor"):
+        return JSONResponse({"ok": False}, status_code=403, headers={"Cache-Control": "no-store"})
+    endpoint = os.environ.get("TORRE_PUBLIC_URL", "").rstrip("/")
+    parsed = urlsplit(endpoint)
+    key = os.environ.get("TORRE_SIGNING_KEY", "")
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.path not in ("", "/") or len(key.encode()) < 32):
+        return JSONResponse({"ok": False, "message": "Orange ainda não configurado."},
+                            status_code=503, headers={"Cache-Control": "no-store"})
+    company = os.environ.get("DDS_EMPRESA_PADRAO", "ChicoEletro")
+    from monitor_read_access import backup_urls
+    return JSONResponse({"url": endpoint, "company": company, "expiresIn": 600, "backup": backup_urls(company),
+                         "token": issue_token(key, company, user["email"])},
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse(
@@ -790,8 +828,8 @@ async def favicon():
 @app.post("/api/login")
 async def api_login(payload: LoginPayload, request: Request):
     try:
-        csrf_cookie = request.cookies.get("portal_csrf", "")
-        if not csrf_cookie or not secrets.compare_digest(csrf_cookie, payload.csrf_token):
+        from portal_runtime import validate_login_challenge
+        if not validate_login_challenge(payload.csrf_token, request.headers.get("x-portal-csrf", "")):
             return JSONResponse(
                 content={"ok": False, "message": "Sessão de login expirada. Recarregue a página."},
                 status_code=403,

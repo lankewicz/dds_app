@@ -1,5 +1,5 @@
 """
-Rotas FastAPI para consulta e sincronização do ROTALOG Tempo Real.
+Rotas de leitura dos arquivos publicados pelo coletor Rotalog externo.
 """
 
 from __future__ import annotations
@@ -9,9 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from bdo.services.rotalog_tempo_real_service import extrair_dados_tempo_real
-from bdo.services.rotalog_sync_task import (
-    executar_sincronizacao_rotalog,
+from bdo.services.rotalog_reader import (
     get_rotalog_execution_log,
     get_rotalog_live_snapshot,
     get_rotalog_live_snapshots,
@@ -40,14 +38,9 @@ async def get_rotalog_tempo_real():
 @router.post("/sync-now")
 def trigger_rotalog_sync(empresa: str = "ChicoEletro"):
     """
-    Força a sincronização imediata dos status do Rotalog com o Firestore.
+    Compatibilidade com clientes antigos: a raspagem pertence ao Orange Pi.
     """
-    try:
-        res = executar_sincronizacao_rotalog(empresa=empresa)
-        return JSONResponse(content={"ok": True, "result": res})
-    except Exception as e:
-        logger.error(f"Erro ao executar sincronização Rotalog: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=410, detail="A coleta Rotalog é executada pelo Orange Pi. Atualize a torre para ler os resultados.")
 
 
 @router.get("/sync-log")

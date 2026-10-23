@@ -1,0 +1,11 @@
+/* -----------------------------------------------------------------------------
+ * Arquivo : monitor/static/styles.css
+ * Objetivo: Ponto de entrada modular dos estilos do Monitor de Turnos.
+ * -------------------------------------------------------------------------- */
+
+@import url("./css/base.css");
+@import url("./css/topbar.css");
+@import url("./css/cards.css");
+@import url("./css/cards_compact.css");
+@import url("./css/modals.css");
+@import url("./css/activity_feed.css");

@@ -17,9 +17,9 @@ class StatusFeedTests(unittest.TestCase):
                 "updatedAt": "2026-10-08T18:00:00-03:00",
                 "rotalogSnapshot": {"turno": {"status": "FECHADO"}}}
         with patch.object(service, "_read_monitor_view_cache", return_value={"items": [item]}):
-            first = service.get_activity_feed()["items"][0]
+            first = service._activity_feed_from_monitor_cache("ChicoEletro", 1000)["items"][0]
             item["updatedAt"] = "2026-10-08T18:05:00-03:00"
-            second = service.get_activity_feed()["items"][0]
+            second = service._activity_feed_from_monitor_cache("ChicoEletro", 1000)["items"][0]
         self.assertTrue(first["snapshotOnly"])
         self.assertIsNone(first["activityAt"])
         self.assertEqual(first["eventId"], second["eventId"])
@@ -30,9 +30,9 @@ class StatusFeedTests(unittest.TestCase):
                 "updatedAt": "2026-10-08T18:00:00-03:00",
                 "rotalogSnapshot": {"turno": {"fim": end}}}
         with patch.object(service, "_read_monitor_view_cache", return_value={"items": [item]}):
-            first = service.get_activity_feed()["items"][0]
+            first = service._activity_feed_from_monitor_cache("ChicoEletro", 1000)["items"][0]
             item["updatedAt"] = "2026-10-08T18:05:00-03:00"
-            second = service.get_activity_feed()["items"][0]
+            second = service._activity_feed_from_monitor_cache("ChicoEletro", 1000)["items"][0]
         self.assertFalse(first["snapshotOnly"])
         self.assertEqual(first["time"], "17:00")
         self.assertEqual(first["eventId"], second["eventId"])
@@ -58,7 +58,7 @@ class StatusFeedTests(unittest.TestCase):
             },
         }]}
         with patch.object(service, "_read_monitor_view_cache", return_value=cache):
-            result = service.get_activity_feed("ChicoEletro")
+            result = service._activity_feed_from_monitor_cache("ChicoEletro", 1000)
         self.assertEqual([(e["time"], e["label"]) for e in result["items"] if not e.get("snapshotOnly")], [
             ("09:00", "SS 50961067: Conclusão"),
             ("08:15", "SS 50961067: Execução"),
@@ -66,6 +66,20 @@ class StatusFeedTests(unittest.TestCase):
             ("07:00", "Equipe: Turno Aberto"),
         ])
         self.assertEqual(result["summary"]["comerciais"], 3)
+
+    def test_api_uses_only_collector_events_and_retains_snapshot_counts(self):
+        cache = {"items": [{"teamKey": "T1", "estado": "ABERTO",
+            "rotalogSnapshot": {"fila": {"comercial": 3, "emergencia": 2},
+                "ordensServico": {"atual": {"statusAtual": "EXECUCAO", "categoria": "COMERCIAL"}}}}]}
+        events = [{"id": "collector-id", "teamKey": "T1"}]
+        with patch.object(service, "_read_monitor_view_cache", return_value=cache), \
+             patch("bdo.services.rotalog_activity_reader.read_activity_window", return_value={
+                 "items": events, "available": True, "updatedAt": "2026-10-20T08:00:00-03:00"}):
+            result = service.get_activity_feed("ChicoEletro")
+        self.assertEqual(result["items"], events)
+        self.assertEqual(result["teamSummary"], [{"teamKey": "T1", "execution": {"comercial": 1, "emergencia": 0},
+                                               "queue": {"comercial": 3, "emergencia": 2}}])
+        self.assertEqual(result["summary"], {"abertas": 1, "comerciais": 3, "emergenciais": 2})
 
 
 if __name__ == "__main__":

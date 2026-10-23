@@ -23,7 +23,6 @@ from bdo.services.exportador_service import (
     exportar_totais_separados_por_contrato_zip,
 )
 from bdo.services.pacote_veiculo_service import gerar_pacote_veiculo_zip
-from bdo.services.rotalog_crawler_service import sincronizar_rotalog
 
 # Configura o diretório de templates relativo a este arquivo
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -155,25 +154,8 @@ def get_funcionarios(
 
 @router.post("/boletim-x-ponto/api/import/rotalog")
 async def importar_rotalog(payload: RotalogCrawlerPayload):
-    """Executa o crawler e publica equipes/eventos nos Parquets versionados."""
-    try:
-        result = await run_in_threadpool(
-            sincronizar_rotalog,
-            service.repository,
-            payload.data_ini,
-            payload.data_fim,
-        )
-        return {"ok": True, **result}
-    except (ValueError, RuntimeError, PermissionError) as error:
-        return JSONResponse(
-            status_code=400,
-            content={"ok": False, "message": str(error)},
-        )
-    except Exception as error:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "message": f"Erro ao sincronizar ROTALOG: {error}"},
-        )
+    return JSONResponse(status_code=410, content={"ok": False,
+        "message": "A coleta Rotalog é executada pelo Orange Pi. Consulte os arquivos já publicados."})
 
 @router.get("/boletim-x-ponto/api/veiculos")
 def get_veiculos(

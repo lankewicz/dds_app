@@ -1,0 +1,95 @@
+{
+  "version": "513693514894",
+  "pages": [
+    {
+      "source": "/login",
+      "destination": "/portal/login.html"
+    },
+    {
+      "source": "/login/",
+      "destination": "/portal/login.html"
+    },
+    {
+      "source": "/request-access",
+      "destination": "/portal/request-access.html"
+    },
+    {
+      "source": "/request-access/",
+      "destination": "/portal/request-access.html"
+    },
+    {
+      "source": "/",
+      "destination": "/portal/home.html"
+    },
+    {
+      "source": "/forbidden",
+      "destination": "/portal/forbidden.html"
+    },
+    {
+      "source": "/forbidden/",
+      "destination": "/portal/forbidden.html"
+    },
+    {
+      "source": "/access-control",
+      "destination": "/portal/access-control.html"
+    },
+    {
+      "source": "/access-control/",
+      "destination": "/portal/access-control.html"
+    },
+    {
+      "source": "/monitor",
+      "destination": "/portal/monitor.html"
+    },
+    {
+      "source": "/monitor/",
+      "destination": "/portal/monitor.html"
+    },
+    {
+      "source": "/monitor/inativas",
+      "destination": "/portal/monitor-inativas.html"
+    },
+    {
+      "source": "/monitor/inativas/",
+      "destination": "/portal/monitor-inativas.html"
+    },
+    {
+      "source": "/monitor/lixeira",
+      "destination": "/portal/monitor-lixeira.html"
+    },
+    {
+      "source": "/monitor/lixeira/",
+      "destination": "/portal/monitor-lixeira.html"
+    },
+    {
+      "source": "/boletim-x-ponto",
+      "destination": "/portal/boletim-x-ponto.html"
+    },
+    {
+      "source": "/boletim-x-ponto/",
+      "destination": "/portal/boletim-x-ponto.html"
+    },
+    {
+      "source": "/controle-projetos",
+      "destination": "/portal/controle-projetos.html"
+    },
+    {
+      "source": "/controle-projetos/",
+      "destination": "/portal/controle-projetos.html"
+    },
+    {
+      "source": "/vexpenses",
+      "destination": "/portal/vexpenses.html"
+    },
+    {
+      "source": "/vexpenses/",
+      "destination": "/portal/vexpenses.html"
+    }
+  ],
+  "backend": [
+    "APIs",
+    "administração DDS dinâmica",
+    "produtividade",
+    "relatórios e revisões de projetos"
+  ]
+}

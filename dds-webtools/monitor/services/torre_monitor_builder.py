@@ -161,7 +161,7 @@ def _patch_monitor_view_cache(empresa: str, team_item: dict[str, Any]) -> None:
 
 def _rotalog_json_snapshots(force: bool = False) -> dict[str, dict[str, Any]]:
     try:
-        from bdo.services.rotalog_sync_task import get_rotalog_live_snapshots
+        from bdo.services.rotalog_reader import get_rotalog_live_snapshots
         return get_rotalog_live_snapshots(force=force)
     except Exception as exc:
         logger.warning("Não foi possível carregar a visão ROTALOG do JSON: %s", exc)

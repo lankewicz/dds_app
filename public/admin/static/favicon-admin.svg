@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="adminGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#090514" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  <!-- Shield outline -->
+  <path d="M256 90c90 0 160 30 160 30v140c0 90-70 150-160 172C166 410 96 350 96 260V120s70-30 160-30z" fill="url(#adminGrad)" opacity="0.2" stroke="url(#adminGrad)" stroke-width="16" />
+  <!-- Inner Shield -->
+  <path d="M256 120c70 0 130 25 130 25v115c0 75-55 125-130 143-75-18-130-68-130-143V145s60-25 130-25z" fill="url(#adminGrad)" />
+  <!-- Gear inside shield -->
+  <g fill="#ffffff" transform="translate(186, 186) scale(1.4)">
+    <path d="M50 0a50 50 0 1 0 0 100A50 50 0 1 0 50 0zm0 15a35 35 0 1 1 0 70 35 35 0 0 1 0-70z" opacity="0.3" />
+    <!-- Gear teeth -->
+    <path d="M44 8h12v12H44zM44 80h12v12H44zM8 44h12v12H8zM80 44h12v12H80zM19 19l8.5 8.5 8.5-8.5-8.5-8.5zM73 73l8.5 8.5 8.5-8.5-8.5-8.5zM19 73l8.5-8.5 8.5 8.5-8.5 8.5zM73 19l8.5-8.5 8.5 8.5-8.5-8.5z" />
+    <!-- Center Wrench / Tool symbol (Minimalist cross or dot) -->
+    <circle cx="50" cy="50" r="14" fill="#ffffff" />
+    <path d="M46 36h8v28h-8z" fill="url(#adminGrad)" />
+  </g>
+</svg>
