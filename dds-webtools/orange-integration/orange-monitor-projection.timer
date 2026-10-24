@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh monitor projection independently of browser users
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=180
+Unit=orange-monitor-projection.service
+
+[Install]
+WantedBy=timers.target

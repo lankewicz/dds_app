@@ -304,6 +304,15 @@ function hoverRows(item) {
   if (colab) {
     rows.push(`<div class="hoverRow"><span>Colaborador</span><strong>${esc(colab)}</strong></div>`);
   }
+  const copelPersonnel = Array.isArray(item.copelPersonnel)
+    ? item.copelPersonnel.filter(person => person && person.nome)
+    : [];
+  if (copelPersonnel.length) {
+    const names = copelPersonnel.map(person =>
+      `${person.registro ? `${esc(person.registro)} - ` : ''}${esc(person.nome)}`
+    ).join('<br>');
+    rows.push(`<div class="hoverRow"><span>Eletricistas Copel</span><strong>${names}</strong></div>`);
+  }
   const lat = item.latitude ?? rotalogService?.latitude;
   const lon = item.longitude ?? rotalogService?.longitude;
   if (lat && lon) {
@@ -609,7 +618,7 @@ function tile(item) {
   const ddsRow = ddsSequenceHtml(item, { maxItems: 5, showDayLabels: false, showMeta: false, containerClass: "tileDdsCompact" });
 
   const lastContactLabel = fmtLast(latestComm(item));
-  const tabletLabel = dVal(item.tablet || item?.rotalogSnapshot?.identificadorEquipamento);
+  const tabletLabel = dVal(item.copelTablet || item.tablet || item?.rotalogSnapshot?.identificadorEquipamento);
   const origemTitle = getOrigemTitle(item);
   const rotalogService = getRotalogService(item);
   const turnSummary = getTurnSummary(item, shown);
@@ -733,6 +742,8 @@ function getTeamUpdateSignature(item) {
     participantes: item?.participantes || [],
     motorista: item?.motorista || null,
     coringas: item?.coringas || [],
+    copelTablet: item?.copelTablet || null,
+    copelPersonnel: item?.copelPersonnel || [],
     rotalogSnapshot: item?.rotalogSnapshot || null,
     unreadMap: item?.unreadMap || {},
     ddsHistory: item?.ddsHistory || [],

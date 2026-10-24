@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR" data-portal-permission="monitor"><head><meta charset="utf-8">
+<title>Verificação de leitura do Orange</title>
+<script src="/static/hosting/portal.js"></script>
+<script src="/static/hosting/orange-torre.js?v=direct-2"></script></head>
+<body><h1>Verificação de leitura do Orange</h1>
+<p>Usa a sessão e as permissões atuais. Nenhuma credencial é exibida.</p>
+<button id="check">Verificar leitura</button><p id="result" role="status">Aguardando verificação.</p>
+<button id="backup">Verificar backup Firebase</button><p id="backupResult" role="status">Aguardando verificação do backup.</p>
+<script src="/static/hosting/monitor-direct.js?v=direct-2"></script>
+<script>
+document.getElementById('check').onclick = async () => {
+  const button = document.getElementById('check'); button.disabled = true;
+  const result = document.getElementById('result'); result.textContent = 'Verificando…';
+  try {
+    await window.portalReady;
+    const first = await window.orangeTorre.listData();
+    const second = await window.orangeTorre.listData();
+    const monitor = await window.orangeTorre.snapshot('monitor', second.company, window.monitorDirect.validate);
+    result.textContent = `Leitura autenticada aprovada. Empresa: ${second.company}. Fonte: ${monitor.source}. Cards: ${monitor.data.items.length}. DDS incluído. Segunda consulta aprovada com credencial reutilizada.`;
+  } catch (error) { result.textContent = 'Falha: ' + error.message; }
+  finally { button.disabled = false; }
+};
+document.getElementById('backup').onclick = async () => {
+  const result = document.getElementById('backupResult'); result.textContent = 'Verificando…';
+  try {
+    const monitor = await window.orangeTorre.snapshot('monitor', '', window.monitorDirect.validate, true);
+    const events = await window.orangeTorre.snapshot('events', monitor.data.company, (data, company) => {
+      if (data.schemaVersion !== 1 || data.company !== company || !Array.isArray(data.items)
+          || !Number.isFinite(Date.parse(data.updatedAt))) throw new Error('Arquivo de eventos inválido');
+    }, true);
+    result.textContent = `Backup direto Firebase aprovado. Cards: ${monitor.data.items.length}. Eventos: ${events.data.items.length}. Arquivos privados; nenhuma consulta de dados ao Cloud Run.`;
+  } catch (error) { result.textContent = 'Falha: ' + error.message; }
+};
+</script></body></html>

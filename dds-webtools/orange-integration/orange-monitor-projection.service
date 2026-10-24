@@ -1,0 +1,19 @@
+[Unit]
+Description=Compose read-only monitor files and Firebase backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=orangepi
+Group=orangepi
+WorkingDirectory=/home/orangepi/dds-events-api
+EnvironmentFile=/home/orangepi/dds-events-api/.env
+Environment=MONITOR_STORAGE_PREFIX=dados/chicoeletro
+ExecStart=/home/orangepi/dds-events-api/.venv-projection/bin/python project_monitor.py --collector /home/orangepi/dds-coletor-rtl --root ${ROTALOG_DATA_ROOT} --company ${DDS_EMPRESA_PADRAO} --bucket dds-treinamentos.firebasestorage.app
+TimeoutStartSec=180
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/mnt/ssd/dds-coletor-rtl/chicoeletro/dados-local /home/orangepi/dds-coletor-rtl/dados-local

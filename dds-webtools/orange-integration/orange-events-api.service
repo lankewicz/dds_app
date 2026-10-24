@@ -1,0 +1,20 @@
+[Unit]
+Description=API de leitura dos eventos Rotalog para Firebase Hosting
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=orangepi
+Group=orangepi
+WorkingDirectory=/home/orangepi/dds-events-api
+EnvironmentFile=/home/orangepi/dds-events-api/.env
+ExecStart=/usr/bin/python3 events_api.py --events-file ${ROTALOG_EVENTS_FILE} --data-root ${ROTALOG_DATA_ROOT} --fallback-root ${ROTALOG_FALLBACK_ROOT} --ssd-mount ${ROTALOG_SSD_MOUNT} --ssd-uuid ${ROTALOG_SSD_UUID}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

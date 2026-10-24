@@ -408,7 +408,10 @@ def _list_turnos_from_files(
     }
     now = _get_now()
     today = now.astimezone(ZoneInfo(DDS_TIMEZONE)).date()
-    projections = sync_recent_daily_projections(limit_days=25, manual_refresh=True)
+    projections = sync_recent_daily_projections(
+        limit_days=25,
+        manual_refresh=manual_refresh,
+    )
     _, by_day = projections
     today_teams = (by_day.get(today.isoformat()) or {}).get("teams") or {}
     recent_teams: dict[str, dict[str, Any]] = {}
@@ -421,7 +424,7 @@ def _list_turnos_from_files(
                 "completedAt": entry.get("completedAt") or f"{day}T07:00:00-03:00",
                 "date": day,
             }
-    snapshots = _rotalog_json_snapshots(force=True)
+    snapshots = _rotalog_json_snapshots(force=manual_refresh)
     from bdo.services.rotalog_reader import _durable_cache_state
     pure_items = _build_pure_torre_items(
         snapshots, now, teams_map=teams_map, recent_7d_dds=recent_teams,
